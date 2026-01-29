@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { VideoPlayer } from "@/components/player/VideoPlayer";
+import { FilmRoomPlayer } from "@/components/player/FilmRoomPlayer";
 import { AnnotationPanel } from "@/components/player/AnnotationPanel";
 import { VoiceNotePanel } from "@/components/player/VoiceNotePanel";
 import { AIAnalysisPanel } from "@/components/player/AIAnalysisPanel";
@@ -11,17 +11,19 @@ import {
   getAnnotations,
   getVoiceNotes,
   getAIAnalysis,
+  getTimelineEvents,
   createAIAnalysis,
   deleteAnnotation,
   CaptureSession,
   Annotation,
   VoiceNote,
   AIAnalysis,
+  TimelineEvent,
 } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Share2, Download, Settings, Gamepad2 } from "lucide-react";
+import { Loader2, ArrowLeft, Share2, Download, Gamepad2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -34,6 +36,7 @@ export default function SessionReview() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
   const [analyses, setAnalyses] = useState<AIAnalysis[]>([]);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [activePanel, setActivePanel] = useState<"annotations" | "voice" | "ai">("annotations");
@@ -53,17 +56,19 @@ export default function SessionReview() {
 
   const loadSessionData = async () => {
     try {
-      const [sessionData, annotationsData, voiceNotesData, analysesData] = await Promise.all([
+      const [sessionData, annotationsData, voiceNotesData, analysesData, eventsData] = await Promise.all([
         getCaptureSession(sessionId!),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
         getAIAnalysis(sessionId!),
+        getTimelineEvents(sessionId!).catch(() => []), // May not exist yet
       ]);
 
       setSession(sessionData);
       setAnnotations(annotationsData);
       setVoiceNotes(voiceNotesData);
       setAnalyses(analysesData);
+      setEvents(eventsData);
 
       // If session is still processing, poll for updates
       if (sessionData.status === "processing") {
@@ -221,8 +226,8 @@ export default function SessionReview() {
       <div className="flex-1 container py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
           {/* Video player - 2 columns */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <VideoPlayer
+          <div className="lg:col-span-2 flex flex-col">
+            <FilmRoomPlayer
               videoUrl={session.video_url}
               duration={duration}
               currentTime={currentTime}
@@ -230,22 +235,9 @@ export default function SessionReview() {
               onSeek={handleSeek}
               annotations={annotations}
               voiceNotes={voiceNotes}
+              events={events}
               onAnnotationClick={handleAnnotationClick}
             />
-
-            {/* Timeline info */}
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <div className="flex items-center gap-4">
-                <span>{annotations.length} annotations</span>
-                <span>{voiceNotes.length} voice notes</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-primary" /> Marker
-                <span className="w-3 h-3 rounded-full bg-red-500" /> Kill
-                <span className="w-3 h-3 rounded-full bg-vantage-purple" /> Death
-                <span className="w-3 h-3 rounded-full bg-accent" /> Voice
-              </div>
-            </div>
           </div>
 
           {/* Side panel - 1 column */}
