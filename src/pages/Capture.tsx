@@ -2,11 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { updateCaptureSession, getCaptureSession, CaptureSession } from "@/lib/captures";
+import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createAudioTrack } from "@/lib/captures";
+import { supabase } from "@/integrations/supabase/client";
+import { useCaptureManager, RecordedData } from "@/hooks/useCaptureManager";
+import { CapturePreview } from "@/components/capture/CapturePreview";
+import { CaptureControls } from "@/components/capture/CaptureControls";
+import { CaptureSetup } from "@/components/capture/CaptureSetup";
+import { PermissionError } from "@/components/capture/PermissionError";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Square, Pause, Play, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CapturePage() {
@@ -16,13 +22,10 @@ export default function CapturePage() {
   
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isCapturing, setIsCapturing] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [ending, setEnding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [setupComplete, setSetupComplete] = useState(false);
   
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
+  const capture = useCaptureManager();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -36,26 +39,12 @@ export default function CapturePage() {
     }
   }, [sessionId, user]);
 
-  // Timer effect
-  useEffect(() => {
-    if (isCapturing && !isPaused) {
-      timerRef.current = setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
-      }, 1000);
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isCapturing, isPaused]);
-
   const loadSession = async () => {
     try {
       const data = await getCaptureSession(sessionId!);
       setSession(data);
       
+      // If session is already processed, redirect to review
       if (data.status !== "recording") {
         navigate(`/session/${sessionId}`);
       }
@@ -68,36 +57,153 @@ export default function CapturePage() {
     }
   };
 
-  const handlePauseResume = () => {
-    if (isPaused) {
-      startTimeRef.current = Date.now() - (elapsedTime * 1000);
+  const handleSetupComplete = async (config: { enableFacecam: boolean; enableSystemAudio: boolean }) => {
+    const success = await capture.requestPermissions(config);
+    if (success) {
+      setSetupComplete(true);
+      // Auto-start recording
+      await capture.startRecording();
     }
-    setIsPaused(!isPaused);
+  };
+
+  const handlePauseResume = () => {
+    if (capture.isPaused) {
+      capture.resumeRecording();
+    } else {
+      capture.pauseRecording();
+    }
   };
 
   const handleEndCapture = async () => {
-    if (!session) return;
+    if (!session || !user) return;
     
-    setEnding(true);
+    setSaving(true);
     try {
+      // Stop recording and get data
+      const recordedData = await capture.stopRecording();
+      
+      if (!recordedData) {
+        throw new Error("No recorded data");
+      }
+
+      // Upload recorded files to storage
+      const uploadPromises: Promise<void>[] = [];
+      
+      // Upload screen recording
+      if (recordedData.screenBlob) {
+        const screenPath = `${user.id}/${session.id}/gameplay.webm`;
+        uploadPromises.push(
+          supabase.storage
+            .from("video-assets")
+            .upload(screenPath, recordedData.screenBlob, { contentType: "video/webm" })
+            .then(async ({ data, error }) => {
+              if (error) throw error;
+              const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(screenPath);
+              
+              await createVideoAsset({
+                session_id: session.id,
+                user_id: user.id,
+                asset_type: "gameplay",
+                storage_url: urlData.publicUrl,
+                storage_path: screenPath,
+                duration_ms: recordedData.duration * 1000,
+                status: "ready",
+                processing_progress: 100,
+                mime_type: "video/webm",
+                file_size_bytes: recordedData.screenBlob!.size,
+                width: null,
+                height: null,
+                framerate: null,
+                bitrate: null,
+                codec: null,
+                thumbnail_url: null,
+                thumbnail_sprite_url: null,
+                error_message: null,
+              });
+            })
+        );
+      }
+
+      // Upload microphone recording
+      if (recordedData.microphoneBlob) {
+        const micPath = `${user.id}/${session.id}/microphone.webm`;
+        uploadPromises.push(
+          supabase.storage
+            .from("audio-tracks")
+            .upload(micPath, recordedData.microphoneBlob, { contentType: "audio/webm" })
+            .then(async ({ data, error }) => {
+              if (error) throw error;
+              const { data: urlData } = supabase.storage.from("audio-tracks").getPublicUrl(micPath);
+              
+              await createAudioTrack({
+                session_id: session.id,
+                user_id: user.id,
+                video_asset_id: null,
+                track_type: "microphone",
+                track_name: "Microphone",
+                storage_url: urlData.publicUrl,
+                storage_path: micPath,
+                duration_ms: recordedData.duration * 1000,
+                status: "ready",
+                mime_type: "audio/webm",
+                file_size_bytes: recordedData.microphoneBlob!.size,
+                sample_rate: 48000,
+                channels: 1,
+                bitrate: null,
+                codec: null,
+                volume_level: 1.0,
+                is_muted: false,
+                offset_ms: 0,
+                waveform_data: null,
+              });
+            })
+        );
+      }
+
+      // Upload facecam recording if available
+      if (recordedData.facecamBlob) {
+        const facecamPath = `${user.id}/${session.id}/facecam.webm`;
+        uploadPromises.push(
+          supabase.storage
+            .from("facecam-tracks")
+            .upload(facecamPath, recordedData.facecamBlob, { contentType: "video/webm" })
+            .then(async ({ error }) => {
+              if (error) throw error;
+              // Create facecam track record - would need to add createFacecamTrack function
+            })
+        );
+      }
+
+      // Wait for all uploads
+      await Promise.all(uploadPromises);
+
+      // Update session status
       await updateCaptureSession(session.id, {
-        status: "processing",
-        duration_seconds: elapsedTime,
+        status: "ready",
+        duration_seconds: recordedData.duration,
       });
 
-      // Simulate processing delay then mark as ready
-      setTimeout(async () => {
-        await updateCaptureSession(session.id, { status: "ready" });
-      }, 2000);
-
-      toast.success("Capture ended! Processing...");
+      toast.success("Capture saved successfully!");
       navigate(`/session/${session.id}`);
     } catch (error: any) {
-      console.error("Error ending capture:", error);
-      toast.error("Failed to end capture");
-    } finally {
-      setEnding(false);
+      console.error("Error saving capture:", error);
+      toast.error(error.message || "Failed to save capture");
+      setSaving(false);
     }
+  };
+
+  const handleCancel = async () => {
+    capture.cancelRecording();
+    
+    if (session) {
+      try {
+        await updateCaptureSession(session.id, { status: "failed" });
+      } catch (error) {
+        console.error("Error updating session:", error);
+      }
+    }
+    
+    navigate("/");
   };
 
   const formatTime = (seconds: number) => {
@@ -123,112 +229,89 @@ export default function CapturePage() {
     return null;
   }
 
+  // Show permission error
+  if (capture.captureState === "error" && capture.error) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-8">
+          <div className="max-w-2xl mx-auto">
+            <PermissionError 
+              error={capture.error} 
+              onRetry={() => setSetupComplete(false)}
+              onCancel={handleCancel}
+            />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show setup screen
+  if (!setupComplete) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-8">
+          <div className="max-w-2xl mx-auto">
+            <Button
+              variant="ghost"
+              onClick={handleCancel}
+              className="mb-6"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+            
+            <CaptureSetup
+              session={session}
+              onStart={handleSetupComplete}
+              isLoading={capture.captureState === "requesting_permissions"}
+            />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
       <main className="container py-8">
-        <div className="max-w-3xl mx-auto">
-          {/* Recording Status */}
-          <Card className="p-8 bg-card border-border/50 mb-8">
-            <div className="text-center">
-              {/* Recording indicator */}
-              <div className="inline-flex items-center gap-2 mb-6">
-                <span className={`w-3 h-3 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 recording-pulse"}`} />
-                <Badge variant="outline" className={isPaused ? "border-yellow-500/30 text-yellow-400" : "border-red-500/30 text-red-400"}>
-                  {isPaused ? "PAUSED" : "RECORDING"}
-                </Badge>
-              </div>
-
-              {/* Timer */}
-              <div className="mb-6">
-                <p className="text-6xl font-bold font-mono-data text-foreground mb-2">
-                  {formatTime(elapsedTime)}
-                </p>
-                <p className="text-muted-foreground">{session.title}</p>
-                {session.game_name && (
-                  <p className="text-sm text-primary">{session.game_name}</p>
-                )}
-              </div>
-
-              {/* Simulated capture preview */}
-              <div className="aspect-video bg-muted/50 rounded-lg mb-8 flex items-center justify-center border border-border/50 overflow-hidden relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-muted/80 via-background to-muted/80" />
-                <div className="relative text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
-                    <div className={`w-8 h-8 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 recording-pulse"}`} />
-                  </div>
-                  <p className="text-muted-foreground">
-                    {isPaused ? "Capture paused" : "Capturing gameplay..."}
-                  </p>
-                  <p className="text-xs text-muted-foreground/70 mt-2">
-                    (Screen capture simulated in web preview)
-                  </p>
-                </div>
-              </div>
-
-              {/* Controls */}
-              <div className="flex items-center justify-center gap-4">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handlePauseResume}
-                  className="min-w-32"
-                >
-                  {isPaused ? (
-                    <>
-                      <Play className="mr-2 h-5 w-5" />
-                      Resume
-                    </>
-                  ) : (
-                    <>
-                      <Pause className="mr-2 h-5 w-5" />
-                      Pause
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="lg"
-                  variant="destructive"
-                  onClick={handleEndCapture}
-                  disabled={ending}
-                  className="min-w-32"
-                >
-                  {ending ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Ending...
-                    </>
-                  ) : (
-                    <>
-                      <Square className="mr-2 h-5 w-5" fill="currentColor" />
-                      End Capture
-                    </>
-                  )}
-                </Button>
-              </div>
+        <div className="max-w-4xl mx-auto">
+          {/* Session Info */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 mb-2">
+              <span className={`w-3 h-3 rounded-full ${capture.isPaused ? "bg-yellow-500" : "bg-red-500 recording-pulse"}`} />
+              <Badge variant="outline" className={capture.isPaused ? "border-yellow-500/30 text-yellow-400" : "border-red-500/30 text-red-400"}>
+                {capture.isPaused ? "PAUSED" : "RECORDING"}
+              </Badge>
+              <span className="text-2xl font-bold font-mono-data">{formatTime(capture.duration)}</span>
             </div>
-          </Card>
+            <h1 className="text-xl font-semibold">{session.title}</h1>
+            {session.game_name && (
+              <p className="text-sm text-primary">{session.game_name}</p>
+            )}
+          </div>
 
-          {/* Tips */}
-          <Card className="p-6 bg-card/50 border-border/50">
-            <h3 className="font-semibold mb-4">During Capture</h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <CheckCircle className="h-4 w-4 text-vantage-success mt-0.5 shrink-0" />
-                Your gameplay is being recorded continuously
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle className="h-4 w-4 text-vantage-success mt-0.5 shrink-0" />
-                You can pause and resume at any time
-              </li>
-              <li className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-vantage-warning mt-0.5 shrink-0" />
-                Annotations and voice notes can be added after capture
-              </li>
-            </ul>
-          </Card>
+          {/* Preview */}
+          <CapturePreview
+            screenStream={capture.screenStream}
+            facecamStream={capture.facecamStream}
+            isPaused={capture.isPaused}
+            microphoneLevel={capture.microphoneLevel}
+          />
+
+          {/* Controls */}
+          <CaptureControls
+            isRecording={capture.isRecording}
+            isPaused={capture.isPaused}
+            isSaving={saving}
+            onPauseResume={handlePauseResume}
+            onStop={handleEndCapture}
+            onCancel={handleCancel}
+          />
         </div>
       </main>
     </div>
