@@ -413,6 +413,68 @@ export async function deleteCaptureSession(sessionId: string, softDelete = true)
   }
 }
 
+// Permanent deletion - removes all associated data
+export async function permanentlyDeleteSession(sessionId: string, userId: string) {
+  // Delete storage files first
+  const storageDeletions = [
+    supabase.storage.from("video-assets").remove([`${userId}/${sessionId}/gameplay.webm`]),
+    supabase.storage.from("audio-tracks").remove([`${userId}/${sessionId}/microphone.webm`]),
+    supabase.storage.from("facecam-tracks").remove([`${userId}/${sessionId}/facecam.webm`]),
+  ];
+
+  // Delete voice note audio files
+  const { data: voiceNotes } = await supabase
+    .from("voice_notes")
+    .select("audio_url")
+    .eq("session_id", sessionId);
+
+  if (voiceNotes) {
+    const voiceNoteFiles = voiceNotes
+      .map(vn => {
+        try {
+          const url = new URL(vn.audio_url);
+          const path = url.pathname.split("/").slice(-3).join("/");
+          return path;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as string[];
+
+    if (voiceNoteFiles.length > 0) {
+      storageDeletions.push(
+        supabase.storage.from("voice-notes").remove(voiceNoteFiles)
+      );
+    }
+  }
+
+  // Run all storage deletions in parallel
+  await Promise.allSettled(storageDeletions);
+
+  // Delete database records (cascading from session)
+  // First delete child records
+  await Promise.all([
+    supabase.from("annotations").delete().eq("session_id", sessionId),
+    supabase.from("voice_notes").delete().eq("session_id", sessionId),
+    supabase.from("draw_annotations").delete().eq("session_id", sessionId),
+    supabase.from("timeline_events").delete().eq("session_id", sessionId),
+    supabase.from("social_comments").delete().eq("session_id", sessionId),
+    supabase.from("ai_analyses").delete().eq("session_id", sessionId),
+    supabase.from("session_shares").delete().eq("session_id", sessionId),
+    supabase.from("video_assets").delete().eq("session_id", sessionId),
+    supabase.from("audio_tracks").delete().eq("session_id", sessionId),
+    supabase.from("facecam_tracks").delete().eq("session_id", sessionId),
+  ]);
+
+  // Finally delete the session itself
+  const { error } = await supabase
+    .from("capture_sessions")
+    .delete()
+    .eq("id", sessionId);
+
+  if (error) throw error;
+}
+
 // Video Assets
 export async function createVideoAsset(data: Omit<VideoAsset, "id" | "created_at" | "updated_at" | "deleted_at">) {
   const { data: asset, error } = await supabase

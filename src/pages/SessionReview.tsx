@@ -9,6 +9,8 @@ import { AIAnalysisPanel } from "@/components/player/AIAnalysisPanel";
 import { FeedbackCardData } from "@/components/player/FeedbackCard";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { SocialCommentsPanel } from "@/components/social/SocialCommentsPanel";
+import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
+import { PrivacyBadge } from "@/components/privacy/PrivacyBadge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getCaptureSession,
@@ -19,6 +21,7 @@ import {
   getDrawAnnotations,
   createAIAnalysis,
   deleteAnnotation,
+  permanentlyDeleteSession,
   CaptureSession,
   Annotation,
   VoiceNote,
@@ -29,7 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Share2, Download, Gamepad2, MessageSquare } from "lucide-react";
+import { Loader2, ArrowLeft, Share2, Download, Gamepad2, MessageSquare, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -53,6 +56,8 @@ export default function SessionReview() {
   const [patterns, setPatterns] = useState<{ name: string; description: string; frequency: string; impact: "positive" | "negative" | "neutral" }[]>([]);
   const [recommendations, setRecommendations] = useState<{ text: string; priority: "high" | "medium" | "low"; category: string }[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const playerRef = useRef<{ enterDrawingMode: () => void } | null>(null);
 
   useEffect(() => {
@@ -221,6 +226,23 @@ export default function SessionReview() {
     setCurrentTime(time);
   }, []);
 
+  const handlePermanentDelete = useCallback(async () => {
+    if (!session || !user) return;
+
+    setIsDeleting(true);
+    try {
+      await permanentlyDeleteSession(session.id, user.id);
+      toast.success("Session permanently deleted");
+      navigate("/library");
+    } catch (error) {
+      console.error("Error deleting session:", error);
+      toast.error("Failed to delete session");
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+    }
+  }, [session, user, navigate]);
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -250,14 +272,15 @@ export default function SessionReview() {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-semibold">{session.title}</h1>
+                  <PrivacyBadge visibility={session.visibility as "private" | "unlisted" | "public"} />
                   <Badge
                     variant="outline"
                     className={
                       session.status === "ready"
                         ? "border-vantage-success/30 text-vantage-success"
                         : session.status === "processing"
-                        ? "border-yellow-500/30 text-yellow-500"
-                        : "border-red-500/30 text-red-500"
+                        ? "border-vantage-warning/30 text-vantage-warning"
+                        : "border-destructive/30 text-destructive"
                     }
                   >
                     {session.status}
@@ -284,6 +307,14 @@ export default function SessionReview() {
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
@@ -295,6 +326,15 @@ export default function SessionReview() {
         onOpenChange={setShareDialogOpen}
         sessionId={session.id}
         sessionTitle={session.title}
+      />
+
+      {/* Delete dialog */}
+      <DeleteSessionDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        sessionTitle={session.title}
+        onConfirmDelete={handlePermanentDelete}
+        isDeleting={isDeleting}
       />
 
       {/* Main content */}

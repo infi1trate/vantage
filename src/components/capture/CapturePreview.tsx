@@ -1,12 +1,19 @@
 import { useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
-import { Mic } from "lucide-react";
+import { ActiveCaptureIndicators } from "@/components/privacy/ActiveCaptureIndicators";
+import { Mic, Shield } from "lucide-react";
 
 interface CapturePreviewProps {
   screenStream: MediaStream | null;
   facecamStream: MediaStream | null;
   isPaused: boolean;
   microphoneLevel: number;
+  captureConfig?: {
+    screen: boolean;
+    microphone: boolean;
+    facecam: boolean;
+    systemAudio: boolean;
+  };
 }
 
 export function CapturePreview({
@@ -14,6 +21,7 @@ export function CapturePreview({
   facecamStream,
   isPaused,
   microphoneLevel,
+  captureConfig = { screen: true, microphone: true, facecam: false, systemAudio: true },
 }: CapturePreviewProps) {
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const facecamVideoRef = useRef<HTMLVideoElement>(null);
@@ -57,6 +65,9 @@ export function CapturePreview({
               <div className="w-8 h-8 rounded-full bg-vantage-warning" />
             </div>
             <p className="text-foreground font-medium">Recording Paused</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Your mic and camera are still active
+            </p>
           </div>
         </div>
       )}
@@ -71,8 +82,29 @@ export function CapturePreview({
             playsInline
             className="w-full h-full object-cover"
           />
+          {/* Camera active indicator */}
+          <div className="absolute top-1 right-1 flex items-center gap-1 bg-background/80 rounded-full px-1.5 py-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-vantage-success" />
+            <span className="text-[10px] text-foreground">CAM</span>
+          </div>
         </div>
       )}
+
+      {/* Top bar with active capture indicators */}
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+        <ActiveCaptureIndicators
+          isRecording={!!screenStream}
+          isPaused={isPaused}
+          captureConfig={captureConfig}
+          microphoneLevel={microphoneLevel}
+        />
+
+        {/* Privacy assurance */}
+        <div className="flex items-center gap-1.5 bg-vantage-success/10 border border-vantage-success/30 rounded-full px-2.5 py-1">
+          <Shield className="h-3 w-3 text-vantage-success" />
+          <span className="text-xs text-vantage-success font-medium">Private</span>
+        </div>
+      </div>
 
       {/* Microphone level indicator */}
       <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 rounded-full px-3 py-1.5">
@@ -83,15 +115,8 @@ export function CapturePreview({
             style={{ width: `${Math.min(microphoneLevel * 100 * 2, 100)}%` }}
           />
         </div>
+        <span className="text-xs text-muted-foreground">MIC</span>
       </div>
-
-      {/* Recording indicator */}
-      {!isPaused && (
-        <div className="absolute top-4 left-4 flex items-center gap-2 bg-background/80 rounded-full px-3 py-1.5">
-          <span className="w-2 h-2 rounded-full bg-destructive recording-pulse" />
-          <span className="text-xs text-foreground font-medium">REC</span>
-        </div>
-      )}
     </Card>
   );
 }
