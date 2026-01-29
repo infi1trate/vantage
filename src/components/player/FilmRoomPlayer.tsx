@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Annotation, VoiceNote, TimelineEvent } from "@/lib/captures";
+import { Annotation, VoiceNote, TimelineEvent, DrawAnnotation } from "@/lib/captures";
 import { WaveformVisualizer } from "./WaveformVisualizer";
 import { LayeredTimeline } from "./LayeredTimeline";
+import { DrawingCanvas } from "./DrawingCanvas";
+import { useVoiceAnnotationSync } from "@/hooks/useVoiceAnnotationSync";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
@@ -26,7 +30,6 @@ import {
   Minimize,
   SkipBack, 
   SkipForward,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Rewind,
@@ -34,11 +37,14 @@ import {
   Layers,
   Gauge,
   Video,
-  Mic
+  Mic,
+  Pencil,
+  VolumeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FilmRoomPlayerProps {
+  sessionId: string;
   videoUrl?: string | null;
   audioUrl?: string | null;
   duration: number;
@@ -47,9 +53,11 @@ interface FilmRoomPlayerProps {
   onSeek: (time: number) => void;
   annotations: Annotation[];
   voiceNotes: VoiceNote[];
+  drawAnnotations?: DrawAnnotation[];
   events?: TimelineEvent[];
   onAnnotationClick?: (annotation: Annotation) => void;
   onEventClick?: (event: TimelineEvent) => void;
+  onDrawingCreated?: (drawing: DrawAnnotation) => void;
 }
 
 const PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -57,6 +65,7 @@ const FRAME_RATE = 30; // Assume 30fps for frame stepping
 const FRAME_DURATION = 1 / FRAME_RATE;
 
 export function FilmRoomPlayer({
+  sessionId,
   videoUrl,
   audioUrl,
   duration,
@@ -65,9 +74,11 @@ export function FilmRoomPlayer({
   onSeek,
   annotations,
   voiceNotes,
+  drawAnnotations = [],
   events = [],
   onAnnotationClick,
   onEventClick,
+  onDrawingCreated,
 }: FilmRoomPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -79,12 +90,47 @@ export function FilmRoomPlayer({
   const [showWaveform, setShowWaveform] = useState(true);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPosition, setHoverPosition] = useState(0);
+  const [showDrawingCanvas, setShowDrawingCanvas] = useState(false);
+  const [voiceSyncEnabled, setVoiceSyncEnabled] = useState(true);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoAreaRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const playbackRef = useRef<NodeJS.Timeout | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Voice annotation sync
+  const {
+    activeVoiceNote,
+    isPlayingVoiceNote,
+    setEnabled: setVoiceSyncEnabledInternal,
+  } = useVoiceAnnotationSync({
+    voiceNotes,
+    currentTime,
+    isVideoPlaying: isPlaying,
+    enabled: voiceSyncEnabled,
+  });
+
+  // Toggle voice sync
+  const handleVoiceSyncToggle = useCallback((enabled: boolean) => {
+    setVoiceSyncEnabled(enabled);
+    setVoiceSyncEnabledInternal(enabled);
+  }, [setVoiceSyncEnabledInternal]);
+
+  // Pause video when opening drawing canvas
+  const handleOpenDrawingCanvas = useCallback(() => {
+    setIsPlaying(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+    setShowDrawingCanvas(true);
+  }, []);
+
+  // Handle drawing created
+  const handleDrawingCreated = useCallback((drawing: DrawAnnotation) => {
+    onDrawingCreated?.(drawing);
+  }, [onDrawingCreated]);
 
   // Simulated playback for demo
   useEffect(() => {
@@ -375,7 +421,7 @@ export function FilmRoomPlayer({
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
       {/* Video area */}
-      <div className="relative flex-1 min-h-0 bg-muted/20">
+      <div ref={videoAreaRef} className="relative flex-1 min-h-0 bg-muted/20">
         {/* Video or placeholder */}
         {videoUrl ? (
           <video
@@ -398,11 +444,32 @@ export function FilmRoomPlayer({
           </div>
         )}
 
+        {/* Drawing Canvas Overlay */}
+        {showDrawingCanvas && videoAreaRef.current && (
+          <DrawingCanvas
+            sessionId={sessionId}
+            currentTime={currentTime}
+            isVisible={showDrawingCanvas}
+            onClose={() => setShowDrawingCanvas(false)}
+            onDrawingCreated={handleDrawingCreated}
+            containerRef={videoAreaRef}
+          />
+        )}
+
+        {/* Active voice note indicator */}
+        {activeVoiceNote && (
+          <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/90 backdrop-blur-sm text-accent-foreground">
+            <Mic className="h-4 w-4 animate-pulse" />
+            <span className="text-sm font-medium">Voice note playing</span>
+          </div>
+        )}
+
         {/* Center play button */}
         <div 
           className={cn(
             "absolute inset-0 flex items-center justify-center transition-opacity duration-300",
-            showControls || !isPlaying ? "opacity-100" : "opacity-0"
+            showControls || !isPlaying ? "opacity-100" : "opacity-0",
+            showDrawingCanvas && "pointer-events-none opacity-0"
           )}
         >
           <button 
@@ -418,7 +485,7 @@ export function FilmRoomPlayer({
         </div>
 
         {/* Playback speed indicator */}
-        {playbackSpeed !== 1 && (
+        {playbackSpeed !== 1 && !showDrawingCanvas && (
           <div className="absolute top-4 right-4 px-2 py-1 rounded bg-background/80 backdrop-blur-sm">
             <span className="text-sm font-mono-data font-medium">{playbackSpeed}x</span>
           </div>
@@ -730,6 +797,41 @@ export function FilmRoomPlayer({
                 </TooltipTrigger>
                 <TooltipContent>Toggle timeline tracks</TooltipContent>
               </Tooltip>
+
+              {/* Draw button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={showDrawingCanvas ? "secondary" : "ghost"} 
+                    size="icon" 
+                    className="h-8 w-8"
+                    onClick={handleOpenDrawingCanvas}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Draw on frame (D)</TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* Voice sync toggle */}
+            <div className="flex items-center gap-2 ml-2 border-l border-border/50 pl-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      id="voice-sync"
+                      checked={voiceSyncEnabled}
+                      onCheckedChange={handleVoiceSyncToggle}
+                      className="h-4 w-7"
+                    />
+                    <Label htmlFor="voice-sync" className="text-xs text-muted-foreground cursor-pointer">
+                      Voice Sync
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Auto-play voice notes at their timestamps</TooltipContent>
+              </Tooltip>
             </div>
 
             {/* Fullscreen */}
@@ -755,6 +857,7 @@ export function FilmRoomPlayer({
           <span><kbd className="px-1 py-0.5 rounded bg-muted text-muted-foreground">←/→</kbd> Skip 5s</span>
           <span><kbd className="px-1 py-0.5 rounded bg-muted text-muted-foreground">,/.</kbd> Frame step</span>
           <span><kbd className="px-1 py-0.5 rounded bg-muted text-muted-foreground">[/]</kbd> Prev/Next marker</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted text-muted-foreground">D</kbd> Draw</span>
         </div>
       </div>
     </div>
