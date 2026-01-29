@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createAudioTrack } from "@/lib/captures";
+import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createAudioTrack, createFacecamTrack } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager, RecordedData } from "@/hooks/useCaptureManager";
 import { CapturePreview } from "@/components/capture/CapturePreview";
@@ -167,9 +167,30 @@ export default function CapturePage() {
           supabase.storage
             .from("facecam-tracks")
             .upload(facecamPath, recordedData.facecamBlob, { contentType: "video/webm" })
-            .then(async ({ error }) => {
+            .then(async ({ data, error }) => {
               if (error) throw error;
-              // Create facecam track record - would need to add createFacecamTrack function
+              const { data: urlData } = supabase.storage.from("facecam-tracks").getPublicUrl(facecamPath);
+              
+              await createFacecamTrack({
+                session_id: session.id,
+                user_id: user.id,
+                video_asset_id: null,
+                storage_url: urlData.publicUrl,
+                storage_path: facecamPath,
+                duration_ms: recordedData.duration * 1000,
+                status: "ready",
+                file_size_bytes: recordedData.facecamBlob!.size,
+                width: null,
+                height: null,
+                framerate: null,
+                position_x: 0.85,
+                position_y: 0.75,
+                scale: 0.2,
+                opacity: 1,
+                border_radius: 8,
+                is_visible: true,
+                offset_ms: 0,
+              });
             })
         );
       }
