@@ -527,6 +527,7 @@ export async function createAnnotation(
   type: AnnotationType = "marker",
   title?: string,
   content?: string,
+  tags?: string[],
   color?: string
 ) {
   const { data, error } = await supabase
@@ -538,6 +539,7 @@ export async function createAnnotation(
       annotation_type: type,
       title,
       content,
+      tags: tags || null,
       color: color || "#00E5FF",
     })
     .select()

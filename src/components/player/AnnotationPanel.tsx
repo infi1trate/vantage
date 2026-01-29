@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Annotation, createAnnotation } from "@/lib/captures";
+import { TagSelector } from "./TagSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,8 @@ import {
   Bookmark,
   ChevronDown,
   Trash2,
-  X
+  X,
+  Tag
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -58,6 +60,7 @@ export function AnnotationPanel({
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const formatTime = (seconds: number) => {
@@ -96,13 +99,15 @@ export function AnnotationPanel({
         currentTime,
         selectedType,
         title || undefined,
-        content || undefined
+        content || undefined,
+        tags.length > 0 ? tags : undefined
       );
       onAnnotationCreated(annotation);
       toast.success("Annotation added");
       setShowAddForm(false);
       setTitle("");
       setContent("");
+      setTags([]);
     } catch (error) {
       console.error("Error creating annotation:", error);
       toast.error("Failed to create annotation");
@@ -211,6 +216,15 @@ export function AnnotationPanel({
               className="bg-background resize-none"
               rows={2}
             />
+            
+            {/* Tag selector */}
+            <div className="pt-1">
+              <TagSelector
+                selectedTags={tags}
+                onTagsChange={setTags}
+              />
+            </div>
+
             <Button type="submit" size="sm" disabled={loading} className="w-full">
               Add Annotation
             </Button>
@@ -259,6 +273,20 @@ export function AnnotationPanel({
                           <p className="text-xs text-muted-foreground line-clamp-2">
                             {annotation.content}
                           </p>
+                        )}
+                        {annotation.tags && annotation.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {annotation.tags.slice(0, 3).map((tag) => (
+                              <Badge key={tag} variant="secondary" className="text-xs h-4 px-1">
+                                {tag}
+                              </Badge>
+                            ))}
+                            {annotation.tags.length > 3 && (
+                              <Badge variant="secondary" className="text-xs h-4 px-1">
+                                +{annotation.tags.length - 3}
+                              </Badge>
+                            )}
+                          </div>
                         )}
                       </div>
                       {onAnnotationDelete && (

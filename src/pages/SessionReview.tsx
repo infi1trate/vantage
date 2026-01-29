@@ -12,6 +12,7 @@ import {
   getVoiceNotes,
   getAIAnalysis,
   getTimelineEvents,
+  getDrawAnnotations,
   createAIAnalysis,
   deleteAnnotation,
   CaptureSession,
@@ -19,6 +20,7 @@ import {
   VoiceNote,
   AIAnalysis,
   TimelineEvent,
+  DrawAnnotation,
 } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +39,7 @@ export default function SessionReview() {
   const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
   const [analyses, setAnalyses] = useState<AIAnalysis[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [drawAnnotations, setDrawAnnotations] = useState<DrawAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [activePanel, setActivePanel] = useState<"annotations" | "voice" | "ai">("annotations");
@@ -56,12 +59,13 @@ export default function SessionReview() {
 
   const loadSessionData = async () => {
     try {
-      const [sessionData, annotationsData, voiceNotesData, analysesData, eventsData] = await Promise.all([
+      const [sessionData, annotationsData, voiceNotesData, analysesData, eventsData, drawingsData] = await Promise.all([
         getCaptureSession(sessionId!),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
         getAIAnalysis(sessionId!),
-        getTimelineEvents(sessionId!).catch(() => []), // May not exist yet
+        getTimelineEvents(sessionId!).catch(() => []),
+        getDrawAnnotations(sessionId!).catch(() => []),
       ]);
 
       setSession(sessionData);
@@ -69,6 +73,7 @@ export default function SessionReview() {
       setVoiceNotes(voiceNotesData);
       setAnalyses(analysesData);
       setEvents(eventsData);
+      setDrawAnnotations(drawingsData);
 
       // If session is still processing, poll for updates
       if (sessionData.status === "processing") {
@@ -116,6 +121,10 @@ export default function SessionReview() {
 
   const handleVoiceNoteClick = useCallback((voiceNote: VoiceNote) => {
     setCurrentTime(voiceNote.timestamp_seconds);
+  }, []);
+
+  const handleDrawingCreated = useCallback((drawing: DrawAnnotation) => {
+    setDrawAnnotations((prev) => [...prev, drawing].sort((a, b) => a.timestamp_ms - b.timestamp_ms));
   }, []);
 
   const handleRequestAnalysis = useCallback(async () => {
@@ -228,6 +237,7 @@ export default function SessionReview() {
           {/* Video player - 2 columns */}
           <div className="lg:col-span-2 flex flex-col">
             <FilmRoomPlayer
+              sessionId={session.id}
               videoUrl={session.video_url}
               duration={duration}
               currentTime={currentTime}
@@ -235,8 +245,10 @@ export default function SessionReview() {
               onSeek={handleSeek}
               annotations={annotations}
               voiceNotes={voiceNotes}
+              drawAnnotations={drawAnnotations}
               events={events}
               onAnnotationClick={handleAnnotationClick}
+              onDrawingCreated={handleDrawingCreated}
             />
           </div>
 
