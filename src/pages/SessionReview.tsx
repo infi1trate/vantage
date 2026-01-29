@@ -19,6 +19,8 @@ import {
   getAIAnalysis,
   getTimelineEvents,
   getDrawAnnotations,
+  getVideoAssets,
+  getAudioTracks,
   createAIAnalysis,
   deleteAnnotation,
   permanentlyDeleteSession,
@@ -28,6 +30,8 @@ import {
   AIAnalysis,
   TimelineEvent,
   DrawAnnotation,
+  VideoAsset,
+  AudioTrack,
 } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +46,8 @@ export default function SessionReview() {
   const navigate = useNavigate();
 
   const [session, setSession] = useState<CaptureSession | null>(null);
+  const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
   const [analyses, setAnalyses] = useState<AIAnalysis[]>([]);
@@ -74,8 +80,10 @@ export default function SessionReview() {
 
   const loadSessionData = async () => {
     try {
-      const [sessionData, annotationsData, voiceNotesData, analysesData, eventsData, drawingsData] = await Promise.all([
+      const [sessionData, videoAssetsData, audioTracksData, annotationsData, voiceNotesData, analysesData, eventsData, drawingsData] = await Promise.all([
         getCaptureSession(sessionId!),
+        getVideoAssets(sessionId!).catch(() => []),
+        getAudioTracks(sessionId!).catch(() => []),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
         getAIAnalysis(sessionId!),
@@ -84,6 +92,8 @@ export default function SessionReview() {
       ]);
 
       setSession(sessionData);
+      setVideoAssets(videoAssetsData);
+      setAudioTracks(audioTracksData);
       setAnnotations(annotationsData);
       setVoiceNotes(voiceNotesData);
       setAnalyses(analysesData);
@@ -255,7 +265,9 @@ export default function SessionReview() {
     return null;
   }
 
-  const duration = session.duration_seconds || 300; // Default 5 min for demo
+  const duration = session.duration_seconds || (videoAssets[0]?.duration_ms ? videoAssets[0].duration_ms / 1000 : 300);
+  const videoUrl = videoAssets.find(v => v.asset_type === "gameplay")?.storage_url || session.video_url;
+  const microphoneTrack = audioTracks.find(t => t.track_type === "microphone");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -344,7 +356,8 @@ export default function SessionReview() {
           <div className="lg:col-span-2 flex flex-col">
             <FilmRoomPlayer
               sessionId={session.id}
-              videoUrl={session.video_url}
+              videoUrl={videoUrl}
+              audioUrl={microphoneTrack?.storage_url}
               duration={duration}
               currentTime={currentTime}
               onTimeUpdate={handleTimeUpdate}
