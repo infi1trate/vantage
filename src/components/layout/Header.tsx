@@ -54,6 +54,12 @@ export function Header() {
           >
             Library
           </Link>
+          <Link 
+            to="/insights" 
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Insights
+          </Link>
         </nav>
 
         {/* User Menu */}

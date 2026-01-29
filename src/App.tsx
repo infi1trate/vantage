@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import Capture from "./pages/Capture";
 import SessionReview from "./pages/SessionReview";
 import SessionLibrary from "./pages/SessionLibrary";
+import Insights from "./pages/Insights";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/library" element={<SessionLibrary />} />
+            <Route path="/insights" element={<Insights />} />
             <Route path="/capture/:sessionId" element={<Capture />} />
             <Route path="/session/:sessionId" element={<SessionReview />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
