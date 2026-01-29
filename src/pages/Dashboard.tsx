@@ -131,7 +131,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold">Recent Captures</h2>
             {sessions.length > 6 && (
-              <Button variant="ghost" onClick={() => navigate("/captures")}>
+              <Button variant="ghost" onClick={() => navigate("/library")}>
                 View all
               </Button>
             )}

@@ -49,10 +49,10 @@ export function Header() {
             Dashboard
           </Link>
           <Link 
-            to="/captures" 
+            to="/library" 
             className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
-            Captures
+            Library
           </Link>
         </nav>
 
