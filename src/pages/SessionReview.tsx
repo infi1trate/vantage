@@ -6,6 +6,8 @@ import { FilmRoomPlayer } from "@/components/player/FilmRoomPlayer";
 import { AnnotationPanel } from "@/components/player/AnnotationPanel";
 import { VoiceNotePanel } from "@/components/player/VoiceNotePanel";
 import { AIAnalysisPanel } from "@/components/player/AIAnalysisPanel";
+import { FeedbackCardData } from "@/components/player/FeedbackCard";
+import { supabase } from "@/integrations/supabase/client";
 import {
   getCaptureSession,
   getAnnotations,
@@ -44,6 +46,10 @@ export default function SessionReview() {
   const [currentTime, setCurrentTime] = useState(0);
   const [activePanel, setActivePanel] = useState<"annotations" | "voice" | "ai">("annotations");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [feedbackCards, setFeedbackCards] = useState<FeedbackCardData[]>([]);
+  const [patterns, setPatterns] = useState<{ name: string; description: string; frequency: string; impact: "positive" | "negative" | "neutral" }[]>([]);
+  const [recommendations, setRecommendations] = useState<{ text: string; priority: "high" | "medium" | "low"; category: string }[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -131,37 +137,85 @@ export default function SessionReview() {
     if (!session || !user) return;
 
     setIsAnalyzing(true);
-    try {
-      // Simulate AI analysis (in production, this would call an edge function)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+    setAnalysisError(null);
 
-      const mockAnalysis = await createAIAnalysis(
+    try {
+      // Prepare session data for analysis
+      const sessionData = {
+        title: session.title,
+        game_name: session.game_name,
+        duration_seconds: session.duration_seconds,
+        annotations: annotations.map(a => ({
+          id: a.id,
+          timestamp_seconds: a.timestamp_seconds,
+          annotation_type: a.annotation_type,
+          title: a.title,
+          content: a.content,
+          tags: a.tags,
+        })),
+        voice_notes: voiceNotes.map(v => ({
+          id: v.id,
+          timestamp_seconds: v.timestamp_seconds,
+          duration_seconds: v.duration_seconds,
+          transcription: v.transcription,
+        })),
+        events: events.map(e => ({
+          id: e.id,
+          timestamp_ms: e.timestamp_ms,
+          event_type: e.event_type,
+          title: e.title,
+          description: e.description,
+        })),
+      };
+
+      // Call edge function
+      const { data, error } = await supabase.functions.invoke('analyze-gameplay', {
+        body: { session: sessionData },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Analysis failed');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Update state with results
+      setFeedbackCards(data.feedback_cards || []);
+      setPatterns(data.patterns || []);
+      setRecommendations(data.recommendations || []);
+
+      // Save to database
+      const newAnalysis = await createAIAnalysis(
         session.id,
         "general",
-        "Overall solid gameplay with good mechanical skills. Some improvements needed in positioning and utility usage.",
-        [
-          { type: "positive", title: "Strong aim", description: "Headshot percentage above average at 42%" },
-          { type: "positive", title: "Good economy management", description: "Consistent save/buy decisions" },
-          { type: "warning", title: "Positioning", description: "Often caught in unfavorable positions during retakes" },
-          { type: "neutral", title: "Utility usage", description: "Smoke placement could be more optimal" },
-        ],
-        [
-          { text: "Practice crosshair placement when clearing corners", priority: "high" },
-          { text: "Work on post-plant positioning to avoid predictable angles", priority: "medium" },
-          { text: "Review common smoke lineups for your main maps", priority: "low" },
-        ],
-        75
+        data.summary,
+        data.feedback_cards?.map((card: FeedbackCardData) => ({
+          type: card.type === "strength" ? "positive" : card.type === "improvement" ? "warning" : "neutral",
+          title: card.title,
+          description: card.description,
+          timestamp_ms: card.timestamp_seconds * 1000,
+        })) || [],
+        data.recommendations || [],
+        data.overall_score
       );
 
-      setAnalyses((prev) => [mockAnalysis, ...prev]);
+      setAnalyses((prev) => [newAnalysis, ...prev]);
       toast.success("Analysis complete!");
     } catch (error) {
       console.error("Error running analysis:", error);
-      toast.error("Failed to analyze gameplay");
+      const errorMessage = error instanceof Error ? error.message : "Failed to analyze gameplay";
+      setAnalysisError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [session, user]);
+  }, [session, user, annotations, voiceNotes, events]);
+
+  const handleSeekFromAnalysis = useCallback((time: number) => {
+    setCurrentTime(time);
+  }, []);
 
   if (authLoading || loading) {
     return (
@@ -285,8 +339,13 @@ export default function SessionReview() {
               <TabsContent value="ai" className="flex-1 mt-0 min-h-0">
                 <AIAnalysisPanel
                   analyses={analyses}
+                  feedbackCards={feedbackCards}
+                  patterns={patterns}
+                  recommendations={recommendations}
                   onRequestAnalysis={handleRequestAnalysis}
+                  onSeekTo={handleSeekFromAnalysis}
                   isAnalyzing={isAnalyzing}
+                  analysisError={analysisError}
                 />
               </TabsContent>
             </Tabs>
