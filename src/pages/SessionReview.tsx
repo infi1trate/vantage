@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -7,6 +7,8 @@ import { AnnotationPanel } from "@/components/player/AnnotationPanel";
 import { VoiceNotePanel } from "@/components/player/VoiceNotePanel";
 import { AIAnalysisPanel } from "@/components/player/AIAnalysisPanel";
 import { FeedbackCardData } from "@/components/player/FeedbackCard";
+import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
+import { SocialCommentsPanel } from "@/components/social/SocialCommentsPanel";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getCaptureSession,
@@ -27,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Share2, Download, Gamepad2 } from "lucide-react";
+import { Loader2, ArrowLeft, Share2, Download, Gamepad2, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -44,12 +46,14 @@ export default function SessionReview() {
   const [drawAnnotations, setDrawAnnotations] = useState<DrawAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
-  const [activePanel, setActivePanel] = useState<"annotations" | "voice" | "ai">("annotations");
+  const [activePanel, setActivePanel] = useState<"annotations" | "voice" | "ai" | "social">("annotations");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [feedbackCards, setFeedbackCards] = useState<FeedbackCardData[]>([]);
   const [patterns, setPatterns] = useState<{ name: string; description: string; frequency: string; impact: "positive" | "negative" | "neutral" }[]>([]);
   const [recommendations, setRecommendations] = useState<{ text: string; priority: "high" | "medium" | "low"; category: string }[]>([]);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const playerRef = useRef<{ enterDrawingMode: () => void } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -272,7 +276,7 @@ export default function SessionReview() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => setShareDialogOpen(true)}>
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
@@ -284,6 +288,14 @@ export default function SessionReview() {
           </div>
         </div>
       </div>
+
+      {/* Share dialog */}
+      <ShareSessionDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        sessionId={session.id}
+        sessionTitle={session.title}
+      />
 
       {/* Main content */}
       <div className="flex-1 container py-6">
@@ -309,9 +321,13 @@ export default function SessionReview() {
           {/* Side panel - 1 column */}
           <div className="flex flex-col h-full">
             <Tabs value={activePanel} onValueChange={(v) => setActivePanel(v as any)} className="flex flex-col h-full">
-              <TabsList className="grid w-full grid-cols-3 mb-4">
-                <TabsTrigger value="annotations">Annotations</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-4 mb-4">
+                <TabsTrigger value="annotations">Notes</TabsTrigger>
                 <TabsTrigger value="voice">Voice</TabsTrigger>
+                <TabsTrigger value="social" className="gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  Social
+                </TabsTrigger>
                 <TabsTrigger value="ai">AI</TabsTrigger>
               </TabsList>
 
@@ -333,6 +349,16 @@ export default function SessionReview() {
                   voiceNotes={voiceNotes}
                   onVoiceNoteCreated={handleVoiceNoteCreated}
                   onVoiceNoteClick={handleVoiceNoteClick}
+                />
+              </TabsContent>
+
+              <TabsContent value="social" className="flex-1 mt-0 min-h-0">
+                <SocialCommentsPanel
+                  sessionId={session.id}
+                  currentTime={currentTime}
+                  onSeekTo={handleSeek}
+                  onStartDrawing={() => playerRef.current?.enterDrawingMode?.()}
+                  onStartVoiceNote={() => setActivePanel("voice")}
                 />
               </TabsContent>
 
