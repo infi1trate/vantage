@@ -156,7 +156,9 @@ export function CaptureControls({
         <Alert variant="destructive" className="w-full max-w-xl">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle className="uppercase tracking-wider text-xs">
-            {inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED"
+            {inlineError.code === "SAFARI_NOT_SUPPORTED"
+              ? "Recording Not Supported in Safari"
+              : inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED"
               ? "This Browser Can't Record This Format"
               : inlineError.code === "STREAM_NOT_READY"
               ? "Capture Stream Not Ready"
@@ -307,8 +309,10 @@ export function CaptureControls({
                 {copied ? "Copied" : "Copy Diagnostics"}
               </Button>
               
-              {/* Show Chrome link only for browser capability errors */}
-              {(inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED") && (
+              {/* Show Chrome link for browser capability errors including Safari */}
+              {(inlineError.code === "NO_COMPATIBLE_FORMAT" || 
+                inlineError.code === "RECORDER_UNSUPPORTED" ||
+                inlineError.code === "SAFARI_NOT_SUPPORTED") && (
                 <a
                   href="https://www.google.com/chrome/"
                   target="_blank"
