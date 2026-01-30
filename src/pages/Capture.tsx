@@ -200,13 +200,21 @@ export default function CapturePage() {
           if (uploadError) {
             console.warn("[Capture] Supabase upload failed, but local save succeeded:", uploadError);
           } else {
-            const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(compositePath);
+            // Use signed URL for private bucket access (24 hour expiration)
+            const { data: urlData, error: urlError } = await supabase.storage
+              .from("video-assets")
+              .createSignedUrl(compositePath, 86400);
+            
+            if (urlError) {
+              console.warn("[Capture] Failed to create signed URL:", urlError);
+              return;
+            }
             
             await createVideoAsset({
               session_id: session.id,
               user_id: user.id,
               asset_type: "gameplay",
-              storage_url: urlData.publicUrl,
+              storage_url: urlData.signedUrl,
               storage_path: compositePath,
               duration_ms: recordedData.duration * 1000,
               status: "ready",
