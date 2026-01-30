@@ -101,6 +101,7 @@ export default function SessionReview() {
   // AI Suggestions state
   const [suggestions, setSuggestions] = useState<AnnotationSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [coachError, setCoachError] = useState<string | null>(null);
   
   // Keyboard shortcuts overlay
   const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts();
@@ -342,6 +343,7 @@ export default function SessionReview() {
     if (!sessionIdToUse) return;
     
     setIsLoadingSuggestions(true);
+    setCoachError(null);
     try {
       // Fetch timeline events for context
       const events = await getTimelineEvents(sessionIdToUse).catch(() => []);
@@ -379,6 +381,7 @@ export default function SessionReview() {
       }
     } catch (error) {
       console.error("Failed to generate suggestions:", error);
+      setCoachError(error instanceof Error ? error.message : "Failed to analyze session");
       toast.error("Failed to generate suggestions");
     } finally {
       setIsLoadingSuggestions(false);
@@ -773,6 +776,8 @@ export default function SessionReview() {
               onSuggestionDismiss={handleSuggestionDismiss}
               onGenerateSuggestions={handleGenerateSuggestions}
               isLoadingSuggestions={isLoadingSuggestions}
+              coachError={coachError}
+              commentsEnabled={false}
             />
           )}
         </div>
