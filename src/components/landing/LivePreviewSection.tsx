@@ -1,6 +1,7 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useRef, useState, useEffect } from "react";
 import { Crosshair, Skull, Star, MessageSquare } from "lucide-react";
+import codMobileGameplay from "@/assets/cod-mobile-gameplay.jpg";
 
 interface Annotation {
   id: number;
@@ -108,8 +109,15 @@ export function LivePreviewSection() {
           className="relative max-w-5xl mx-auto"
         >
           <div className="relative aspect-video rounded-2xl overflow-hidden border border-border/40 bg-card/30 shadow-elevated">
-            {/* Gameplay background with scan effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-muted/30 to-background">
+            {/* Gameplay background image */}
+            <img 
+              src={codMobileGameplay} 
+              alt="Call of Duty Mobile gameplay screenshot" 
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            
+            {/* Grid overlay with scan effect */}
+            <div className="absolute inset-0 bg-gradient-to-br from-muted/30 to-background/60">
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.008)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.008)_1px,transparent_1px)] bg-[size:36px_36px]" />
               
               {/* Scan line */}
