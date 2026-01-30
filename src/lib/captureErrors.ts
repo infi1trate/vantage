@@ -14,6 +14,7 @@ export type CaptureErrorCode =
   | "NO_COMPATIBLE_FORMAT"
   | "COMPOSITING_FAILED"
   | "DEVICE_NOT_FOUND"
+  | "STREAM_NOT_READY"
   | "UNKNOWN";
 
 export interface CaptureError {
@@ -202,6 +203,22 @@ export function getCaptureErrorInfo(error: CaptureError): CaptureErrorInfo {
         primaryActionLabel: "Try Again",
       };
 
+    case "STREAM_NOT_READY":
+      return {
+        title: "Capture Stream Not Ready",
+        description: error.message || "The capture stream is not in a valid state for recording.",
+        icon: "recording",
+        steps: [
+          "Check that your screen share is still active",
+          "Verify your microphone is connected and working",
+          "Try stopping and restarting the preview",
+          "If the issue persists, refresh the page",
+        ],
+        showBrowserSettings: false,
+        primaryAction: "retry",
+        primaryActionLabel: "Retry",
+      };
+
     case "DEVICE_NOT_FOUND":
       return {
         title: "Device Not Found",
@@ -373,5 +390,111 @@ export function createStreamEndedError(trackKind: string): CaptureError {
     code: "STREAM_ENDED",
     message: `The ${trackKind} stream ended unexpectedly. Please start a new recording.`,
     recoverable: true,
+  };
+}
+
+/**
+ * Validation result for composite stream
+ */
+export interface StreamValidationResult {
+  valid: boolean;
+  error?: CaptureError;
+  videoTracks: number;
+  audioTracks: number;
+  failedTrack?: {
+    kind: "video" | "audio";
+    issue: "missing" | "ended" | "multiple" | "not_live";
+    label?: string;
+  };
+}
+
+/**
+ * Validate composite stream before creating MediaRecorder
+ * Requirements:
+ * - Exactly 1 video track with readyState="live"
+ * - At most 1 audio track (preferably 1 mixed track)
+ * - No track should be ended
+ */
+export function validateCompositeStream(stream: MediaStream): StreamValidationResult {
+  const videoTracks = stream.getVideoTracks();
+  const audioTracks = stream.getAudioTracks();
+  
+  // Check video tracks
+  if (videoTracks.length === 0) {
+    return {
+      valid: false,
+      videoTracks: 0,
+      audioTracks: audioTracks.length,
+      failedTrack: { kind: "video", issue: "missing" },
+      error: {
+        code: "STREAM_NOT_READY",
+        message: "No video track found in capture stream.",
+        recoverable: true,
+        details: "The composite stream has no video track. This may happen if screen capture was stopped.",
+      },
+    };
+  }
+  
+  if (videoTracks.length > 1) {
+    return {
+      valid: false,
+      videoTracks: videoTracks.length,
+      audioTracks: audioTracks.length,
+      failedTrack: { kind: "video", issue: "multiple" },
+      error: {
+        code: "STREAM_NOT_READY",
+        message: `Found ${videoTracks.length} video tracks, expected exactly 1.`,
+        recoverable: true,
+        details: `Video tracks: ${videoTracks.map(t => `${t.label || 'unnamed'} (${t.readyState})`).join(', ')}`,
+      },
+    };
+  }
+  
+  const videoTrack = videoTracks[0];
+  if (videoTrack.readyState !== "live") {
+    return {
+      valid: false,
+      videoTracks: 1,
+      audioTracks: audioTracks.length,
+      failedTrack: { kind: "video", issue: videoTrack.readyState === "ended" ? "ended" : "not_live", label: videoTrack.label },
+      error: {
+        code: "STREAM_NOT_READY",
+        message: `Video track is not live (state: ${videoTrack.readyState}).`,
+        recoverable: true,
+        details: `Video track "${videoTrack.label || 'unnamed'}" has readyState="${videoTrack.readyState}". It may have been stopped.`,
+      },
+    };
+  }
+  
+  // Check audio tracks
+  if (audioTracks.length > 1) {
+    // This shouldn't happen with our audio mixer, but log it
+    console.warn(`[StreamValidation] Found ${audioTracks.length} audio tracks, expected at most 1. Audio may not be properly mixed.`);
+    // We'll still allow this but log a warning - the composite recorder should only produce 1 mixed track
+  }
+  
+  // Check for ended audio tracks
+  for (const audioTrack of audioTracks) {
+    if (audioTrack.readyState === "ended") {
+      return {
+        valid: false,
+        videoTracks: 1,
+        audioTracks: audioTracks.length,
+        failedTrack: { kind: "audio", issue: "ended", label: audioTrack.label },
+        error: {
+          code: "STREAM_NOT_READY",
+          message: `Audio track "${audioTrack.label || 'audio'}" has ended.`,
+          recoverable: true,
+          details: "One or more audio tracks are no longer active. Try restarting the capture.",
+        },
+      };
+    }
+  }
+  
+  // All checks passed
+  return {
+    valid: true,
+    videoTracks: 1,
+    audioTracks: audioTracks.length,
   };
 }

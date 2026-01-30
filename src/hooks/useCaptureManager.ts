@@ -4,7 +4,7 @@ import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
 import { chooseRecordingMimeType, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
-import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoDataError, createRecorderError } from "@/lib/captureErrors";
+import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -367,6 +367,21 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       }
       
       console.log(`[Capture] Composite stream ready: ${compositeStream.getTracks().length} tracks`);
+      
+      // Validate the composite stream before creating MediaRecorder
+      const streamValidation = validateCompositeStream(compositeStream);
+      
+      if (!streamValidation.valid) {
+        console.error("[Capture] Stream validation failed:", streamValidation);
+        throw streamValidation.error || {
+          code: "STREAM_NOT_READY" as const,
+          message: "Capture stream is not ready for recording.",
+          recoverable: true,
+          details: `Video tracks: ${streamValidation.videoTracks}, Audio tracks: ${streamValidation.audioTracks}, Failed: ${streamValidation.failedTrack?.kind} (${streamValidation.failedTrack?.issue})`,
+        };
+      }
+      
+      console.log(`[Capture] Stream validation passed: ${streamValidation.videoTracks} video, ${streamValidation.audioTracks} audio tracks`);
       
       // Create MediaRecorder with the selected compatible MIME type
       const options: MediaRecorderOptions = {
