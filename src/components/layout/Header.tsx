@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Crosshair, LogOut, Settings, User } from "lucide-react";
+import { LogOut, Settings, User } from "lucide-react";
 import { toast } from "sonner";
 
 export function Header() {
@@ -28,35 +28,32 @@ export function Header() {
   const userInitial = user?.email?.charAt(0).toUpperCase() || "U";
 
   return (
-    <header className="h-16 border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+    <header className="h-14 border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0 z-50">
       <div className="h-full px-6 flex items-center justify-between">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-3 group">
-          <div className="p-2 rounded-lg bg-primary/10 border border-primary/30 transition-all group-hover:glow-primary">
-            <Crosshair className="h-5 w-5 text-primary" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-gradient-primary">
+        {/* Logo - text only, bold condensed */}
+        <Link to="/" className="flex items-center gap-2 group">
+          <span className="font-display text-2xl tracking-wide text-primary">
             VANTAGE
           </span>
         </Link>
 
         {/* Navigation */}
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-8">
           <Link 
             to="/" 
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >
             Dashboard
           </Link>
           <Link 
             to="/library" 
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >
             Library
           </Link>
           <Link 
             to="/insights" 
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >
             Insights
           </Link>
@@ -66,9 +63,9 @@ export function Header() {
         <div className="flex items-center gap-4">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                <Avatar className="h-9 w-9 border border-border">
-                  <AvatarFallback className="bg-primary/20 text-primary font-semibold">
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Avatar className="h-8 w-8 border border-primary/30">
+                  <AvatarFallback className="bg-primary text-primary-foreground font-bold text-sm">
                     {userInitial}
                   </AvatarFallback>
                 </Avatar>
