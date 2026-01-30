@@ -4,6 +4,7 @@ import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
 import { chooseRecordingMimeType, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
+import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoDataError, createRecorderError } from "@/lib/captureErrors";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -63,12 +64,8 @@ export interface RecordedData {
   duration: number;
 }
 
-export interface CaptureError {
-  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "MEDIARECORDER_UNSUPPORTED" | "NO_COMPATIBLE_FORMAT" | "NO_CHUNKS" | "COMPOSITING_FAILED" | "UNKNOWN";
-  message: string;
-  recoverable: boolean;
-  details?: string;
-}
+// Re-export CaptureError type for consumers
+export type { CaptureError, CaptureErrorCode } from "@/lib/captureErrors";
 
 export interface UseCaptureManagerReturn {
   // State
@@ -226,7 +223,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Check MediaRecorder support early
     if (!isMediaRecorderSupported()) {
       setError({
-        code: "MEDIARECORDER_UNSUPPORTED",
+        code: "RECORDER_UNSUPPORTED",
         message: "Your browser doesn't support recording. Please use Chrome, Firefox, or Edge.",
         recoverable: false,
         details: "MediaRecorder API is not available",
@@ -246,7 +243,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       });
       
       if (!micStream) {
-        throw {
+        // Use the parsed error from the hook if available
+        throw microphone.captureError || {
           code: "PERMISSION_DENIED" as const,
           message: microphone.error || "Microphone access is required. Please allow microphone permissions.",
           recoverable: true,
@@ -260,7 +258,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       
       if (!screenStream) {
         microphone.stopCapture();
-        throw {
+        // Use the parsed error from the hook if available
+        throw screen.captureError || {
           code: "PERMISSION_DENIED" as const,
           message: screen.error || "Screen capture is required. Please select a screen or window to share.",
           recoverable: true,
@@ -311,7 +310,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Double-check MediaRecorder support
     if (!isMediaRecorderSupported()) {
       setError({
-        code: "MEDIARECORDER_UNSUPPORTED",
+        code: "RECORDER_UNSUPPORTED",
         message: "Recording is not supported in your browser.",
         recoverable: false,
       });
@@ -321,8 +320,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
 
     if (!screen.stream) {
       setError({
-        code: "RECORDING_FAILED",
-        message: "No screen stream available.",
+        code: "STREAM_ENDED",
+        message: "No screen stream available. The screen share may have ended.",
         recoverable: true,
       });
       setCaptureState("error");
@@ -420,7 +419,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       composite.stopCompositing();
       
       const captureError: CaptureError = err.code ? err : {
-        code: "RECORDING_FAILED" as const,
+        code: "RECORDER_ERROR" as const,
         message: err.message || "Failed to start recording. Please try again.",
         recoverable: true,
         details: err.toString(),
@@ -596,7 +595,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       // Validate we got the composite recording
       if (!compositeBlob || compositeBlob.size === 0) {
         throw {
-          code: "NO_CHUNKS" as const,
+          code: "NO_DATA_CAPTURED" as const,
           message: "No recording data was captured. The recording may have been too short or failed.",
           recoverable: false,
           details: `Chunks: ${compositeChunksRef.current.length}, Duration: ${finalDuration}s`,
@@ -639,7 +638,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       fullCleanup();
       
       const captureError: CaptureError = err.code ? err : {
-        code: "RECORDING_FAILED" as const,
+        code: "RECORDER_ERROR" as const,
         message: "Failed to save recording data. Some data may be lost.",
         recoverable: false,
         details: err.toString(),

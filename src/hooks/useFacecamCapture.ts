@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
 
 export interface FacecamOptions {
   deviceId?: string;
@@ -16,6 +17,7 @@ export interface UseFacecamCaptureReturn {
   isCapturing: boolean;
   stream: MediaStream | null;
   error: string | null;
+  captureError: CaptureError | null;
   permissionDenied: boolean;
   availableDevices: VideoDevice[];
   selectedDeviceId: string | null;
@@ -29,6 +31,7 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
   const [isCapturing, setIsCapturing] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<CaptureError | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<VideoDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -65,6 +68,7 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
   const startCapture = useCallback(async (options?: FacecamOptions): Promise<MediaStream | null> => {
     try {
       setError(null);
+      setCaptureError(null);
       setPermissionDenied(false);
 
       const constraints: MediaStreamConstraints = {
@@ -87,17 +91,12 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
     } catch (err: any) {
       console.error("Facecam capture error:", err);
       
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      const parsedError = parseMediaError(err, "camera");
+      setError(parsedError.message);
+      setCaptureError(parsedError);
+      
+      if (parsedError.code === "PERMISSION_DENIED") {
         setPermissionDenied(true);
-        setError("Camera permission denied. Please allow camera access in your browser settings.");
-      } else if (err.name === "NotFoundError") {
-        setError("No camera found. Please connect a webcam.");
-      } else if (err.name === "NotReadableError") {
-        setError("Camera is in use by another application.");
-      } else if (err.name === "OverconstrainedError") {
-        setError("Camera does not support the requested settings.");
-      } else {
-        setError(err.message || "Failed to start camera capture.");
       }
       
       return null;
@@ -130,6 +129,7 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
     isCapturing,
     stream,
     error,
+    captureError,
     permissionDenied,
     availableDevices,
     selectedDeviceId,

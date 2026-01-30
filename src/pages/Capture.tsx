@@ -8,7 +8,7 @@ import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
-import { PermissionError } from "@/components/capture/PermissionError";
+import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
@@ -326,8 +326,8 @@ export default function CapturePage() {
         <Header />
         <main className="container py-8">
           <div className="max-w-2xl mx-auto">
-            <PermissionError 
-              error={capture.error.message} 
+            <CaptureErrorDisplay 
+              error={capture.error} 
               onRetry={handleRetry}
               onCancel={handleCancel}
             />
