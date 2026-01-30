@@ -31,6 +31,10 @@ export interface CaptureErrorInfo {
   showBrowserSettings: boolean;
   primaryAction: "retry" | "refresh" | "none";
   primaryActionLabel?: string;
+  /** Show "Continue in Preview Mode" option */
+  showPreviewMode?: boolean;
+  /** Show "Open in Chrome" helper */
+  showOpenInChrome?: boolean;
 }
 
 /**
@@ -102,17 +106,19 @@ export function getCaptureErrorInfo(error: CaptureError): CaptureErrorInfo {
 
     case "RECORDER_UNSUPPORTED":
       return {
-        title: "Browser Not Supported",
-        description: "Your browser doesn't support recording. Please use a modern browser.",
+        title: "This Browser Can't Record",
+        description: "Your browser doesn't support the MediaRecorder API needed for video recording.",
         icon: "error",
         steps: [
-          "Use Google Chrome (recommended) for the best experience",
-          "Firefox and Microsoft Edge are also supported",
+          "Open this page in Google Chrome (recommended)",
+          "Microsoft Edge and Brave also work well",
           "Update your browser to the latest version",
-          "Safari has limited recording support",
+          "Safari has very limited recording support",
         ],
         showBrowserSettings: false,
         primaryAction: "none",
+        showPreviewMode: true,
+        showOpenInChrome: true,
       };
 
     case "RECORDER_ERROR":
@@ -165,17 +171,19 @@ export function getCaptureErrorInfo(error: CaptureError): CaptureErrorInfo {
 
     case "NO_COMPATIBLE_FORMAT":
       return {
-        title: "No Compatible Format",
-        description: "Your browser cannot record video in a format that can be played back.",
+        title: "This Browser Can't Record This Format",
+        description: "Your browser doesn't support any video codec that can be both recorded and played back (e.g., VP9, VP8, H.264).",
         icon: "error",
         steps: [
-          "Use Google Chrome for the best compatibility",
-          "Update your browser to the latest version",
-          "Firefox and Edge also support recording",
-          "Safari has limited format support",
+          "Open this page in Google Chrome for full codec support",
+          "Microsoft Edge and Brave also support all required codecs",
+          "Safari only supports MP4/H.264 on newer versions",
+          "Firefox supports WebM/VP9 recording",
         ],
         showBrowserSettings: false,
         primaryAction: "none",
+        showPreviewMode: true,
+        showOpenInChrome: true,
       };
 
     case "COMPOSITING_FAILED":
