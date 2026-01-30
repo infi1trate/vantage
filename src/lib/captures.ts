@@ -714,11 +714,13 @@ export async function uploadVoiceNote(userId: string, sessionId: string, audioBl
 
   if (error) throw error;
   
-  const { data: urlData } = supabase.storage
+  // Use signed URL for private bucket access (1 hour expiration)
+  const { data: urlData, error: urlError } = await supabase.storage
     .from("voice-notes")
-    .getPublicUrl(data.path);
+    .createSignedUrl(data.path, 3600);
 
-  return urlData.publicUrl;
+  if (urlError) throw urlError;
+  return urlData.signedUrl;
 }
 
 // AI Analysis
