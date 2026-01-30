@@ -127,6 +127,7 @@ interface CoachingCard {
   coaching_tip: string;
   drill: string;
   confidence: "high" | "medium" | "low";
+  confidence_reason: string;
   evidence_summary: string[];
 }
 
@@ -726,9 +727,30 @@ COACHING LENSES (choose the most relevant):
 - Resource Management: Health, ammo, abilities, economy decisions
 - Mechanics: Aim, movement tech, ability usage execution
 
-LANGUAGE RULES:
-- High confidence evidence → assertive but respectful ("You pushed without checking angles")
-- Medium/Low confidence → hypothesis wording ("It looks like the rotation may have been delayed")
+CONFIDENCE CALIBRATION (you MUST follow these rules):
+
+HIGH confidence requires ALL of:
+- ≥3 strong evidence signals from the analyst (non-"unknown" values)
+- No major uncertainties listed for this event
+- Clear cause-effect relationship in candidate_causes
+→ Use assertive language: "You pushed without checking angles"
+
+MEDIUM confidence requires:
+- 1-2 evidence signals present
+- Some uncertainty acknowledged
+- Candidate causes have "medium" likelihood
+→ Use measured language: "The evidence suggests..." or "Based on the available signals..."
+
+LOW confidence applies when:
+- Mostly inferred from sparse data
+- Multiple uncertainties listed
+- Limited or ambiguous evidence signals
+→ Use exploratory language: "It looks like...", "This may indicate...", "One possibility is..."
+
+LANGUAGE ADAPTATION:
+- HIGH: Direct statements ("You overextended", "The rotation was late")
+- MEDIUM: Qualified statements ("The data suggests you may have", "It appears that")
+- LOW: Hypothesis framing ("It's possible that", "One interpretation is", "This could indicate")
 
 OUTPUT FORMAT:
 Return a JSON array of coaching cards:
@@ -739,15 +761,18 @@ Return a JSON array of coaching cards:
     "lens": "Positioning" | "Awareness" | "Tempo" | "Resource Management" | "Mechanics",
     "what_happened": "1-2 grounded sentences describing what occurred",
     "why_it_mattered": "Game-logic explanation of the consequence",
-    "coaching_tip": "1 specific, actionable behavior change",
-    "drill": "Simple practice instruction (e.g., 'In deathmatch, practice jiggle-peeking corners before committing')",
+    "coaching_tip": "1 specific, actionable behavior change (language matches confidence level)",
+    "drill": "Simple practice instruction",
     "confidence": "high" | "medium" | "low",
+    "confidence_reason": "1 sentence explaining why this confidence level (e.g., 'Based on 4 clear signals with no uncertainties' or 'Limited to movement data only, health unknown')",
     "evidence_summary": ["signal1", "signal2"]
   }
 ]
 
 QUALITY CHECK:
-A skilled player reading this should think "yeah, that's fair."`;
+- A skilled player should think "yeah, that's fair"
+- Low-confidence tips should feel exploratory, not prescriptive
+- confidence_reason must be specific to THIS event's evidence`;
 
       const coachUserPrompt = `Generate coaching cards for these analyst observations:
 
@@ -756,7 +781,11 @@ GAME: ${session.game_name || 'Unknown'}
 EVENT ANALYSES:
 ${JSON.stringify(analysisResult.event_analyses, null, 2)}
 
-For each event_analysis, generate exactly ONE coaching card. Use the observed_behaviors and candidate_causes to inform your coaching. Acknowledge uncertainties in your confidence level.`;
+For each event_analysis:
+1. Count non-"unknown" evidence signals to determine confidence
+2. Check uncertainties list
+3. Generate exactly ONE coaching card with appropriate confidence level and language
+4. Include a specific confidence_reason explaining your calibration`;
 
       try {
         const coachResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -792,10 +821,17 @@ For each event_analysis, generate exactly ONE coaching card. Use the observed_be
                   card.title && 
                   card.lens && 
                   card.what_happened &&
-                  card.coaching_tip
-                );
+                  card.coaching_tip &&
+                  card.confidence &&
+                  card.confidence_reason
+                )
+                .map((card: any) => ({
+                  ...card,
+                  // Ensure confidence_reason exists with fallback
+                  confidence_reason: card.confidence_reason || `Confidence: ${card.confidence}`,
+                }));
               
-              console.log(`Coach phase complete with ${coachingCards.length} coaching cards`);
+              console.log(`Coach phase complete with ${coachingCards.length} coaching cards (confidence breakdown: ${coachingCards.filter((c: any) => c.confidence === 'high').length} high, ${coachingCards.filter((c: any) => c.confidence === 'medium').length} medium, ${coachingCards.filter((c: any) => c.confidence === 'low').length} low)`);
             } catch (parseError) {
               console.error("Failed to parse coaching response:", coachContent);
             }
