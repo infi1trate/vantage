@@ -221,21 +221,11 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   }, [screen, microphone, facecam, composite, cleanupRecorder]);
 
   // TRANSITION: idle → selecting_sources → preview_ready | error
+  // NOTE: We do NOT check MediaRecorder support here - users should always be able to reach preview.
+  // MediaRecorder checks happen only when they click "Start Recording".
   const selectSources = useCallback(async (captureConfig: CaptureConfig): Promise<void> => {
     if (captureState !== "idle") {
       console.warn(`selectSources called in invalid state: ${captureState}`);
-      return;
-    }
-
-    // Check MediaRecorder support early
-    if (!isMediaRecorderSupported()) {
-      setError({
-        code: "RECORDER_UNSUPPORTED",
-        message: "Your browser doesn't support recording. Please use Chrome, Firefox, or Edge.",
-        recoverable: false,
-        details: "MediaRecorder API is not available",
-      });
-      setCaptureState("error");
       return;
     }
 
@@ -286,6 +276,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       }
 
       // SUCCESS: Transition to preview_ready
+      // Note: Recording may still be unsupported, but preview works
       setCaptureState("preview_ready");
     } catch (err: any) {
       console.error("Source selection failed:", err);
@@ -308,20 +299,24 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   }, [captureState, screen, microphone, facecam]);
 
   // TRANSITION: preview_ready → recording
+  // Returns { success: boolean, error?: CaptureError } for inline error handling
+  // Does NOT transition to error state on failure - keeps preview running
   const startRecording = useCallback(async (): Promise<boolean> => {
     if (captureState !== "preview_ready") {
       console.warn(`startRecording called in invalid state: ${captureState}. Must be in preview_ready.`);
       return false;
     }
 
-    // Double-check MediaRecorder support
+    // Check MediaRecorder support - but don't transition to error state
+    // Just set the error for inline display and return false
     if (!isMediaRecorderSupported()) {
       setError({
         code: "RECORDER_UNSUPPORTED",
         message: "Recording is not supported in your browser.",
         recoverable: false,
+        details: "MediaRecorder API is not available. Use Chrome, Edge, or Brave.",
       });
-      setCaptureState("error");
+      // Don't setCaptureState("error") - keep preview running
       return false;
     }
 
@@ -331,7 +326,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         message: "No screen stream available. The screen share may have ended.",
         recoverable: true,
       });
-      setCaptureState("error");
+      // Don't setCaptureState("error") - keep preview running
       return false;
     }
 
@@ -507,6 +502,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       compositeRecorderRef.current = null;
       composite.stopCompositing();
       
+      // Reset to preview_ready state (not error state) so preview keeps running
+      setCaptureState("preview_ready");
+      
       const captureError: CaptureError = err.code ? err : {
         code: "RECORDER_ERROR" as const,
         message: err.message || "Failed to start recording. Please try again.",
@@ -514,8 +512,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         details: err.toString(),
       };
       
+      // Set error for inline display, but don't transition to error state
       setError(captureError);
-      setCaptureState("error");
       return false;
     }
   }, [captureState, screen.stream, microphone.stream, facecam.stream, composite, cleanupRecorder]);
@@ -784,15 +782,17 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     setError(null);
   }, [captureState, fullCleanup]);
 
-  // TRANSITION: error → idle
+  // TRANSITION: error → idle, OR clear inline error while staying in preview_ready
   const retryFromError = useCallback(() => {
-    if (captureState !== "error") {
+    if (captureState === "error") {
+      setError(null);
+      setCaptureState("idle");
+    } else if (captureState === "preview_ready") {
+      // Just clear the inline error, stay in preview_ready
+      setError(null);
+    } else {
       console.warn(`retryFromError called in invalid state: ${captureState}`);
-      return;
     }
-    
-    setError(null);
-    setCaptureState("idle");
   }, [captureState]);
 
   // Cleanup on unmount

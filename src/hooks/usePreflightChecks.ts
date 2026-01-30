@@ -200,7 +200,7 @@ export function usePreflightChecks({
         label: "Recording format supported",
         status: checkResults.recorder_support.status,
         fix: checkResults.recorder_support.fix,
-        required: true,
+        required: false, // Not required for preview - only for recording
       },
     ];
     
