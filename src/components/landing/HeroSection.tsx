@@ -2,6 +2,7 @@ import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Star, Mic, Camera } from "lucide-react";
+import fortniteGameplay from "@/assets/fortnite-gameplay.webp";
 import { useRef, useState, useEffect } from "react";
 
 export function HeroSection() {
@@ -235,6 +236,13 @@ export function HeroSection() {
 
           {/* Vignette */}
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,hsl(var(--background)/0.6)_100%)]" aria-hidden="true" />
+          
+          {/* Gameplay image */}
+          <img 
+            src={fortniteGameplay} 
+            alt="Fortnite gameplay screenshot showing third-person shooter action" 
+            className="absolute inset-0 w-full h-full object-cover -z-10"
+          />
         </motion.div>
 
         {/* Text content */}
