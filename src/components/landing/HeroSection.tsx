@@ -1,17 +1,32 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Star } from "lucide-react";
-import { useRef } from "react";
+import { Star, Mic, Camera } from "lucide-react";
+import { useRef, useState, useEffect } from "react";
 
 export function HeroSection() {
   const heroRef = useRef<HTMLElement>(null);
   const isInView = useInView(heroRef, { amount: 0.3 });
   const prefersReducedMotion = useReducedMotion();
+  
+  // Simulated recording state
+  const [recordingTime, setRecordingTime] = useState(107); // 1:47
+  const [isRecording] = useState(true);
 
-  // Disable animations if user prefers reduced motion
-  const animate = prefersReducedMotion ? {} : { opacity: 1, y: 0 };
-  const initial = prefersReducedMotion ? {} : { opacity: 0, y: 20 };
+  // Increment recording time
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+    const interval = setInterval(() => {
+      setRecordingTime((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [prefersReducedMotion]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
   return (
     <section 
@@ -19,178 +34,251 @@ export function HeroSection() {
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20 pb-12 px-6"
       aria-labelledby="hero-heading"
     >
-      {/* Animated grid background - static for reduced motion */}
+      {/* Animated grid background */}
       <div className="absolute inset-0 bg-background">
-        {prefersReducedMotion ? (
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:48px_48px]" />
-        ) : (
-          <motion.div 
-            className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:48px_48px]"
-            animate={{ backgroundPosition: ["0px 0px", "48px 48px"] }}
-            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-          />
-        )}
+        <motion.div 
+          className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:48px_48px]"
+          animate={prefersReducedMotion ? {} : { backgroundPosition: ["0px 0px", "48px 48px"] }}
+          transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
+        />
       </div>
 
-      {/* Subtle radial gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.04)_0%,transparent_60%)]" aria-hidden="true" />
+      {/* Radial gradient */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.06)_0%,transparent_60%)]" aria-hidden="true" />
 
       <div className="relative z-10 w-full max-w-5xl mx-auto">
-        {/* Gameplay frame mockup */}
+        {/* Live recording interface */}
         <motion.div
-          initial={initial}
-          animate={animate}
-          transition={prefersReducedMotion ? {} : { duration: 0.8, delay: 0.2 }}
-          className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/50 shadow-elevated mb-12"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/30 shadow-elevated mb-12"
           role="img"
-          aria-label="Gameplay capture preview showing a video frame with facecam overlay, voice waveform indicator, and an annotation pin marking a clutch play moment"
+          aria-label="Live gameplay capture interface"
         >
-          {/* Fake gameplay background */}
-          <div className="absolute inset-0 bg-gradient-to-br from-muted/30 via-background to-muted/20">
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:32px_32px]" />
+          {/* Gameplay background with dynamic scan lines */}
+          <div className="absolute inset-0 bg-gradient-to-br from-muted/20 via-background to-muted/10">
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.008)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.008)_1px,transparent_1px)] bg-[size:24px_24px]" />
+            
+            {/* Subtle scan line effect */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/[0.02] to-transparent"
+              animate={prefersReducedMotion ? {} : { y: ["-100%", "100%"] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            />
           </div>
+
+          {/* Recording indicator - top left */}
+          <motion.div
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
+            className="absolute top-4 left-4 flex items-center gap-3"
+          >
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-destructive/20 border border-destructive/40 backdrop-blur-sm">
+              <motion.div
+                className="w-2 h-2 rounded-full bg-destructive"
+                animate={prefersReducedMotion ? {} : { opacity: [1, 0.4, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+              />
+              <span className="text-xs font-mono text-destructive font-medium uppercase tracking-wider">REC</span>
+            </div>
+            <span className="font-mono text-sm text-foreground/80">{formatTime(recordingTime)}</span>
+          </motion.div>
 
           {/* Facecam bubble - top right */}
           <motion.div
-            initial={prefersReducedMotion ? {} : { opacity: 0, scale: 0.8 }}
-            animate={prefersReducedMotion ? {} : { opacity: 1, scale: 1 }}
-            transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.6 }}
-            className="absolute top-4 right-4 w-20 h-20 md:w-28 md:h-28 rounded-full overflow-hidden border-2 border-primary/40"
-            aria-hidden="true"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+            className="absolute top-4 right-4 w-24 h-24 md:w-32 md:h-32 rounded-2xl overflow-hidden border-2 border-primary/30 bg-muted/50"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-muted to-muted/50" />
-            {/* Glow pulse - disabled for reduced motion */}
-            {!prefersReducedMotion && (
-              <motion.div
-                className="absolute inset-0 rounded-full border-2 border-primary/30"
-                animate={{ 
-                  boxShadow: [
-                    "0 0 0px hsl(var(--primary) / 0)",
-                    "0 0 20px hsl(var(--primary) / 0.3)",
-                    "0 0 0px hsl(var(--primary) / 0)"
-                  ]
-                }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              />
-            )}
+            <div className="absolute inset-0 bg-gradient-to-br from-muted/80 to-muted/40" />
+            
+            {/* Glow pulse */}
+            <motion.div
+              className="absolute inset-0 rounded-2xl"
+              animate={prefersReducedMotion ? {} : { 
+                boxShadow: [
+                  "0 0 0px hsl(var(--primary) / 0)",
+                  "0 0 30px hsl(var(--primary) / 0.2)",
+                  "0 0 0px hsl(var(--primary) / 0)"
+                ]
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+            />
+            
+            {/* Camera icon */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-muted-foreground/20" />
+              <Camera className="w-8 h-8 text-muted-foreground/40" />
+            </div>
+            
+            {/* Facecam label */}
+            <div className="absolute bottom-2 left-2 right-2">
+              <div className="px-2 py-0.5 rounded bg-background/60 backdrop-blur-sm text-center">
+                <span className="text-[10px] font-mono text-muted-foreground uppercase">Facecam</span>
+              </div>
             </div>
           </motion.div>
 
           {/* Voice waveform - bottom left */}
           <motion.div
-            initial={prefersReducedMotion ? {} : { opacity: 0, x: -10 }}
-            animate={prefersReducedMotion ? {} : { opacity: 1, x: 0 }}
-            transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.8 }}
-            className="absolute bottom-4 left-4 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-background/80 backdrop-blur-sm border border-border/50"
-            aria-hidden="true"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.8 }}
+            className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-background/70 backdrop-blur-sm border border-border/50"
           >
-            <div className="w-2 h-2 rounded-full bg-vantage-danger" />
-            <div className="flex items-end gap-0.5 h-4">
-              {[0.4, 0.7, 0.5, 0.9, 0.6, 0.8, 0.4, 0.7, 0.5].map((height, i) => (
-                prefersReducedMotion ? (
-                  <div
-                    key={i}
-                    className="w-0.5 bg-primary rounded-full"
-                    style={{ height: `${height * 16}px` }}
-                  />
-                ) : (
-                  <motion.div
-                    key={i}
-                    className="w-0.5 bg-primary rounded-full"
-                    animate={{ height: [`${height * 16}px`, `${height * 8}px`, `${height * 16}px`] }}
-                    transition={{ duration: 0.8 + i * 0.1, repeat: Infinity, ease: "easeInOut", delay: i * 0.05 }}
-                  />
-                )
+            <Mic className="w-3.5 h-3.5 text-primary" />
+            <div className="flex items-end gap-0.5 h-5">
+              {[0.3, 0.6, 0.4, 0.8, 0.5, 0.9, 0.4, 0.7, 0.5, 0.6, 0.3].map((height, i) => (
+                <motion.div
+                  key={i}
+                  className="w-0.5 bg-primary rounded-full"
+                  animate={prefersReducedMotion ? { height: `${height * 20}px` } : { 
+                    height: [`${height * 20}px`, `${height * 10}px`, `${height * 20}px`]
+                  }}
+                  transition={{ 
+                    duration: 0.6 + i * 0.08, 
+                    repeat: Infinity, 
+                    ease: "easeInOut",
+                    delay: i * 0.04
+                  }}
+                />
               ))}
             </div>
+            <span className="text-xs font-mono text-muted-foreground ml-1">-12dB</span>
           </motion.div>
 
-          {/* Annotation pin with tooltip */}
+          {/* Live annotation appearing */}
           <div className="absolute top-1/3 left-1/2 -translate-x-1/2">
             <motion.div
-              initial={prefersReducedMotion ? {} : { opacity: 0, scale: 0.5, y: 10 }}
-              animate={prefersReducedMotion ? {} : { opacity: 1, scale: 1, y: 0 }}
-              transition={prefersReducedMotion ? {} : { duration: 0.4, delay: 1.2, ease: "easeOut" }}
+              initial={{ opacity: 0, scale: 0.5, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 1.2, ease: [0.23, 1, 0.32, 1] }}
               className="relative"
             >
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/50 bg-primary/10 backdrop-blur-sm">
-                <Star className="w-4 h-4 text-primary fill-primary" aria-hidden="true" />
-                <span className="text-sm font-medium text-foreground">Clutch Play</span>
-                <span className="text-xs font-mono text-muted-foreground">1:47</span>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/50 bg-primary/10 backdrop-blur-sm shadow-lg shadow-primary/10">
+                <Star className="w-4 h-4 text-primary fill-primary" />
+                <span className="font-medium text-foreground">Clutch Play</span>
+                <span className="text-xs font-mono text-muted-foreground bg-background/50 px-1.5 py-0.5 rounded">{formatTime(recordingTime)}</span>
               </div>
-              <div className="absolute left-1/2 -translate-x-1/2 top-full w-0.5 h-3 bg-gradient-to-b from-primary/50 to-transparent" aria-hidden="true" />
+              
+              {/* Pin line */}
+              <motion.div 
+                className="absolute left-1/2 -translate-x-1/2 top-full w-px bg-gradient-to-b from-primary/60 to-transparent"
+                initial={{ height: 0 }}
+                animate={{ height: 24 }}
+                transition={{ duration: 0.3, delay: 1.5 }}
+              />
+              
+              {/* Pin dot */}
+              <motion.div
+                className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary"
+                initial={{ opacity: 0, top: "100%" }}
+                animate={{ opacity: 1, top: "calc(100% + 24px)" }}
+                transition={{ duration: 0.2, delay: 1.7 }}
+              />
             </motion.div>
 
-            {/* Analysis tooltip - accessible via focus */}
+            {/* AI Analysis tooltip */}
             <motion.div
-              initial={prefersReducedMotion ? {} : { opacity: 0, y: 8, scale: 0.95 }}
-              animate={isInView && !prefersReducedMotion ? { opacity: 1, y: 0, scale: 1 } : prefersReducedMotion ? {} : { opacity: 0, y: 8, scale: 0.95 }}
-              transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 1.8, ease: "easeOut" }}
-              className="absolute left-1/2 -translate-x-1/2 top-full mt-6 w-64 md:w-72"
-              role="note"
-              aria-label="AI Analysis: Over-peeked before reload — lost timing advantage"
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={isInView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ duration: 0.6, delay: 2, ease: "easeOut" }}
+              className="absolute left-1/2 -translate-x-1/2 top-full mt-10 w-72"
             >
-              <div className="relative px-4 py-3 rounded-lg border border-vantage-warning/40 bg-vantage-warning/10 backdrop-blur-sm">
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-px h-2 bg-gradient-to-t from-vantage-warning/40 to-transparent" aria-hidden="true" />
+              <div className="relative px-4 py-3 rounded-xl border border-vantage-warning/30 bg-vantage-warning/5 backdrop-blur-sm">
+                {/* Connector */}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-px h-3 bg-gradient-to-t from-vantage-warning/30 to-transparent" />
+                
                 <div className="flex items-start gap-2">
-                  <div className="w-1 h-1 rounded-full bg-vantage-warning mt-2 shrink-0" aria-hidden="true" />
-                  <p className="text-sm text-foreground leading-relaxed">
-                    <span className="text-vantage-warning font-medium">Analysis: </span>
-                    Over-peeked before reload — lost timing advantage
-                  </p>
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full bg-vantage-warning mt-1.5 shrink-0"
+                    animate={prefersReducedMotion ? {} : { opacity: [1, 0.5, 1] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  />
+                  <div>
+                    <span className="text-xs font-mono text-vantage-warning uppercase tracking-wider">AI Analysis</span>
+                    <p className="text-sm text-foreground/90 mt-1 leading-relaxed">
+                      Over-peeked before reload — lost timing advantage
+                    </p>
+                  </div>
                 </div>
+                
+                {/* Shimmer effect */}
+                <motion.div
+                  className="absolute inset-0 rounded-xl overflow-hidden"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 2.5 }}
+                >
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-vantage-warning/10 to-transparent -translate-x-full"
+                    animate={prefersReducedMotion ? {} : { x: ["-100%", "200%"] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear", delay: 3 }}
+                  />
+                </motion.div>
               </div>
             </motion.div>
           </div>
 
+          {/* Timeline preview at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background/90 via-background/60 to-transparent">
+            <div className="absolute bottom-2 left-20 right-4 h-1 bg-muted/30 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-primary/50 rounded-full"
+                animate={{ width: `${(recordingTime / 300) * 100}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          </div>
+
           {/* Vignette */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,hsl(var(--background)/0.4)_100%)]" aria-hidden="true" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,hsl(var(--background)/0.6)_100%)]" aria-hidden="true" />
         </motion.div>
 
         {/* Text content */}
         <div className="text-center">
           <motion.h1
             id="hero-heading"
-            initial={initial}
-            animate={animate}
-            transition={prefersReducedMotion ? {} : { duration: 0.6, delay: 0.4 }}
+            initial={{ opacity: 0, y: 25 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.4 }}
             className="font-display text-5xl md:text-7xl lg:text-8xl leading-none tracking-tight mb-4"
           >
             See the Game Differently
           </motion.h1>
 
           <motion.p
-            initial={initial}
-            animate={animate}
-            transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.6 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.6 }}
             className="text-xl md:text-2xl text-primary font-medium mb-4"
           >
             Vantage is the Loom for Gamers.
           </motion.p>
 
           <motion.p
-            initial={initial}
-            animate={animate}
-            transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.7 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.7 }}
             className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mb-10"
           >
             Record gameplay, voice, reactions, and intent — all synchronized in one continuous perspective.
           </motion.p>
 
-          {/* CTAs - fully keyboard accessible */}
+          {/* CTAs */}
           <motion.div
-            initial={initial}
-            animate={animate}
-            transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.9 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.9 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
             role="group"
             aria-label="Call to action buttons"
           >
             <Button
               size="lg"
-              className="h-12 px-8 text-base font-medium bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-offset-background"
+              className="h-12 px-8 text-base font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
               asChild
             >
               <Link to="/auth">Start Recording</Link>
@@ -198,7 +286,7 @@ export function HeroSection() {
             <Button
               variant="ghost"
               size="lg"
-              className="h-12 px-6 text-base text-muted-foreground hover:text-foreground focus-visible:ring-offset-background"
+              className="h-12 px-6 text-base text-muted-foreground hover:text-foreground"
               asChild
             >
               <Link to="/auth">Log in</Link>
