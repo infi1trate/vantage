@@ -782,7 +782,7 @@ export async function createSocialComment(
     .single();
 
   if (error) throw error;
-  return data as SocialComment;
+  return data as unknown as SocialComment;
 }
 
 export async function getSocialComments(sessionId: string) {
@@ -793,7 +793,7 @@ export async function getSocialComments(sessionId: string) {
     .order("created_at", { ascending: true });
 
   if (error) throw error;
-  return data as SocialComment[];
+  return (data || []) as unknown as SocialComment[];
 }
 
 // Comment Reactions
