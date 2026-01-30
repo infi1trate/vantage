@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { FacecamPreview } from "@/components/capture/FacecamPreview";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -407,39 +408,54 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
               </div>
             </div>
 
-            {/* Right Column: Capture Settings */}
-            <div className="p-6 space-y-5 bg-muted/5">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings2 className="h-4 w-4 text-primary" />
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Capture Settings
-                </h3>
+            {/* Right Column: Settings + Effects */}
+            <div className="p-6 space-y-6 bg-muted/5">
+              {/* Capture Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-primary" />
+                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Capture Settings
+                  </h3>
+                </div>
+
+                <div className="space-y-3">
+                  <CaptureToggle
+                    id="game-audio"
+                    icon={Volume2}
+                    label="Game Audio"
+                    description="Capture in-game sound"
+                    checked={includeGameAudio}
+                    onCheckedChange={setIncludeGameAudio}
+                    disabled={loading}
+                  />
+
+                  <CaptureToggle
+                    id="microphone"
+                    icon={Mic}
+                    label="Microphone"
+                    description="Voice commentary and callouts"
+                    checked={includeMicrophone}
+                    onCheckedChange={setIncludeMicrophone}
+                    disabled={loading}
+                  />
+                </div>
               </div>
 
-              {/* Audio Sources */}
-              <div className="space-y-3">
-                <CaptureToggle
-                  id="game-audio"
-                  icon={Volume2}
-                  label="Game Audio"
-                  description="Capture in-game sound"
-                  checked={includeGameAudio}
-                  onCheckedChange={setIncludeGameAudio}
-                  disabled={loading}
-                />
+              <Separator className="bg-border/20" />
 
-                <CaptureToggle
-                  id="microphone"
-                  icon={Mic}
-                  label="Microphone"
-                  description="Voice commentary and callouts"
-                  checked={includeMicrophone}
-                  onCheckedChange={setIncludeMicrophone}
-                  disabled={loading}
-                />
+              {/* Effects Section */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Effects
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                    How you appear in the recording
+                  </p>
+                </div>
 
-                <Separator className="bg-border/30" />
-
+                {/* Facecam Toggle */}
                 <CaptureToggle
                   id="facecam"
                   icon={Camera}
@@ -448,17 +464,19 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   checked={includeFacecam}
                   onCheckedChange={setIncludeFacecam}
                   disabled={loading}
-                  badge="Optional"
                 />
+
+                {/* Live Camera Preview */}
+                <FacecamPreview enabled={includeFacecam} />
               </div>
 
-              {/* Capture source hint */}
-              <div className="flex items-start gap-2 p-3 bg-muted/30 rounded-lg border border-border/30">
-                <Monitor className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              {/* Screen Selection hint */}
+              <div className="flex items-start gap-2 p-3 bg-muted/20 rounded-lg border border-border/20">
+                <Monitor className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-medium">Screen Selection</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    You'll choose which screen or window to capture after clicking Start.
+                  <p className="text-xs text-muted-foreground">Screen Selection</p>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    You'll choose which screen or window after clicking Start.
                   </p>
                 </div>
               </div>
