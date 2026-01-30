@@ -171,16 +171,27 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
       // Store config
       configRef.current = config;
       
-      // Get screen video dimensions
+      // Get screen video dimensions - do NOT upscale beyond captured resolution
       const screenTrack = config.screenStream.getVideoTracks()[0];
       const settings = screenTrack?.getSettings();
-      const width = config.canvasWidth || settings?.width || 1920;
-      const height = config.canvasHeight || settings?.height || 1080;
-      const frameRate = config.frameRate || 60;
+      const capturedWidth = settings?.width || 1920;
+      const capturedHeight = settings?.height || 1080;
       
-      console.log(`[Composite] Canvas size: ${width}x${height}, frameRate: ${frameRate}`);
+      // Use captured resolution or config, but never upscale
+      const width = config.canvasWidth 
+        ? Math.min(config.canvasWidth, capturedWidth) 
+        : capturedWidth;
+      const height = config.canvasHeight 
+        ? Math.min(config.canvasHeight, capturedHeight) 
+        : capturedHeight;
       
-      // Create canvas
+      // Default to 30fps for reliability (was 60fps)
+      const frameRate = config.frameRate || 30;
+      
+      console.log(`[Composite] Screen captured at: ${capturedWidth}x${capturedHeight}`);
+      console.log(`[Composite] Canvas size: ${width}x${height}, frameRate: ${frameRate}fps`);
+      
+      // Create canvas at captured resolution (no upscaling)
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
