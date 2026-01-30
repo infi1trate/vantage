@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Annotation, VoiceNote, createAnnotation } from "@/lib/captures";
 import { AnnotationsList } from "./AnnotationsList";
+import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +33,12 @@ interface AnnotationsPanelProps {
   onModeChange?: (mode: PanelMode) => void;
   pendingTime?: number;
   pendingEndTime?: number;
+  // AI Suggestions
+  suggestions?: AnnotationSuggestion[];
+  onSuggestionAccept?: (suggestion: AnnotationSuggestion) => void;
+  onSuggestionDismiss?: (suggestionId: string) => void;
+  onGenerateSuggestions?: () => void;
+  isLoadingSuggestions?: boolean;
 }
 
 const MARKER_TYPES = [
@@ -55,6 +62,11 @@ export function AnnotationsPanel({
   onModeChange,
   pendingTime,
   pendingEndTime,
+  suggestions = [],
+  onSuggestionAccept,
+  onSuggestionDismiss,
+  onGenerateSuggestions,
+  isLoadingSuggestions = false,
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
@@ -107,6 +119,11 @@ export function AnnotationsPanel({
         onAnnotationClick={onAnnotationClick}
         onMarkerClick={onMarkerClick}
         onAnnotationDelete={onAnnotationDelete}
+        suggestions={suggestions}
+        onSuggestionAccept={onSuggestionAccept}
+        onSuggestionDismiss={onSuggestionDismiss}
+        onGenerateSuggestions={onGenerateSuggestions}
+        isLoadingSuggestions={isLoadingSuggestions}
       />
     );
   }

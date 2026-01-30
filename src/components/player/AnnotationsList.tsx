@@ -1,7 +1,9 @@
 import { useState, useMemo } from "react";
 import { Annotation, VoiceNote } from "@/lib/captures";
+import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { 
   Target, 
   Skull, 
@@ -13,10 +15,16 @@ import {
   ChevronRight,
   Trash2,
   ListFilter,
+  Sparkles,
+  Swords,
+  Check,
+  X,
+  Loader2,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type FilterType = "all" | "kill" | "death" | "highlight" | "note" | "voice";
+type FilterType = "all" | "kill" | "death" | "highlight" | "note" | "voice" | "suggestions";
 
 interface AnnotationsListProps {
   annotations: Annotation[];
@@ -26,6 +34,12 @@ interface AnnotationsListProps {
   onVoiceNoteClick?: (voiceNote: VoiceNote) => void;
   onMarkerClick: (time: number) => void;
   onAnnotationDelete?: (annotationId: string) => void;
+  // AI Suggestions
+  suggestions?: AnnotationSuggestion[];
+  onSuggestionAccept?: (suggestion: AnnotationSuggestion) => void;
+  onSuggestionDismiss?: (suggestionId: string) => void;
+  onGenerateSuggestions?: () => void;
+  isLoadingSuggestions?: boolean;
 }
 
 const FILTER_OPTIONS: { type: FilterType; label: string; icon?: React.ComponentType<{ className?: string }> }[] = [
@@ -70,8 +84,14 @@ export function AnnotationsList({
   onVoiceNoteClick,
   onMarkerClick,
   onAnnotationDelete,
+  suggestions = [],
+  onSuggestionAccept,
+  onSuggestionDismiss,
+  onGenerateSuggestions,
+  isLoadingSuggestions = false,
 }: AnnotationsListProps) {
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Combine and sort all items
   const allItems = useMemo(() => {
@@ -118,9 +138,10 @@ export function AnnotationsList({
       highlight: annotations.filter(a => a.annotation_type === "highlight").length,
       note: annotations.filter(a => a.annotation_type === "note").length,
       voice: voiceNotes.length,
+      suggestions: suggestions.length,
     };
     return c;
-  }, [allItems.length, annotations, voiceNotes.length]);
+  }, [allItems.length, annotations, voiceNotes.length, suggestions.length]);
 
   // Find active item based on current playback time
   const activeItemId = useMemo(() => {
@@ -166,20 +187,148 @@ export function AnnotationsList({
     return null;
   };
 
+  // Suggestion type config
+  const getSuggestionConfig = (type: AnnotationSuggestion["suggestion_type"]) => {
+    const configs = {
+      kill: { label: "Kill", icon: Target, color: "text-vantage-success", bg: "bg-vantage-success/10" },
+      death: { label: "Death", icon: Skull, color: "text-destructive", bg: "bg-destructive/10" },
+      fight_cluster: { label: "Fight", icon: Swords, color: "text-vantage-purple", bg: "bg-vantage-purple/10" },
+      highlight: { label: "Highlight", icon: Star, color: "text-vantage-warning", bg: "bg-vantage-warning/10" },
+    };
+    return configs[type];
+  };
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header with count */}
+      {/* Header with count and suggestions toggle */}
       <div className="shrink-0 px-4 py-3 border-b border-border/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ListFilter className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold tracking-tight">Annotations</h2>
           </div>
-          <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
-            {filteredItems.length} {filteredItems.length === 1 ? "item" : "items"}
-          </span>
+          <div className="flex items-center gap-2">
+            {/* Suggestions toggle button */}
+            {onGenerateSuggestions && (
+              <Button
+                variant={showSuggestions ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => {
+                  if (!showSuggestions && suggestions.length === 0) {
+                    onGenerateSuggestions();
+                  }
+                  setShowSuggestions(!showSuggestions);
+                }}
+                disabled={isLoadingSuggestions}
+              >
+                {isLoadingSuggestions ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                Suggest
+                {suggestions.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                    {suggestions.length}
+                  </Badge>
+                )}
+              </Button>
+            )}
+            <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+              {filteredItems.length}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* Suggestions panel (collapsible) */}
+      {showSuggestions && (
+        <div className="shrink-0 border-b border-border/30 bg-muted/20 p-3 animate-in slide-in-from-top-2">
+          {isLoadingSuggestions ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <span className="ml-2 text-sm text-muted-foreground">Analyzing session...</span>
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="text-center py-4">
+              <Wand2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground mb-2">No suggestions found</p>
+              <Button variant="outline" size="sm" onClick={onGenerateSuggestions}>
+                <Sparkles className="h-3 w-3 mr-1.5" />
+                Try Again
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3" />
+                  AI Suggestions
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={onGenerateSuggestions}
+                  disabled={isLoadingSuggestions}
+                >
+                  Refresh
+                </Button>
+              </div>
+              {suggestions.map((suggestion) => {
+                const config = getSuggestionConfig(suggestion.suggestion_type);
+                const Icon = config.icon;
+                
+                return (
+                  <div
+                    key={suggestion.id}
+                    className="flex items-start gap-2 p-2 rounded-md bg-background border border-dashed border-border hover:border-primary/30 transition-colors"
+                  >
+                    <div className={cn("p-1 rounded shrink-0 mt-0.5", config.bg, config.color)}>
+                      <Icon className="h-3 w-3" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-medium">{config.label}</span>
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5">
+                          <Sparkles className="h-2 w-2" />
+                          Suggested
+                        </Badge>
+                      </div>
+                      <p className="text-sm truncate">{suggestion.title}</p>
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => onMarkerClick(suggestion.timestamp_seconds)}
+                      >
+                        {formatTime(suggestion.timestamp_seconds)}
+                      </button>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => onSuggestionDismiss?.(suggestion.id)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-vantage-success hover:text-vantage-success"
+                        onClick={() => onSuggestionAccept?.(suggestion)}
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="shrink-0 px-3 py-2 border-b border-border/20 bg-muted/20">

@@ -5,6 +5,7 @@ import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
 import { FrameClickHandler } from "./FrameClickHandler";
 import { FramePins, FramePin } from "./FramePins";
+import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -61,6 +62,10 @@ interface CinematicPlayerProps {
   onFrameClick?: (x: number, y: number, time: number, endTime?: number) => void;
   framePins?: FramePin[];
   onPinClick?: (pin: FramePin) => void;
+  // AI suggestions
+  suggestions?: AnnotationSuggestion[];
+  onSuggestionAccept?: (suggestion: AnnotationSuggestion) => void;
+  onSuggestionDismiss?: (suggestionId: string) => void;
 }
 
 export function CinematicPlayer({
@@ -84,6 +89,9 @@ export function CinematicPlayer({
   onFrameClick,
   framePins = [],
   onPinClick,
+  suggestions = [],
+  onSuggestionAccept,
+  onSuggestionDismiss,
 }: CinematicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -402,6 +410,9 @@ export function CinematicPlayer({
             onSelectionChange={handleSelectionChange}
             markers={timelineMarkers}
             onMarkerClick={(id, time) => onMarkerClick?.(time)}
+            suggestions={suggestions}
+            onSuggestionAccept={onSuggestionAccept}
+            onSuggestionDismiss={onSuggestionDismiss}
           />
         </div>
       </div>

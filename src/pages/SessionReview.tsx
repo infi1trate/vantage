@@ -6,6 +6,7 @@ import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
 import { AnnotationDrawer, DrawerAnnotation } from "@/components/player/AnnotationDrawer";
 import { FramePin } from "@/components/player/FramePins";
+import { AnnotationSuggestion } from "@/components/player/SuggestionMarkers";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import {
@@ -17,6 +18,7 @@ import {
   deleteAnnotation,
   createAnnotation,
   permanentlyDeleteSession,
+  getTimelineEvents,
   CaptureSession,
   Annotation,
   VoiceNote,
@@ -28,6 +30,7 @@ import {
   getLocalSessionBlob,
   LocalSession,
 } from "@/lib/localSessionStorage";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -83,6 +86,10 @@ export default function SessionReview() {
   // Frame pins (with position data)
   const [framePins, setFramePins] = useState<FramePin[]>([]);
   const [pendingPinPosition, setPendingPinPosition] = useState<{ x: number; y: number } | null>(null);
+  
+  // AI Suggestions state
+  const [suggestions, setSuggestions] = useState<AnnotationSuggestion[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -284,6 +291,94 @@ export default function SessionReview() {
     setPendingEndTime(undefined);
     setPendingPinPosition(null);
     setSelection({ type: null });
+  }, []);
+
+  // Generate AI suggestions
+  const handleGenerateSuggestions = useCallback(async () => {
+    const sessionIdToUse = isLocalSession ? localSession?.id : session?.id;
+    if (!sessionIdToUse) return;
+    
+    setIsLoadingSuggestions(true);
+    try {
+      // Fetch timeline events for context
+      const events = await getTimelineEvents(sessionIdToUse).catch(() => []);
+      
+      const { data, error } = await supabase.functions.invoke('suggest-annotations', {
+        body: {
+          session: {
+            session_id: sessionIdToUse,
+            title: isLocalSession ? localSession?.title : session?.title || "Untitled",
+            game_name: isLocalSession ? localSession?.gameName : session?.game_name,
+            duration_seconds: isLocalSession 
+              ? localSession?.duration 
+              : (session?.duration_seconds || 300),
+            existing_annotations: annotations.map(a => ({
+              id: a.id,
+              timestamp_seconds: a.timestamp_seconds,
+              annotation_type: a.annotation_type,
+              title: a.title,
+            })),
+            timeline_events: events.map(e => ({
+              id: e.id,
+              timestamp_ms: e.timestamp_ms,
+              event_type: e.event_type,
+              title: e.title,
+            })),
+          }
+        }
+      });
+
+      if (error) throw error;
+      
+      if (data?.suggestions) {
+        setSuggestions(data.suggestions);
+        toast.success(`Found ${data.suggestions.length} suggestions`);
+      }
+    } catch (error) {
+      console.error("Failed to generate suggestions:", error);
+      toast.error("Failed to generate suggestions");
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }, [isLocalSession, localSession, session, annotations]);
+
+  // Accept a suggestion - convert to annotation
+  const handleSuggestionAccept = useCallback(async (suggestion: AnnotationSuggestion) => {
+    if (!user) return;
+    
+    const sessionIdToUse = isLocalSession ? localSession?.id : session?.id;
+    if (!sessionIdToUse) return;
+    
+    try {
+      // Map suggestion type to annotation type
+      const typeMap: Record<AnnotationSuggestion["suggestion_type"], Annotation["annotation_type"]> = {
+        kill: "kill",
+        death: "death",
+        fight_cluster: "highlight",
+        highlight: "highlight",
+      };
+      
+      const annotation = await createAnnotation(
+        sessionIdToUse,
+        user.id,
+        suggestion.timestamp_seconds,
+        typeMap[suggestion.suggestion_type],
+        suggestion.title
+      );
+      
+      setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
+      // Remove suggestion after accepting
+      setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+      toast.success("Annotation added from suggestion");
+    } catch (error) {
+      toast.error("Failed to create annotation");
+    }
+  }, [user, isLocalSession, localSession?.id, session?.id]);
+
+  // Dismiss a suggestion
+  const handleSuggestionDismiss = useCallback((suggestionId: string) => {
+    setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+    toast.success("Suggestion dismissed");
   }, []);
 
   // Handle frame click - drop a pin and open annotation drawer
@@ -566,6 +661,9 @@ export default function SessionReview() {
             onFrameClick={handleFrameClick}
             framePins={framePins}
             onPinClick={handlePinClick}
+            suggestions={suggestions}
+            onSuggestionAccept={handleSuggestionAccept}
+            onSuggestionDismiss={handleSuggestionDismiss}
           />
         </div>
 
@@ -603,6 +701,11 @@ export default function SessionReview() {
               onModeChange={handlePanelModeChange}
               pendingTime={pendingTime}
               pendingEndTime={pendingEndTime}
+              suggestions={suggestions}
+              onSuggestionAccept={handleSuggestionAccept}
+              onSuggestionDismiss={handleSuggestionDismiss}
+              onGenerateSuggestions={handleGenerateSuggestions}
+              isLoadingSuggestions={isLoadingSuggestions}
             />
           )}
         </div>
