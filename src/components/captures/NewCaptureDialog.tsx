@@ -97,7 +97,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [settingsConfig, setSettingsConfig] = useState<SettingsConfig>({
     videoQuality: "1080p60",
     audioBitrate: "128",
-    cameraQuality: "720p",
+    systemAudio: true,
     pushToTalk: false,
     autoStop: true,
     monoAudio: true,
@@ -133,7 +133,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setSettingsConfig({
         videoQuality: "1080p60",
         audioBitrate: "128",
-        cameraQuality: "720p",
+        systemAudio: true,
         pushToTalk: false,
         autoStop: true,
         monoAudio: true,
