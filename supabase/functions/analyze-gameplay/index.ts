@@ -28,6 +28,22 @@ interface TimelineEventData {
   event_type: string;
   title: string | null;
   description: string | null;
+  duration_ms?: number | null;
+}
+
+interface ClipWindow {
+  start_time: number;
+  end_time: number;
+  event_type: string;
+  event_id: string;
+  session_id: string;
+  clip_purpose: "pre" | "during" | "post";
+  event_timestamp: number;
+}
+
+interface EventWithClipWindows {
+  event: TimelineEventData;
+  clip_windows: ClipWindow[];
 }
 
 interface SessionData {
@@ -50,6 +66,11 @@ interface FeedbackCard {
   behavioral_indicator?: string;
   recommendation?: string;
   confidence: "high" | "medium" | "low";
+  evidence_windows?: {
+    pre?: { start: number; end: number };
+    during?: { start: number; end: number };
+    post?: { start: number; end: number };
+  };
 }
 
 interface AnalysisResult {
@@ -67,6 +88,109 @@ interface AnalysisResult {
     priority: "high" | "medium" | "low";
     category: string;
   }[];
+  clip_windows?: ClipWindow[];
+}
+
+// Configuration for clip window extraction
+const CLIP_CONFIG = {
+  PRE_WINDOW_SECONDS: 10,    // 8-12s before, using 10s
+  DURING_MAX_SECONDS: 10,    // up to 10s for the event itself
+  POST_WINDOW_SECONDS: 8,    // 6-10s after, using 8s
+};
+
+/**
+ * Extracts clip windows (PRE/DURING/POST) for a gameplay event.
+ * These windows provide temporal context for AI Coach analysis.
+ */
+function extractClipWindows(
+  event: TimelineEventData,
+  sessionId: string,
+  sessionDurationSeconds: number
+): ClipWindow[] {
+  const eventTimestampSeconds = event.timestamp_ms / 1000;
+  const eventDurationSeconds = (event.duration_ms || 0) / 1000;
+  const clipWindows: ClipWindow[] = [];
+
+  // PRE window: 8-12 seconds before the event
+  const preStart = Math.max(0, eventTimestampSeconds - CLIP_CONFIG.PRE_WINDOW_SECONDS);
+  const preEnd = eventTimestampSeconds;
+  
+  if (preEnd > preStart) {
+    clipWindows.push({
+      start_time: preStart,
+      end_time: preEnd,
+      event_type: event.event_type,
+      event_id: event.id,
+      session_id: sessionId,
+      clip_purpose: "pre",
+      event_timestamp: eventTimestampSeconds,
+    });
+  }
+
+  // DURING window: the event itself (up to 10s)
+  const duringStart = eventTimestampSeconds;
+  const duringEnd = Math.min(
+    eventTimestampSeconds + Math.min(eventDurationSeconds || CLIP_CONFIG.DURING_MAX_SECONDS, CLIP_CONFIG.DURING_MAX_SECONDS),
+    sessionDurationSeconds
+  );
+
+  if (duringEnd > duringStart) {
+    clipWindows.push({
+      start_time: duringStart,
+      end_time: duringEnd,
+      event_type: event.event_type,
+      event_id: event.id,
+      session_id: sessionId,
+      clip_purpose: "during",
+      event_timestamp: eventTimestampSeconds,
+    });
+  }
+
+  // POST window: 6-10 seconds after the event ends
+  const postStart = duringEnd;
+  const postEnd = Math.min(postStart + CLIP_CONFIG.POST_WINDOW_SECONDS, sessionDurationSeconds);
+
+  if (postEnd > postStart) {
+    clipWindows.push({
+      start_time: postStart,
+      end_time: postEnd,
+      event_type: event.event_type,
+      event_id: event.id,
+      session_id: sessionId,
+      clip_purpose: "post",
+      event_timestamp: eventTimestampSeconds,
+    });
+  }
+
+  return clipWindows;
+}
+
+/**
+ * Processes all timeline events and extracts clip windows for each.
+ * Returns events enriched with their associated clip windows.
+ */
+function processEventsWithClipWindows(
+  events: TimelineEventData[],
+  sessionId: string,
+  sessionDurationSeconds: number
+): { eventsWithWindows: EventWithClipWindows[]; allClipWindows: ClipWindow[] } {
+  const eventsWithWindows: EventWithClipWindows[] = [];
+  const allClipWindows: ClipWindow[] = [];
+
+  // Filter for key gameplay events that warrant clip extraction
+  const keyEventTypes = ['kill', 'death', 'fight', 'engagement', 'highlight', 'clutch', 'assist'];
+  
+  const keyEvents = events.filter(e => 
+    keyEventTypes.some(type => e.event_type.toLowerCase().includes(type))
+  );
+
+  for (const event of keyEvents) {
+    const clipWindows = extractClipWindows(event, sessionId, sessionDurationSeconds);
+    eventsWithWindows.push({ event, clip_windows: clipWindows });
+    allClipWindows.push(...clipWindows);
+  }
+
+  return { eventsWithWindows, allClipWindows };
 }
 
 serve(async (req) => {
@@ -123,6 +247,17 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    // Extract clip windows for key gameplay events
+    const sessionDuration = session.duration_seconds || 0;
+    const sessionId = session.session_id || 'unknown';
+    const { eventsWithWindows, allClipWindows } = processEventsWithClipWindows(
+      session.events,
+      sessionId,
+      sessionDuration
+    );
+
+    console.log(`Extracted ${allClipWindows.length} clip windows from ${eventsWithWindows.length} key events`);
+
     // Build context from session data
     const annotationsContext = session.annotations.map(a => 
       `[${formatTime(a.timestamp_seconds)}] ${a.annotation_type.toUpperCase()}${a.title ? `: ${a.title}` : ''}${a.content ? ` - "${a.content}"` : ''}${a.tags?.length ? ` [tags: ${a.tags.join(', ')}]` : ''}`
@@ -136,6 +271,18 @@ serve(async (req) => {
       `[${formatTime(e.timestamp_ms / 1000)}] ${e.event_type}${e.title ? `: ${e.title}` : ''}${e.description ? ` - ${e.description}` : ''}`
     ).join('\n');
 
+    // Build clip windows context for AI analysis
+    const clipWindowsContext = eventsWithWindows.map(ew => {
+      const pre = ew.clip_windows.find(c => c.clip_purpose === 'pre');
+      const during = ew.clip_windows.find(c => c.clip_purpose === 'during');
+      const post = ew.clip_windows.find(c => c.clip_purpose === 'post');
+      
+      return `EVENT: ${ew.event.event_type} at ${formatTime(ew.event.timestamp_ms / 1000)}
+  - PRE context: ${pre ? `${formatTime(pre.start_time)} - ${formatTime(pre.end_time)}` : 'N/A'}
+  - DURING: ${during ? `${formatTime(during.start_time)} - ${formatTime(during.end_time)}` : 'N/A'}
+  - POST context: ${post ? `${formatTime(post.start_time)} - ${formatTime(post.end_time)}` : 'N/A'}`;
+    }).join('\n\n');
+
     const systemPrompt = `You are an expert gameplay coach providing post-game review. Your role is to provide actionable, supportive feedback on recorded gaming sessions.
 
 IMPORTANT GUIDELINES:
@@ -147,6 +294,14 @@ IMPORTANT GUIDELINES:
 - When players express intent in voice notes, connect it to observed outcomes
 - Identify behavioral patterns that affect gameplay performance
 - Be encouraging while honest about areas for improvement
+
+EVIDENCE WINDOWS:
+For each key event, you are provided with temporal evidence windows:
+- PRE: What happened 8-12 seconds BEFORE the event (positioning, decisions leading up)
+- DURING: The event itself (up to 10 seconds of action)
+- POST: What happened 6-10 seconds AFTER (recovery, repositioning, follow-up)
+
+Use these windows to provide deeper context in your analysis. Reference the specific time ranges when discussing what led to an outcome or what could be improved.
 
 BEHAVIORAL PATTERNS TO IDENTIFY (as gameplay heuristics, not diagnoses):
 - Decision hesitation: Delayed actions that may indicate uncertainty
@@ -170,7 +325,12 @@ Provide analysis as JSON with this structure:
       "player_intent": "What the player said they were trying to do (from voice notes)",
       "behavioral_indicator": "Observable gameplay pattern (framed as heuristic)",
       "recommendation": "Actionable suggestion",
-      "confidence": "high" | "medium" | "low"
+      "confidence": "high" | "medium" | "low",
+      "evidence_windows": {
+        "pre": { "start": <seconds>, "end": <seconds> },
+        "during": { "start": <seconds>, "end": <seconds> },
+        "post": { "start": <seconds>, "end": <seconds> }
+      }
     }
   ],
   "patterns": [
@@ -206,7 +366,10 @@ ${voiceNotesContext || 'No voice notes'}
 GAMEPLAY EVENTS (automatic detection):
 ${eventsContext || 'No events detected'}
 
-Provide comprehensive feedback with moment-level cards, pattern analysis, and actionable recommendations. Focus on connecting player intent (from voice notes) with observed outcomes. Frame any behavioral observations as gameplay heuristics.`;
+EVIDENCE WINDOWS (PRE/DURING/POST context for key events):
+${clipWindowsContext || 'No clip windows extracted'}
+
+Provide comprehensive feedback with moment-level cards, pattern analysis, and actionable recommendations. For each feedback card related to a key event, include the evidence_windows object with the PRE/DURING/POST time ranges. Focus on connecting player intent (from voice notes) with observed outcomes. Frame any behavioral observations as gameplay heuristics.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -259,6 +422,11 @@ Provide comprehensive feedback with moment-level cards, pattern analysis, and ac
       console.error("Failed to parse AI response:", content);
       throw new Error("Failed to parse analysis result");
     }
+
+    // Attach extracted clip windows to the result for downstream processing
+    analysisResult.clip_windows = allClipWindows;
+
+    console.log(`Analysis complete with ${analysisResult.feedback_cards?.length || 0} feedback cards and ${allClipWindows.length} clip windows`);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
