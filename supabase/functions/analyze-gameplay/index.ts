@@ -93,13 +93,14 @@ serve(async (req) => {
       `[${formatTime(e.timestamp_ms / 1000)}] ${e.event_type}${e.title ? `: ${e.title}` : ''}${e.description ? ` - ${e.description}` : ''}`
     ).join('\n');
 
-    const systemPrompt = `You are an expert gameplay coach and analyst. Your role is to provide actionable, supportive feedback on gaming sessions.
+    const systemPrompt = `You are an expert gameplay coach providing post-game review. Your role is to provide actionable, supportive feedback on recorded gaming sessions.
 
 IMPORTANT GUIDELINES:
+- This is a POST-GAME REVIEW only - never provide real-time assistance
 - Frame all behavioral observations as gameplay-relevant heuristics, NOT medical or psychological diagnoses
 - Use language like "appears to show", "may indicate", "pattern suggests" rather than definitive statements
 - Focus on actionable improvements within the player's control
-- Reference specific moments using timestamps when possible
+- Reference specific moments using timestamps so players can jump to those moments
 - When players express intent in voice notes, connect it to observed outcomes
 - Identify behavioral patterns that affect gameplay performance
 - Be encouraging while honest about areas for improvement
@@ -194,15 +195,15 @@ Provide comprehensive feedback with moment-level cards, pattern analysis, and ac
         });
       }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      console.error("Coach gateway error:", response.status, errorText);
+      throw new Error(`Coach gateway error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
-      throw new Error("No content in AI response");
+      throw new Error("No content in Coach response");
     }
 
     // Parse JSON from response (handle markdown code blocks)
