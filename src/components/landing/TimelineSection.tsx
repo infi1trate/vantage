@@ -1,6 +1,7 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { AlertTriangle, Timer, Crosshair, Play, Pause } from "lucide-react";
+import valorantGameplay from "@/assets/valorant-gameplay.webp";
 
 interface TimelineAnnotation {
   id: number;
@@ -142,11 +143,18 @@ export function TimelineSection() {
           >
             {/* Gameplay frame */}
             <div className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/30 mb-4">
-              {/* Dynamic background */}
+              {/* Gameplay background image */}
+              <img 
+                src={valorantGameplay} 
+                alt="Valorant gameplay screenshot" 
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              
+              {/* Dynamic overlay with grid */}
               <motion.div 
                 className="absolute inset-0 transition-all duration-100"
                 style={{
-                  background: `linear-gradient(${120 + scrubberPosition * 0.5}deg, hsl(var(--muted) / 0.3) 0%, hsl(var(--background)) 40%, hsl(var(--muted) / 0.2) 100%)`,
+                  background: `linear-gradient(${120 + scrubberPosition * 0.5}deg, hsl(var(--muted) / 0.4) 0%, hsl(var(--background) / 0.5) 40%, hsl(var(--muted) / 0.3) 100%)`,
                 }}
               >
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.008)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.008)_1px,transparent_1px)] bg-[size:28px_28px]" />
