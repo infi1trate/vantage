@@ -622,6 +622,7 @@ export default function CapturePage() {
             recordingDisabledReason={recordingDisabledReason}
             inlineError={capture.captureState === "preview_ready" ? capture.error : null}
             onDismissError={handleDismissInlineError}
+            onRetryRecording={handleStartRecording}
           />
 
           {/* Debug Panel - Dev mode only */}

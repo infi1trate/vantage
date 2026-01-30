@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink, AlertTriangle, Copy, Check } from "lucide-react";
+import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink, AlertTriangle, Copy, Check, RotateCcw } from "lucide-react";
 import type { CaptureState, CaptureError } from "@/hooks/useCaptureManager";
 import { type PreflightCheck } from "@/hooks/usePreflightChecks";
 import { PreflightChecklist } from "./PreflightChecklist";
@@ -26,6 +26,7 @@ interface CaptureControlsProps {
   // Inline recording error (shown when start recording fails but preview stays active)
   inlineError?: CaptureError | null;
   onDismissError?: () => void;
+  onRetryRecording?: () => void;
 }
 
 export function CaptureControls({
@@ -43,6 +44,7 @@ export function CaptureControls({
   recordingDisabledReason,
   inlineError,
   onDismissError,
+  onRetryRecording,
 }: CaptureControlsProps) {
   const [copied, setCopied] = useState(false);
   
@@ -84,14 +86,28 @@ export function CaptureControls({
           <AlertTitle className="uppercase tracking-wider text-xs">
             {inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED"
               ? "This Browser Can't Record This Format"
+              : inlineError.code === "STREAM_NOT_READY"
+              ? "Capture Stream Not Ready"
               : "Recording Failed"}
           </AlertTitle>
           <AlertDescription className="mt-2 space-y-3">
             <p className="text-sm">{inlineError.message}</p>
             {inlineError.details && (
-              <p className="text-xs text-muted-foreground">{inlineError.details}</p>
+              <p className="text-xs text-muted-foreground font-mono bg-muted/30 p-2 rounded">{inlineError.details}</p>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
+              {/* Retry button for recoverable errors */}
+              {inlineError.recoverable && onRetryRecording && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onRetryRecording}
+                  className="text-xs"
+                >
+                  <RotateCcw className="mr-1.5 h-3 w-3" />
+                  Retry
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -101,17 +117,20 @@ export function CaptureControls({
                 {copied ? <Check className="mr-1.5 h-3 w-3" /> : <Copy className="mr-1.5 h-3 w-3" />}
                 {copied ? "Copied" : "Copy Diagnostics"}
               </Button>
-              <a
-                href="https://www.google.com/chrome/"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button variant="outline" size="sm" className="text-xs">
-                  <Chrome className="mr-1.5 h-3 w-3" />
-                  Get Chrome
-                  <ExternalLink className="ml-1.5 h-3 w-3" />
-                </Button>
-              </a>
+              {/* Show Chrome link only for browser capability errors */}
+              {(inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED") && (
+                <a
+                  href="https://www.google.com/chrome/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="outline" size="sm" className="text-xs">
+                    <Chrome className="mr-1.5 h-3 w-3" />
+                    Get Chrome
+                    <ExternalLink className="ml-1.5 h-3 w-3" />
+                  </Button>
+                </a>
+              )}
               {onDismissError && (
                 <Button
                   variant="ghost"
