@@ -298,6 +298,197 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     }
   }, [captureState, screen, microphone, facecam]);
 
+  // Encoder quality profiles
+  const ENCODER_PROFILES = {
+    standard: {
+      frameRate: 30,
+      videoBitsPerSecond: 3_000_000, // 3 Mbps
+      audioBitsPerSecond: 128_000,   // 128 kbps
+    },
+    lowPower: {
+      frameRate: 24,
+      videoBitsPerSecond: 1_500_000, // 1.5 Mbps
+      audioBitsPerSecond: 96_000,    // 96 kbps
+    },
+  };
+
+  // Track if we've had encoder failures (for automatic fallback)
+  const encoderFailedOnceRef = useRef(false);
+
+  // Internal function to attempt recording with specific settings
+  const attemptRecording = useCallback(async (
+    selectedMimeType: RecordingMimeTypeInfo,
+    profile: typeof ENCODER_PROFILES.standard
+  ): Promise<boolean> => {
+    console.log(`[Capture] Attempting recording with profile: ${profile.frameRate}fps, ${profile.videoBitsPerSecond / 1_000_000}Mbps video`);
+    
+    // Start canvas compositing with conservative framerate
+    const compositeStream = composite.startCompositing({
+      screenStream: screen.stream!,
+      microphoneStream: microphone.stream,
+      facecamStream: facecam.stream,
+      facecamPosition: { x: 0.88, y: 0.82, scale: 0.22 },
+      frameRate: profile.frameRate,
+    });
+    
+    if (!compositeStream) {
+      throw {
+        code: "COMPOSITING_FAILED" as const,
+        message: "Failed to start video compositing. Please try again.",
+        recoverable: true,
+      };
+    }
+    
+    console.log(`[Capture] Composite stream ready: ${compositeStream.getTracks().length} tracks`);
+    
+    // Validate the composite stream before creating MediaRecorder
+    const streamValidation = validateCompositeStream(compositeStream);
+    
+    if (!streamValidation.valid) {
+      console.error("[Capture] Stream validation failed:", streamValidation);
+      composite.stopCompositing();
+      throw streamValidation.error || {
+        code: "STREAM_NOT_READY" as const,
+        message: "Capture stream is not ready for recording.",
+        recoverable: true,
+        details: `Video tracks: ${streamValidation.videoTracks}, Audio tracks: ${streamValidation.audioTracks}, Failed: ${streamValidation.failedTrack?.kind} (${streamValidation.failedTrack?.issue})`,
+      };
+    }
+    
+    console.log(`[Capture] Stream validation passed: ${streamValidation.videoTracks} video, ${streamValidation.audioTracks} audio tracks`);
+    
+    // Create MediaRecorder with conservative bitrate settings
+    const options: MediaRecorderOptions = {
+      mimeType: selectedMimeType.mimeType,
+      videoBitsPerSecond: profile.videoBitsPerSecond,
+      audioBitsPerSecond: profile.audioBitsPerSecond,
+    };
+    
+    console.log(`[Capture] MediaRecorder options:`, options);
+    
+    const recorder = new MediaRecorder(compositeStream, options);
+    compositeChunksRef.current = [];
+    setDebugChunksCount(0);
+    setDebugTotalBytes(0);
+    setRecorderStateLog([]);
+    setLastRecorderError(null);
+    
+    // Helper to log state transitions
+    const logStateTransition = (event: string) => {
+      const timestamp = new Date().toISOString().split("T")[1].slice(0, 12);
+      const entry = `${timestamp} ${event} → ${recorder.state}`;
+      setRecorderStateLog(prev => [...prev, entry]);
+      console.log(`[Recorder] ${entry}`);
+    };
+    
+    // Set to "starting" state - waiting for first chunk
+    setCaptureState("starting");
+    logStateTransition("created");
+    
+    // Promise that resolves when we get the first valid chunk
+    const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
+      let firstChunkReceived = false;
+      const startTime = Date.now();
+      const TIMEOUT_MS = 2500; // 2.5 second timeout
+      
+      // Check for timeout
+      const timeoutId = setTimeout(() => {
+        if (!firstChunkReceived) {
+          console.error("[Capture] Timeout: No data received within 2.5 seconds");
+          reject({
+            code: "NO_DATA_CAPTURED" as const,
+            message: "Recording failed to produce data. Your browser may not support this recording format.",
+            recoverable: true,
+            details: `Timeout after ${TIMEOUT_MS}ms. Recorder state: ${recorder.state}, MIME: ${selectedMimeType.mimeType}, Profile: ${profile.frameRate}fps`,
+          });
+        }
+      }, TIMEOUT_MS);
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          compositeChunksRef.current.push(event.data);
+          setDebugChunksCount(compositeChunksRef.current.length);
+          setDebugTotalBytes(prev => prev + event.data.size);
+          console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
+          
+          // First valid chunk received - resolve promise
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            clearTimeout(timeoutId);
+            console.log(`[Capture] First chunk received after ${Date.now() - startTime}ms`);
+            resolve(true);
+          }
+        }
+      };
+      
+      recorder.onerror = (event: Event) => {
+        // MediaRecorder error events have an error property
+        const err = (event as any).error;
+        const errorMessage = err 
+          ? `${err.name || "Error"}: ${err.message || "Unknown error"}` 
+          : "Unknown MediaRecorder error";
+        console.error("[Composite] Recorder error:", errorMessage);
+        setLastRecorderError(errorMessage);
+        logStateTransition("error");
+        clearTimeout(timeoutId);
+        reject({
+          code: "RECORDER_ERROR" as const,
+          message: "MediaRecorder encountered an error.",
+          recoverable: true,
+          details: errorMessage,
+        });
+      };
+      
+      recorder.onstart = () => {
+        logStateTransition("start");
+      };
+      
+      recorder.onpause = () => {
+        logStateTransition("pause");
+      };
+      
+      recorder.onresume = () => {
+        logStateTransition("resume");
+      };
+      
+      recorder.onstop = () => {
+        logStateTransition("stop");
+      };
+    });
+    
+    compositeRecorderRef.current = recorder;
+    recorder.start(1000); // 1 second timeslice chunks
+    logStateTransition("start()");
+    
+    // Wait for first chunk before transitioning to "recording" state
+    await waitForFirstChunk;
+    
+    // Verify recorder is still in recording state
+    if (recorder.state !== "recording") {
+      throw {
+        code: "RECORDER_ERROR" as const,
+        message: "Recorder stopped unexpectedly before data was captured.",
+        recoverable: true,
+        details: `Recorder state: ${recorder.state}`,
+      };
+    }
+
+    // NOW we can safely say we're recording
+    startTimeRef.current = Date.now();
+    setDuration(0);
+    isRecordingRef.current = true;
+    
+    durationIntervalRef.current = setInterval(() => {
+      if (isRecordingRef.current) {
+        setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      }
+    }, 100);
+
+    setCaptureState("recording");
+    console.log("[Capture] Recording confirmed - MediaRecorder is producing data");
+    return true;
+  }, [screen.stream, microphone.stream, facecam.stream, composite]);
+
   // TRANSITION: preview_ready → recording
   // Returns { success: boolean, error?: CaptureError } for inline error handling
   // Does NOT transition to error state on failure - keeps preview running
@@ -349,166 +540,33 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       setMimeTypeInfo(selectedMimeType);
       console.log(`[Capture] Selected MIME type: ${selectedMimeType.mimeType} (${selectedMimeType.codecsLabel})`);
       
-      // Start canvas compositing with all available streams
-      const compositeStream = composite.startCompositing({
-        screenStream: screen.stream,
-        microphoneStream: microphone.stream,
-        facecamStream: facecam.stream,
-        facecamPosition: { x: 0.88, y: 0.82, scale: 0.22 }, // Bottom-right PiP
-        frameRate: 60,
-      });
+      // Choose profile based on whether we've failed before
+      const initialProfile = encoderFailedOnceRef.current 
+        ? ENCODER_PROFILES.lowPower 
+        : ENCODER_PROFILES.standard;
       
-      if (!compositeStream) {
-        throw {
-          code: "COMPOSITING_FAILED" as const,
-          message: "Failed to start video compositing. Please try again.",
-          recoverable: true,
-        };
-      }
-      
-      console.log(`[Capture] Composite stream ready: ${compositeStream.getTracks().length} tracks`);
-      
-      // Validate the composite stream before creating MediaRecorder
-      const streamValidation = validateCompositeStream(compositeStream);
-      
-      if (!streamValidation.valid) {
-        console.error("[Capture] Stream validation failed:", streamValidation);
-        throw streamValidation.error || {
-          code: "STREAM_NOT_READY" as const,
-          message: "Capture stream is not ready for recording.",
-          recoverable: true,
-          details: `Video tracks: ${streamValidation.videoTracks}, Audio tracks: ${streamValidation.audioTracks}, Failed: ${streamValidation.failedTrack?.kind} (${streamValidation.failedTrack?.issue})`,
-        };
-      }
-      
-      console.log(`[Capture] Stream validation passed: ${streamValidation.videoTracks} video, ${streamValidation.audioTracks} audio tracks`);
-      
-      // Create MediaRecorder with the selected compatible MIME type
-      const options: MediaRecorderOptions = {
-        mimeType: selectedMimeType.mimeType,
-      };
-      
-      const recorder = new MediaRecorder(compositeStream, options);
-      compositeChunksRef.current = [];
-      setDebugChunksCount(0);
-      setDebugTotalBytes(0);
-      setRecorderStateLog([]);
-      setLastRecorderError(null);
-      
-      // Helper to log state transitions
-      const logStateTransition = (event: string) => {
-        const timestamp = new Date().toISOString().split("T")[1].slice(0, 12);
-        const entry = `${timestamp} ${event} → ${recorder.state}`;
-        setRecorderStateLog(prev => [...prev, entry]);
-        console.log(`[Recorder] ${entry}`);
-      };
-      
-      // Set to "starting" state - waiting for first chunk
-      setCaptureState("starting");
-      logStateTransition("created");
-      
-      // Promise that resolves when we get the first valid chunk
-      const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
-        let firstChunkReceived = false;
-        const startTime = Date.now();
-        const TIMEOUT_MS = 2500; // 2.5 second timeout
-        
-        // Check for timeout
-        const timeoutId = setTimeout(() => {
-          if (!firstChunkReceived) {
-            console.error("[Capture] Timeout: No data received within 2.5 seconds");
-            reject({
-              code: "NO_DATA_CAPTURED" as const,
-              message: "Recording failed to produce data. Your browser may not support this recording format.",
-              recoverable: true,
-              details: `Timeout after ${TIMEOUT_MS}ms. Recorder state: ${recorder.state}, MIME: ${selectedMimeType.mimeType}`,
-            });
-          }
-        }, TIMEOUT_MS);
-        
-        recorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            compositeChunksRef.current.push(event.data);
-            setDebugChunksCount(compositeChunksRef.current.length);
-            setDebugTotalBytes(prev => prev + event.data.size);
-            console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
-            
-            // First valid chunk received - resolve promise
-            if (!firstChunkReceived) {
-              firstChunkReceived = true;
-              clearTimeout(timeoutId);
-              console.log(`[Capture] First chunk received after ${Date.now() - startTime}ms`);
-              resolve(true);
-            }
-          }
-        };
-        
-        recorder.onerror = (event: Event) => {
-          // MediaRecorder error events have an error property
-          const err = (event as any).error;
-          const errorMessage = err 
-            ? `${err.name || "Error"}: ${err.message || "Unknown error"}` 
-            : "Unknown MediaRecorder error";
-          console.error("[Composite] Recorder error:", errorMessage);
-          setLastRecorderError(errorMessage);
-          logStateTransition("error");
-          clearTimeout(timeoutId);
-          reject({
-            code: "RECORDER_ERROR" as const,
-            message: "MediaRecorder encountered an error.",
-            recoverable: false,
-            details: errorMessage,
-          });
-        };
-        
-        recorder.onstart = () => {
-          logStateTransition("start");
-        };
-        
-        recorder.onpause = () => {
-          logStateTransition("pause");
-        };
-        
-        recorder.onresume = () => {
-          logStateTransition("resume");
-        };
-        
-        recorder.onstop = () => {
-          logStateTransition("stop");
-        };
-      });
-      
-      compositeRecorderRef.current = recorder;
-      recorder.start(1000); // 1 second timeslice chunks
-      logStateTransition("start()");
-      
-      // Wait for first chunk before transitioning to "recording" state
-      await waitForFirstChunk;
-      
-      // Verify recorder is still in recording state
-      if (recorder.state !== "recording") {
-        throw {
-          code: "RECORDER_ERROR" as const,
-          message: "Recorder stopped unexpectedly before data was captured.",
-          recoverable: true,
-          details: `Recorder state: ${recorder.state}`,
-        };
-      }
-
-      // NOW we can safely say we're recording
-      startTimeRef.current = Date.now();
-      setDuration(0);
-      isRecordingRef.current = true;
-      
-      durationIntervalRef.current = setInterval(() => {
-        if (isRecordingRef.current) {
-          setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      try {
+        // Try with selected profile
+        return await attemptRecording(selectedMimeType, initialProfile);
+      } catch (firstErr: any) {
+        // If this was already a low-power attempt, don't retry
+        if (encoderFailedOnceRef.current || initialProfile === ENCODER_PROFILES.lowPower) {
+          throw firstErr;
         }
-      }, 100);
-
-      setCaptureState("recording");
-      console.log("[Capture] Recording confirmed - MediaRecorder is producing data");
-      return true;
+        
+        // First failure - try with low-power profile
+        console.warn("[Capture] First recording attempt failed, retrying with low-power profile...", firstErr);
+        encoderFailedOnceRef.current = true;
+        
+        // Cleanup the failed attempt
+        cleanupRecorder(compositeRecorderRef.current);
+        compositeRecorderRef.current = null;
+        composite.stopCompositing();
+        
+        // Retry with low-power settings
+        console.log("[Capture] Retrying with low-power profile: 24fps, 1.5Mbps");
+        return await attemptRecording(selectedMimeType, ENCODER_PROFILES.lowPower);
+      }
     } catch (err: any) {
       console.error("Failed to start recording:", err);
       
@@ -531,7 +589,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       setError(captureError);
       return false;
     }
-  }, [captureState, screen.stream, microphone.stream, facecam.stream, composite, cleanupRecorder]);
+  }, [captureState, screen.stream, attemptRecording, composite, cleanupRecorder]);
 
   // TRANSITION: recording → paused
   const pauseRecording = useCallback(() => {
