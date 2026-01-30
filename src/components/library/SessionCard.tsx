@@ -487,8 +487,22 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
         {/* Preview Dialog */}
         <Dialog open={showPreviewDialog} onOpenChange={handleClosePreview}>
           <DialogContent className="max-w-4xl p-0 overflow-hidden">
-            <DialogHeader className="p-4 pb-0">
-              <DialogTitle>{title}</DialogTitle>
+            <DialogHeader className="p-4 pb-2">
+              <DialogTitle className="text-lg">{title}</DialogTitle>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                {gameName && (
+                  <span className="flex items-center gap-1">
+                    <Gamepad2 className="h-3.5 w-3.5" />
+                    {gameName}
+                  </span>
+                )}
+                <span className="font-mono-data">{formatDuration(duration)}</span>
+                {isLocal && (
+                  <Badge variant="outline" className="text-xs bg-vantage-success/20 text-vantage-success border-vantage-success/30">
+                    Local
+                  </Badge>
+                )}
+              </div>
             </DialogHeader>
             <div className="aspect-video bg-black">
               {videoUrl && (
@@ -499,6 +513,15 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                   className="w-full h-full"
                 />
               )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 pt-3 border-t border-border/50">
+              <Button variant="outline" onClick={handleClosePreview}>
+                Close
+              </Button>
+              <Button onClick={() => { handleClosePreview(); navigate(`/session/${sessionId}`); }}>
+                <Eye className="h-4 w-4 mr-2" />
+                Open Details
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -718,8 +741,22 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
       {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={handleClosePreview}>
         <DialogContent className="max-w-4xl p-0 overflow-hidden">
-          <DialogHeader className="p-4 pb-0">
-            <DialogTitle>{title}</DialogTitle>
+          <DialogHeader className="p-4 pb-2">
+            <DialogTitle className="text-lg">{title}</DialogTitle>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              {gameName && (
+                <span className="flex items-center gap-1">
+                  <Gamepad2 className="h-3.5 w-3.5" />
+                  {gameName}
+                </span>
+              )}
+              <span className="font-mono-data">{formatDuration(duration)}</span>
+              {isLocal && (
+                <Badge variant="outline" className="text-xs bg-vantage-success/20 text-vantage-success border-vantage-success/30">
+                  Local
+                </Badge>
+              )}
+            </div>
           </DialogHeader>
           <div className="aspect-video bg-black">
             {videoUrl && (
@@ -730,6 +767,15 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                 className="w-full h-full"
               />
             )}
+          </div>
+          <div className="flex items-center justify-end gap-3 p-4 pt-3 border-t border-border/50">
+            <Button variant="outline" onClick={handleClosePreview}>
+              Close
+            </Button>
+            <Button onClick={() => { handleClosePreview(); navigate(`/session/${sessionId}`); }}>
+              <Eye className="h-4 w-4 mr-2" />
+              Open Details
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
