@@ -58,18 +58,16 @@ serve(async (req) => {
       });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Verify user by passing the JWT token directly
-    const { data: userData, error: authError } = await supabase.auth.getUser(token);
+    // Get user - the client is initialized with the auth header
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError || !userData?.user) {
+    if (authError || !user) {
       console.error("Auth error:", authError?.message || "No user found");
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -77,7 +75,7 @@ serve(async (req) => {
       });
     }
 
-    const userId = userData.user.id;
+    const userId = user.id;
     const { session } = await req.json() as { session: SessionData };
 
     // Verify user owns the session
