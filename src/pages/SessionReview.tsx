@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
+import { FramePin } from "@/components/player/FramePins";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import {
@@ -74,6 +75,10 @@ export default function SessionReview() {
   const [panelMode, setPanelMode] = useState<PanelMode>("list");
   const [pendingTime, setPendingTime] = useState<number | undefined>();
   const [pendingEndTime, setPendingEndTime] = useState<number | undefined>();
+  
+  // Frame pins (with position data)
+  const [framePins, setFramePins] = useState<FramePin[]>([]);
+  const [pendingPinPosition, setPendingPinPosition] = useState<{ x: number; y: number } | null>(null);
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -234,8 +239,51 @@ export default function SessionReview() {
       setPendingTime(undefined);
       setPendingEndTime(undefined);
       setSelection({ type: null });
+      setPendingPinPosition(null);
     }
   }, []);
+
+  // Handle frame click - drop a pin and open annotation drawer
+  const handleFrameClick = useCallback((x: number, y: number, time: number, endTime?: number) => {
+    // Store position for when annotation is created
+    setPendingPinPosition({ x, y });
+    setPendingTime(time);
+    setPendingEndTime(endTime);
+    setPanelMode("note");
+  }, []);
+
+  // Handle pin click - seek to time and open annotation in drawer
+  const handlePinClick = useCallback((pin: FramePin) => {
+    setCurrentTime(pin.timestamp);
+    if (pin.annotationId) {
+      // Find the annotation and open it for editing
+      const annotation = annotations.find(a => a.id === pin.annotationId);
+      if (annotation) {
+        setPendingTime(annotation.timestamp_seconds);
+        setPendingEndTime(annotation.end_timestamp_seconds || undefined);
+        setPanelMode("note");
+      }
+    }
+  }, [annotations]);
+
+  // When an annotation is created with a pending pin position, add it to frame pins
+  const handleAnnotationCreatedWithPin = useCallback((annotation: Annotation) => {
+    handleAnnotationCreated(annotation);
+    
+    if (pendingPinPosition && ["kill", "death", "highlight", "marker"].includes(annotation.annotation_type)) {
+      const newPin: FramePin = {
+        id: `pin-${annotation.id}`,
+        annotationId: annotation.id,
+        type: annotation.annotation_type as FramePin["type"],
+        timestamp: annotation.timestamp_seconds,
+        endTimestamp: annotation.end_timestamp_seconds || undefined,
+        x: pendingPinPosition.x,
+        y: pendingPinPosition.y,
+      };
+      setFramePins(prev => [...prev, newPin]);
+      setPendingPinPosition(null);
+    }
+  }, [handleAnnotationCreated, pendingPinPosition]);
 
   const handleVideoLoaded = useCallback((duration: number) => {
     setVideoMeta((prev) => prev ? { ...prev, videoDuration: duration } : null);
@@ -463,6 +511,9 @@ export default function SessionReview() {
             onCreateMarker={handleCreateMarker}
             onOpenNote={handleOpenNote}
             onOpenVoice={handleOpenVoice}
+            onFrameClick={handleFrameClick}
+            framePins={framePins}
+            onPinClick={handlePinClick}
           />
         </div>
 
@@ -476,7 +527,7 @@ export default function SessionReview() {
             currentTime={currentTime}
             annotations={annotations}
             voiceNotes={voiceNotes}
-            onAnnotationCreated={handleAnnotationCreated}
+            onAnnotationCreated={pendingPinPosition ? handleAnnotationCreatedWithPin : handleAnnotationCreated}
             onMarkerClick={handleMarkerClick}
             onAnnotationDelete={handleAnnotationDelete}
             mode={panelMode}

@@ -3,6 +3,8 @@ import { Annotation, VoiceNote } from "@/lib/captures";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
+import { FrameClickHandler } from "./FrameClickHandler";
+import { FramePins, FramePin } from "./FramePins";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -56,6 +58,9 @@ interface CinematicPlayerProps {
   onCreateMarker?: (type: "kill" | "death" | "highlight" | "marker", time: number, endTime?: number) => void;
   onOpenNote?: (time: number, endTime?: number) => void;
   onOpenVoice?: (time: number) => void;
+  onFrameClick?: (x: number, y: number, time: number, endTime?: number) => void;
+  framePins?: FramePin[];
+  onPinClick?: (pin: FramePin) => void;
 }
 
 export function CinematicPlayer({
@@ -76,6 +81,9 @@ export function CinematicPlayer({
   onCreateMarker,
   onOpenNote,
   onOpenVoice,
+  onFrameClick,
+  framePins = [],
+  onPinClick,
 }: CinematicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -265,19 +273,34 @@ export function CinematicPlayer({
           />
         )}
 
-        {/* Video */}
+        {/* Video with frame click handler */}
         {videoUrl && !videoDecodeError ? (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            className="relative z-10 max-w-full max-h-full rounded-lg shadow-2xl"
-            controls={false}
-            playsInline
-            preload="metadata"
-            onLoadedMetadata={handleVideoLoadedMetadata}
-            onError={handleVideoError}
-            onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
-          />
+          <FrameClickHandler
+            selection={activeSelection}
+            currentTime={currentTime}
+            onFrameClick={onFrameClick}
+            className="relative z-10"
+          >
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className="max-w-full max-h-full rounded-lg shadow-2xl"
+              controls={false}
+              playsInline
+              preload="metadata"
+              onLoadedMetadata={handleVideoLoadedMetadata}
+              onError={handleVideoError}
+              onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
+            />
+            
+            {/* Frame pins overlay */}
+            <FramePins
+              pins={framePins}
+              currentTime={currentTime}
+              duration={duration}
+              onPinClick={onPinClick}
+            />
+          </FrameClickHandler>
         ) : !videoUrl ? (
           <div className="relative z-10 w-full max-w-2xl aspect-video flex items-center justify-center bg-muted/30 rounded-lg border border-border/20">
             <div className="text-center opacity-50">
