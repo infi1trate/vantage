@@ -146,18 +146,18 @@ export function CaptureSetup({ session, onStart, isLoading }: CaptureSetupProps)
   };
 
   return (
-    <Card className="p-6 bg-card border-border/50">
+    <Card className="p-6 bg-card border-border/30">
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold mb-2">Capture Setup</h2>
-          <p className="text-muted-foreground">
+          <h2 className="font-display text-2xl tracking-wide mb-2">CAPTURE SETUP</h2>
+          <p className="text-muted-foreground text-sm">
             Configure your capture settings for <span className="text-foreground font-medium">{session.title}</span>
           </p>
         </div>
 
         {/* Permission Status */}
         <div className="p-4 bg-muted/30 rounded-lg space-y-2">
-          <h3 className="text-sm font-medium mb-3">Permission Status</h3>
+          <h3 className="text-xs font-medium uppercase tracking-wider mb-3">Permission Status</h3>
           <div className="flex items-center gap-2 text-sm">
             {getPermissionIcon(permissionStatus.microphone)}
             <span>Microphone: {permissionStatus.microphone}</span>
@@ -268,7 +268,7 @@ export function CaptureSetup({ session, onStart, isLoading }: CaptureSetupProps)
                   </SelectContent>
                 </Select>
               ) : (
-                <p className="text-sm text-yellow-500">No cameras found. Facecam will be disabled.</p>
+                <p className="text-sm text-vantage-warning">No cameras found. Facecam will be disabled.</p>
               )
             )}
           </div>
@@ -279,15 +279,15 @@ export function CaptureSetup({ session, onStart, isLoading }: CaptureSetupProps)
           size="lg"
           onClick={handleStart}
           disabled={isLoading || microphones.length === 0}
-          className="w-full"
+          className="w-full uppercase tracking-wider font-bold"
         >
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Requesting Permissions...
+              Acquiring Sources...
             </>
           ) : (
-            "Start Capture"
+            "Configure & Preview"
           )}
         </Button>
 
