@@ -107,9 +107,8 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
           blob = new Blob([blob], { type: storedMimeType });
         }
         
-        // Determine file extension from mimeType
-        const mimeType = blob.type || session.mimeType || "video/webm";
-        const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+        // Use stored fileExt if available, otherwise determine from mimeType
+        const extension = session.fileExt || (blob.type?.includes("mp4") || session.mimeType?.includes("mp4") ? "mp4" : "webm");
         
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");

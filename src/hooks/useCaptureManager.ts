@@ -3,6 +3,7 @@ import { useScreenCapture } from "./useScreenCapture";
 import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
+import { chooseRecordingMimeType, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -46,6 +47,12 @@ export interface RecordedData {
   compositeBlob: Blob | null;
   /** MIME type of the composite blob (e.g., "video/webm;codecs=vp9,opus") */
   compositeMimeType: string | null;
+  /** File extension based on MIME type */
+  fileExt: "mp4" | "webm";
+  /** Human-readable codec label */
+  codecsLabel: string;
+  /** Simplified browser identifier */
+  browserLabel: string;
   /** Debug: What stream source was used for the recording */
   recordedSource: RecordedSourceType;
   /** Legacy: screen only (null when using composite) */
@@ -57,7 +64,7 @@ export interface RecordedData {
 }
 
 export interface CaptureError {
-  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "MEDIARECORDER_UNSUPPORTED" | "NO_CHUNKS" | "COMPOSITING_FAILED" | "UNKNOWN";
+  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "MEDIARECORDER_UNSUPPORTED" | "NO_COMPATIBLE_FORMAT" | "NO_CHUNKS" | "COMPOSITING_FAILED" | "UNKNOWN";
   message: string;
   recoverable: boolean;
   details?: string;
@@ -111,28 +118,8 @@ export interface UseCaptureManagerReturn {
     recorderState: RecordingState | null;
     chunksCount: number;
     totalBytes: number;
+    mimeTypeInfo: RecordingMimeTypeInfo | null;
   };
-}
-
-// Determine best supported video mime type with fallbacks
-function getSupportedVideoMimeType(): string {
-  const videoTypes = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
-  
-  for (const type of videoTypes) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      console.log(`[MediaRecorder] Using video mime type: ${type}`);
-      return type;
-    }
-  }
-  
-  console.warn("[MediaRecorder] No preferred video mime type supported, using default");
-  return "";
 }
 
 // Check if MediaRecorder is supported
@@ -152,6 +139,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   // Debug state for diagnostics panel
   const [debugChunksCount, setDebugChunksCount] = useState(0);
   const [debugTotalBytes, setDebugTotalBytes] = useState(0);
+  const [mimeTypeInfo, setMimeTypeInfo] = useState<RecordingMimeTypeInfo | null>(null);
   
   // Single composite recorder ref
   const compositeRecorderRef = useRef<MediaRecorder | null>(null);
@@ -343,6 +331,22 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     try {
       console.log("[Capture] Starting composite recording...");
       
+      // Check for compatible MIME type FIRST
+      const selectedMimeType = chooseRecordingMimeType();
+      
+      if (!selectedMimeType) {
+        throw {
+          code: "NO_COMPATIBLE_FORMAT" as const,
+          message: "This browser can't record a playable format. Use Chrome.",
+          recoverable: false,
+          details: "No MIME type supported by both MediaRecorder and HTMLVideoElement",
+        };
+      }
+      
+      // Store for debug/diagnostics
+      setMimeTypeInfo(selectedMimeType);
+      console.log(`[Capture] Selected MIME type: ${selectedMimeType.mimeType} (${selectedMimeType.codecsLabel})`);
+      
       // Start canvas compositing with all available streams
       const compositeStream = composite.startCompositing({
         screenStream: screen.stream,
@@ -362,12 +366,10 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       
       console.log(`[Capture] Composite stream ready: ${compositeStream.getTracks().length} tracks`);
       
-      // Create MediaRecorder for the composite stream
-      const videoMimeType = getSupportedVideoMimeType();
-      const options: MediaRecorderOptions = {};
-      if (videoMimeType) {
-        options.mimeType = videoMimeType;
-      }
+      // Create MediaRecorder with the selected compatible MIME type
+      const options: MediaRecorderOptions = {
+        mimeType: selectedMimeType.mimeType,
+      };
       
       const recorder = new MediaRecorder(compositeStream, options);
       compositeChunksRef.current = [];
@@ -619,6 +621,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       return {
         compositeBlob,
         compositeMimeType,
+        fileExt: mimeTypeInfo?.fileExt || (compositeMimeType?.startsWith("video/mp4") ? "mp4" : "webm"),
+        codecsLabel: mimeTypeInfo?.codecsLabel || "Unknown",
+        browserLabel: mimeTypeInfo?.browserLabel || navigator.userAgent.substring(0, 50),
         recordedSource: "composed" as const, // This blob came from the composed canvas stream
         screenBlob: null, // Using composite instead
         microphoneBlob: null,
@@ -747,6 +752,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       recorderState: compositeRecorderRef.current?.state || null,
       chunksCount: debugChunksCount,
       totalBytes: debugTotalBytes,
+      mimeTypeInfo,
     },
   };
 }
