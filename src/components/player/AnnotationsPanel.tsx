@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Annotation, VoiceNote, createAnnotation } from "@/lib/captures";
 import { AnnotationsList } from "./AnnotationsList";
-import { CoachRail } from "./coach";
+import { SessionRightRail } from "./SessionRightRail";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ interface AnnotationsPanelProps {
   voiceNotes: VoiceNote[];
   onAnnotationCreated: (annotation: Annotation) => void;
   onAnnotationClick?: (annotation: Annotation) => void;
+  onVoiceNoteClick?: (voiceNote: VoiceNote) => void;
   onMarkerClick: (time: number) => void;
   onAnnotationDelete?: (annotationId: string) => void;
   mode?: PanelMode;
@@ -40,6 +41,9 @@ interface AnnotationsPanelProps {
   onSuggestionDismiss?: (suggestionId: string) => void;
   onGenerateSuggestions?: () => void;
   isLoadingSuggestions?: boolean;
+  coachError?: string | null;
+  // Comments feature
+  commentsEnabled?: boolean;
 }
 
 const MARKER_TYPES = [
@@ -57,6 +61,7 @@ export function AnnotationsPanel({
   voiceNotes,
   onAnnotationCreated,
   onAnnotationClick,
+  onVoiceNoteClick,
   onMarkerClick,
   onAnnotationDelete,
   mode = "list",
@@ -68,6 +73,8 @@ export function AnnotationsPanel({
   onSuggestionDismiss,
   onGenerateSuggestions,
   isLoadingSuggestions = false,
+  coachError,
+  commentsEnabled = false,
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
@@ -110,14 +117,16 @@ export function AnnotationsPanel({
     }
   }, [user, sessionId, activeTime, title, notes, onAnnotationCreated, onModeChange]);
 
-  // List mode - use the new CoachRail component
+  // List mode - use the new multi-section rail
   if (mode === "list") {
     return (
-      <CoachRail
+      <SessionRightRail
+        sessionId={sessionId}
         annotations={annotations}
         voiceNotes={voiceNotes}
         currentTime={currentTime}
         onAnnotationClick={onAnnotationClick}
+        onVoiceNoteClick={onVoiceNoteClick}
         onMarkerClick={onMarkerClick}
         onAnnotationDelete={onAnnotationDelete}
         suggestions={suggestions}
@@ -125,6 +134,9 @@ export function AnnotationsPanel({
         onSuggestionDismiss={onSuggestionDismiss}
         onGenerateSuggestions={onGenerateSuggestions}
         isLoadingSuggestions={isLoadingSuggestions}
+        coachError={coachError}
+        commentsEnabled={commentsEnabled}
+        onSeekTo={onMarkerClick}
       />
     );
   }
