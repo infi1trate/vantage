@@ -47,7 +47,6 @@ export default function CapturePage() {
     screenStream: capture.screenStream,
     microphoneStream: capture.microphoneStream,
     facecamStream: capture.facecamStream,
-    micRequired: capture.captureConfig.hasMic,
     webcamEnabled: capture.captureConfig.hasCam,
   });
   const isRecordingOrFinalizing = 
