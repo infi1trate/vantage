@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
+import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -34,6 +35,8 @@ export interface VideoMetaInfo {
   videoHeight: number | null;
 }
 
+export type { SelectionState };
+
 interface CinematicPlayerProps {
   videoUrl?: string | null;
   duration: number;
@@ -47,6 +50,8 @@ interface CinematicPlayerProps {
   onVideoLoaded?: (duration: number) => void;
   onVideoError?: (error: VideoDecodeError) => void;
   onDownloadRequest?: () => void;
+  selection?: SelectionState;
+  onSelectionChange?: (selection: SelectionState) => void;
 }
 
 export function CinematicPlayer({
@@ -62,6 +67,8 @@ export function CinematicPlayer({
   onVideoLoaded,
   onVideoError,
   onDownloadRequest,
+  selection = { type: null },
+  onSelectionChange,
 }: CinematicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -69,13 +76,17 @@ export function CinematicPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [videoDecodeError, setVideoDecodeError] = useState<VideoDecodeError | null>(null);
-  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [internalSelection, setInternalSelection] = useState<SelectionState>({ type: null });
   const [isDragging, setIsDragging] = useState(false);
+  
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
   const playbackRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Use controlled or internal selection state
+  const activeSelection = onSelectionChange ? selection : internalSelection;
+  const handleSelectionChange = onSelectionChange || setInternalSelection;
 
   // Reset video state when URL changes
   useEffect(() => {
@@ -166,40 +177,21 @@ export function CinematicPlayer({
   }, []);
 
   // Timeline interaction
-  const getTimeFromPosition = useCallback((clientX: number) => {
-    if (!timelineRef.current) return 0;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return percentage * duration;
-  }, [duration]);
+  // Build markers for timeline
+  const timelineMarkers = [
+    ...annotations.map(a => ({
+      id: a.id,
+      time: a.timestamp_seconds,
+      color: getMarkerColor(a.annotation_type),
+    })),
+    ...voiceNotes.map(v => ({
+      id: v.id,
+      time: v.timestamp_seconds,
+      color: "bg-accent",
+    })),
+  ];
 
-  const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
-    setIsDragging(true);
-    const time = getTimeFromPosition(e.clientX);
-    onSeek(time);
-    if (videoRef.current) videoRef.current.currentTime = time;
-  }, [getTimeFromPosition, onSeek]);
-
-  const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
-    const time = getTimeFromPosition(e.clientX);
-    setHoverTime(time);
-    if (isDragging) {
-      onSeek(time);
-      if (videoRef.current) videoRef.current.currentTime = time;
-    }
-  }, [getTimeFromPosition, isDragging, onSeek]);
-
-  const handleTimelineMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  useEffect(() => {
-    const handleGlobalMouseUp = () => setIsDragging(false);
-    window.addEventListener("mouseup", handleGlobalMouseUp);
-    return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
-  }, []);
-
-  // Keyboard shortcuts
+  // Keyboard shortcuts (playback only - timeline handles I/O/arrows)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -209,14 +201,6 @@ export function CinematicPlayer({
         case "KeyK":
           e.preventDefault();
           handlePlayPause();
-          break;
-        case "ArrowLeft":
-          e.preventDefault();
-          handleSkip(-5);
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          handleSkip(5);
           break;
         case "KeyM":
           e.preventDefault();
@@ -231,7 +215,7 @@ export function CinematicPlayer({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handlePlayPause, handleSkip, toggleMute, handleFullscreen]);
+  }, [handlePlayPause, toggleMute, handleFullscreen]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -350,79 +334,20 @@ export function CinematicPlayer({
           </div>
         </div>
 
-        {/* Main timeline - tall and interactive */}
-        <div 
-          ref={timelineRef}
-          className="relative h-16 mx-4 my-3 cursor-pointer select-none"
-          onMouseDown={handleTimelineMouseDown}
-          onMouseMove={handleTimelineMouseMove}
-          onMouseUp={handleTimelineMouseUp}
-          onMouseLeave={() => !isDragging && setHoverTime(null)}
-        >
-          {/* Timeline background */}
-          <div className="absolute inset-0 rounded-lg bg-muted/50 overflow-hidden">
-            {/* Progress fill */}
-            <div 
-              className="absolute inset-y-0 left-0 bg-primary/20 transition-[width] duration-75"
-              style={{ width: `${progressPercentage}%` }}
-            />
-          </div>
-
-          {/* Time markers along bottom */}
-          <div className="absolute bottom-1 left-0 right-0 flex justify-between px-2 text-[10px] font-mono text-muted-foreground/50">
-            {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
-              <span key={pct}>{formatTime(pct * duration)}</span>
-            ))}
-          </div>
-
-          {/* Annotation markers */}
-          {annotations.map((a) => (
-            <div
-              key={a.id}
-              className={cn(
-                "absolute top-2 bottom-6 w-1 rounded-full transition-transform hover:scale-x-150",
-                getMarkerColor(a.annotation_type)
-              )}
-              style={{ left: `${(a.timestamp_seconds / duration) * 100}%` }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSeek(a.timestamp_seconds);
-                onMarkerClick?.(a.timestamp_seconds);
-              }}
-            />
-          ))}
-
-          {/* Voice note markers */}
-          {voiceNotes.map((v) => (
-            <div
-              key={v.id}
-              className="absolute top-2 bottom-6 w-1 rounded-full bg-accent transition-transform hover:scale-x-150"
-              style={{ left: `${(v.timestamp_seconds / duration) * 100}%` }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSeek(v.timestamp_seconds);
-                onMarkerClick?.(v.timestamp_seconds);
-              }}
-            />
-          ))}
-
-          {/* Playhead */}
-          <div 
-            className="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-10"
-            style={{ left: `${progressPercentage}%` }}
-          >
-            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-primary shadow-lg" />
-          </div>
-
-          {/* Hover time indicator */}
-          {hoverTime !== null && !isDragging && (
-            <div 
-              className="absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded bg-foreground text-background text-xs font-mono pointer-events-none z-20"
-              style={{ left: `${(hoverTime / duration) * 100}%` }}
-            >
-              {formatTime(hoverTime)}
-            </div>
-          )}
+        {/* Main timeline with selection support */}
+        <div className="mx-4 my-3">
+          <TimelineSelection
+            duration={duration}
+            currentTime={currentTime}
+            onSeek={(time) => {
+              onSeek(time);
+              if (videoRef.current) videoRef.current.currentTime = time;
+            }}
+            selection={activeSelection}
+            onSelectionChange={handleSelectionChange}
+            markers={timelineMarkers}
+            onMarkerClick={(id, time) => onMarkerClick?.(time)}
+          />
         </div>
       </div>
     </div>
