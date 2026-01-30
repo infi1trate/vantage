@@ -1,11 +1,18 @@
-import { motion } from "framer-motion";
+import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Star } from "lucide-react";
+import { useRef } from "react";
 
 export function HeroSection() {
+  const heroRef = useRef<HTMLElement>(null);
+  const isInView = useInView(heroRef, { amount: 0.3 });
+
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20 pb-12 px-6">
+    <section 
+      ref={heroRef}
+      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20 pb-12 px-6"
+    >
       {/* Animated grid background */}
       <div className="absolute inset-0 bg-background">
         <motion.div 
@@ -90,21 +97,53 @@ export function HeroSection() {
             </div>
           </motion.div>
 
-          {/* Annotation pin */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 1.2, ease: "easeOut" }}
-            className="absolute top-1/3 left-1/2 -translate-x-1/2"
-          >
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/50 bg-primary/10 backdrop-blur-sm">
-              <Star className="w-4 h-4 text-primary fill-primary" />
-              <span className="text-sm font-medium text-foreground">Clutch Play</span>
-              <span className="text-xs font-mono text-muted-foreground">1:47</span>
-            </div>
-            {/* Pin tail */}
-            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0.5 h-3 bg-gradient-to-b from-primary/50 to-transparent" />
-          </motion.div>
+          {/* Annotation pin with tooltip */}
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2">
+            {/* Pin */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 1.2, ease: "easeOut" }}
+              className="relative"
+            >
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/50 bg-primary/10 backdrop-blur-sm">
+                <Star className="w-4 h-4 text-primary fill-primary" />
+                <span className="text-sm font-medium text-foreground">Clutch Play</span>
+                <span className="text-xs font-mono text-muted-foreground">1:47</span>
+              </div>
+              {/* Pin tail */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-full w-0.5 h-3 bg-gradient-to-b from-primary/50 to-transparent" />
+            </motion.div>
+
+            {/* Analysis tooltip - appears after pin, disappears on scroll */}
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.95 }}
+              animate={isInView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 8, scale: 0.95 }}
+              transition={{ duration: 0.5, delay: 1.8, ease: "easeOut" }}
+              className="absolute left-1/2 -translate-x-1/2 top-full mt-6 w-64 md:w-72"
+            >
+              <div className="relative px-4 py-3 rounded-lg border border-vantage-warning/40 bg-vantage-warning/10 backdrop-blur-sm">
+                {/* Connector line */}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-px h-2 bg-gradient-to-t from-vantage-warning/40 to-transparent" />
+                
+                {/* Tooltip content */}
+                <div className="flex items-start gap-2">
+                  <div className="w-1 h-1 rounded-full bg-vantage-warning mt-2 shrink-0" />
+                  <p className="text-sm text-foreground leading-relaxed">
+                    <span className="text-vantage-warning font-medium">Analysis: </span>
+                    Over-peeked before reload — lost timing advantage
+                  </p>
+                </div>
+                
+                {/* Subtle shimmer effect */}
+                <motion.div
+                  className="absolute inset-0 rounded-lg bg-gradient-to-r from-transparent via-vantage-warning/5 to-transparent"
+                  animate={{ x: ["-100%", "100%"] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "linear", delay: 2.5 }}
+                />
+              </div>
+            </motion.div>
+          </div>
 
           {/* Subtle vignette */}
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,hsl(var(--background)/0.4)_100%)]" />
