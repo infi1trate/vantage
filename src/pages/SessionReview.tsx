@@ -33,10 +33,21 @@ import {
   VideoAsset,
   AudioTrack,
 } from "@/lib/captures";
+import {
+  getLocalSession,
+  getLocalSessionBlob,
+  LocalSession,
+} from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Share2, Download, Gamepad2, MessageSquare, Trash2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Loader2, ArrowLeft, Share2, Download, Gamepad2, MessageSquare, Trash2, AlertTriangle, Bug, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -45,7 +56,18 @@ export default function SessionReview() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
+  // Session data states
   const [session, setSession] = useState<CaptureSession | null>(null);
+  const [localSession, setLocalSession] = useState<LocalSession | null>(null);
+  const [isLocalSession, setIsLocalSession] = useState(false);
+  const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
+  const [blobMissing, setBlobMissing] = useState(false);
+  const [blobDebugInfo, setBlobDebugInfo] = useState<{
+    sessionFound: boolean;
+    blobSize: number | null;
+    error: string | null;
+  } | null>(null);
+
   const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -64,7 +86,17 @@ export default function SessionReview() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const playerRef = useRef<{ enterDrawingMode: () => void } | null>(null);
+
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (localVideoUrl) {
+        URL.revokeObjectURL(localVideoUrl);
+      }
+    };
+  }, [localVideoUrl]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -79,7 +111,51 @@ export default function SessionReview() {
   }, [sessionId, user]);
 
   const loadSessionData = async () => {
+    if (!sessionId) return;
+
     try {
+      // First, try to load from IndexedDB (local session)
+      const localData = await getLocalSession(sessionId);
+      
+      if (localData) {
+        console.log("[SessionReview] Found local session:", sessionId);
+        setIsLocalSession(true);
+        setLocalSession(localData);
+        
+        // Load the blob
+        const blob = await getLocalSessionBlob(sessionId);
+        
+        if (blob) {
+          console.log("[SessionReview] Blob loaded, size:", blob.size);
+          const url = URL.createObjectURL(blob);
+          setLocalVideoUrl(url);
+          setBlobDebugInfo({
+            sessionFound: true,
+            blobSize: blob.size,
+            error: null,
+          });
+        } else {
+          console.warn("[SessionReview] Blob missing for session:", sessionId);
+          setBlobMissing(true);
+          setBlobDebugInfo({
+            sessionFound: true,
+            blobSize: null,
+            error: "Blob not found in IndexedDB blobs store",
+          });
+        }
+        
+        setLoading(false);
+        return;
+      }
+
+      // Not a local session, try Supabase
+      console.log("[SessionReview] Not a local session, trying Supabase:", sessionId);
+      setBlobDebugInfo({
+        sessionFound: false,
+        blobSize: null,
+        error: "Session not found in IndexedDB, loaded from cloud",
+      });
+      
       const [sessionData, videoAssetsData, audioTracksData, annotationsData, voiceNotesData, analysesData, eventsData, drawingsData] = await Promise.all([
         getCaptureSession(sessionId!),
         getVideoAssets(sessionId!).catch(() => []),
@@ -261,12 +337,77 @@ export default function SessionReview() {
     );
   }
 
-  if (!session) {
+  // Handle missing blob for local sessions
+  if (isLocalSession && blobMissing) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Header />
+        <div className="flex-1 container py-12">
+          <Button variant="ghost" onClick={() => navigate("/library")} className="mb-6">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Library
+          </Button>
+          
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Recording Data Missing</AlertTitle>
+            <AlertDescription>
+              The video blob for this session could not be found in local storage. 
+              The recording may have been corrupted or cleared by the browser.
+            </AlertDescription>
+          </Alert>
+
+          {/* Debug panel */}
+          <Collapsible open={showDebugPanel} onOpenChange={setShowDebugPanel}>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Bug className="h-4 w-4" />
+                Debug Info
+                <ChevronDown className={`h-4 w-4 transition-transform ${showDebugPanel ? "rotate-180" : ""}`} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-4">
+              <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-2">
+                <div><span className="text-muted-foreground">Session ID:</span> {sessionId}</div>
+                <div><span className="text-muted-foreground">Local Session Found:</span> {blobDebugInfo?.sessionFound ? "Yes" : "No"}</div>
+                <div><span className="text-muted-foreground">Blob Size:</span> {blobDebugInfo?.blobSize ?? "N/A"}</div>
+                <div><span className="text-muted-foreground">Error:</span> {blobDebugInfo?.error ?? "None"}</div>
+                {localSession && (
+                  <>
+                    <div><span className="text-muted-foreground">Title:</span> {localSession.title}</div>
+                    <div><span className="text-muted-foreground">Created:</span> {localSession.createdAt}</div>
+                    <div><span className="text-muted-foreground">Duration:</span> {localSession.duration}s</div>
+                    <div><span className="text-muted-foreground">Expected Size:</span> {localSession.blobSize} bytes</div>
+                  </>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle no session found at all
+  if (!session && !localSession) {
     return null;
   }
 
-  const duration = session.duration_seconds || (videoAssets[0]?.duration_ms ? videoAssets[0].duration_ms / 1000 : 300);
-  const videoUrl = videoAssets.find(v => v.asset_type === "gameplay")?.storage_url || session.video_url;
+  // Determine video source and duration
+  const isLocal = isLocalSession && localSession;
+  const displayTitle = isLocal ? localSession.title : session?.title || "Untitled Session";
+  const displayGame = isLocal ? localSession.gameName : session?.game_name;
+  const displayDuration = isLocal 
+    ? localSession.duration 
+    : (session?.duration_seconds || (videoAssets[0]?.duration_ms ? videoAssets[0].duration_ms / 1000 : 300));
+  const displayVisibility = isLocal ? localSession.visibility : (session?.visibility as "private" | "unlisted" | "public");
+  const displayStatus = isLocal ? "ready" : session?.status;
+  const displayCreatedAt = isLocal ? localSession.createdAt : session?.created_at;
+  const displaySessionId = isLocal ? localSession.id : session?.id;
+  
+  const videoUrl = isLocal 
+    ? localVideoUrl 
+    : (videoAssets.find(v => v.asset_type === "gameplay")?.storage_url || session?.video_url);
   const microphoneTrack = audioTracks.find(t => t.track_type === "microphone");
 
   return (
@@ -278,43 +419,52 @@ export default function SessionReview() {
         <div className="container py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+              <Button variant="ghost" size="icon" onClick={() => navigate(isLocal ? "/library" : "/")}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-semibold">{session.title}</h1>
-                  <PrivacyBadge visibility={session.visibility as "private" | "unlisted" | "public"} />
+                  <h1 className="text-xl font-semibold">{displayTitle}</h1>
+                  <PrivacyBadge visibility={displayVisibility || "private"} />
+                  {isLocal && (
+                    <Badge variant="outline" className="border-accent/30 text-accent">
+                      Local
+                    </Badge>
+                  )}
                   <Badge
                     variant="outline"
                     className={
-                      session.status === "ready"
+                      displayStatus === "ready"
                         ? "border-vantage-success/30 text-vantage-success"
-                        : session.status === "processing"
+                        : displayStatus === "processing"
                         ? "border-vantage-warning/30 text-vantage-warning"
                         : "border-destructive/30 text-destructive"
                     }
                   >
-                    {session.status}
+                    {displayStatus}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                  {session.game_name && (
+                  {displayGame && (
                     <span className="flex items-center gap-1">
                       <Gamepad2 className="h-3 w-3" />
-                      {session.game_name}
+                      {displayGame}
                     </span>
                   )}
-                  <span>{formatDistanceToNow(new Date(session.created_at), { addSuffix: true })}</span>
+                  {displayCreatedAt && (
+                    <span>{formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}</span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShareDialogOpen(true)}>
-                <Share2 className="h-4 w-4 mr-2" />
-                Share
-              </Button>
+              {!isLocal && (
+                <Button variant="outline" size="sm" onClick={() => setShareDialogOpen(true)}>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share
+                </Button>
+              )}
               <Button variant="outline" size="sm">
                 <Download className="h-4 w-4 mr-2" />
                 Export
@@ -332,19 +482,21 @@ export default function SessionReview() {
         </div>
       </div>
 
-      {/* Share dialog */}
-      <ShareSessionDialog
-        open={shareDialogOpen}
-        onOpenChange={setShareDialogOpen}
-        sessionId={session.id}
-        sessionTitle={session.title}
-      />
+      {/* Share dialog - only for cloud sessions */}
+      {!isLocal && displaySessionId && (
+        <ShareSessionDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          sessionId={displaySessionId}
+          sessionTitle={displayTitle}
+        />
+      )}
 
       {/* Delete dialog */}
       <DeleteSessionDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        sessionTitle={session.title}
+        sessionTitle={displayTitle}
         onConfirmDelete={handlePermanentDelete}
         isDeleting={isDeleting}
       />
@@ -355,10 +507,10 @@ export default function SessionReview() {
           {/* Video player - 2 columns */}
           <div className="lg:col-span-2 flex flex-col">
             <FilmRoomPlayer
-              sessionId={session.id}
+              sessionId={displaySessionId || sessionId || ""}
               videoUrl={videoUrl}
-              audioUrl={microphoneTrack?.storage_url}
-              duration={duration}
+              audioUrl={isLocal ? undefined : microphoneTrack?.storage_url}
+              duration={displayDuration}
               currentTime={currentTime}
               onTimeUpdate={handleTimeUpdate}
               onSeek={handleSeek}
@@ -386,7 +538,7 @@ export default function SessionReview() {
 
               <TabsContent value="annotations" className="flex-1 mt-0 min-h-0">
                 <AnnotationPanel
-                  sessionId={session.id}
+                  sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
                   annotations={annotations}
                   onAnnotationCreated={handleAnnotationCreated}
@@ -397,7 +549,7 @@ export default function SessionReview() {
 
               <TabsContent value="voice" className="flex-1 mt-0 min-h-0">
                 <VoiceNotePanel
-                  sessionId={session.id}
+                  sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
                   voiceNotes={voiceNotes}
                   onVoiceNoteCreated={handleVoiceNoteCreated}
@@ -407,7 +559,7 @@ export default function SessionReview() {
 
               <TabsContent value="social" className="flex-1 mt-0 min-h-0">
                 <SocialCommentsPanel
-                  sessionId={session.id}
+                  sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
                   onSeekTo={handleSeek}
                   onStartDrawing={() => playerRef.current?.enterDrawingMode?.()}
