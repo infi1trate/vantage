@@ -21,6 +21,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+export type PanelMode = "list" | "note" | "voice";
+
 interface AnnotationsPanelProps {
   sessionId: string;
   currentTime: number;
@@ -29,6 +31,10 @@ interface AnnotationsPanelProps {
   onAnnotationCreated: (annotation: Annotation) => void;
   onMarkerClick: (time: number) => void;
   onAnnotationDelete?: (annotationId: string) => void;
+  mode?: PanelMode;
+  onModeChange?: (mode: PanelMode) => void;
+  pendingTime?: number;
+  pendingEndTime?: number;
 }
 
 const MARKER_TYPES = [
@@ -47,6 +53,10 @@ export function AnnotationsPanel({
   onAnnotationCreated,
   onMarkerClick,
   onAnnotationDelete,
+  mode = "list",
+  onModeChange,
+  pendingTime,
+  pendingEndTime,
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [isCreating, setIsCreating] = useState(false);
@@ -54,6 +64,9 @@ export function AnnotationsPanel({
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  
+  // Track if we opened via floating bar
+  const activeTime = pendingTime ?? currentTime;
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -113,44 +126,131 @@ export function AnnotationsPanel({
     ...voiceNotes.map(v => ({ id: v.id, time: v.timestamp_seconds, type: "voice" as const, data: v })),
   ].sort((a, b) => a.time - b.time);
 
+  // Handle note mode submission
+  const handleNoteSubmit = useCallback(async () => {
+    if (!user) return;
+    setSaving(true);
+    
+    try {
+      const annotation = await createAnnotation(
+        sessionId,
+        user.id,
+        activeTime,
+        "note",
+        title || undefined,
+        notes || undefined
+      );
+      onAnnotationCreated(annotation);
+      toast.success("Note added");
+      setTitle("");
+      setNotes("");
+      onModeChange?.("list");
+    } catch (error) {
+      toast.error("Failed to add note");
+    } finally {
+      setSaving(false);
+    }
+  }, [user, sessionId, activeTime, title, notes, onAnnotationCreated, onModeChange]);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="shrink-0 px-4 py-3 border-b border-border/30">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold tracking-tight">Annotations</h2>
-          <span className="text-[11px] font-mono text-primary tabular-nums">
-            @ {formatTime(currentTime)}
-          </span>
-        </div>
-
-        {/* Quick add buttons */}
-        {!isCreating && (
-          <div className="flex flex-wrap gap-1.5">
-            {MARKER_TYPES.map((m) => (
-              <Button
-                key={m.type}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 gap-1 text-xs"
-                onClick={() => handleQuickAdd(m.type)}
-              >
-                <m.icon className={cn("h-3 w-3", m.color)} />
-                {m.label}
-              </Button>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 gap-1 text-xs"
-              onClick={() => setIsCreating(true)}
+      {/* Note creation mode */}
+      {mode === "note" && (
+        <div className="shrink-0 p-4 border-b border-border/30 bg-muted/30 animate-fade-in">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium">
+              Add note @ {formatTime(activeTime)}
+              {pendingEndTime && ` – ${formatTime(pendingEndTime)}`}
+            </span>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6" 
+              onClick={() => onModeChange?.("list")}
             >
-              <Plus className="h-3 w-3" />
-              Custom
+              <X className="h-3.5 w-3.5" />
             </Button>
           </div>
-        )}
-      </div>
+
+          <Input
+            placeholder="Title (optional)"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="mb-2 h-8 text-sm bg-background"
+            autoFocus
+          />
+          <Textarea
+            placeholder="Write your note..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="mb-3 text-sm bg-background resize-none"
+            rows={4}
+          />
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => onModeChange?.("list")}
+            >
+              Cancel
+            </Button>
+            <Button 
+              size="sm" 
+              className="flex-1" 
+              onClick={handleNoteSubmit} 
+              disabled={saving || (!title && !notes)}
+            >
+              {saving ? "Saving..." : "Add Note"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Voice recording mode */}
+      {mode === "voice" && (
+        <div className="shrink-0 p-4 border-b border-border/30 bg-muted/30 animate-fade-in">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium">
+              Voice note @ {formatTime(activeTime)}
+            </span>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6" 
+              onClick={() => onModeChange?.("list")}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          <div className="flex flex-col items-center py-8">
+            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4 animate-pulse">
+              <Mic className="h-8 w-8 text-destructive" />
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Voice recording coming soon</p>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => onModeChange?.("list")}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Header - only show in list mode */}
+      {mode === "list" && (
+        <div className="shrink-0 px-4 py-3 border-b border-border/30">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold tracking-tight">Annotations</h2>
+            <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+              {annotations.length + voiceNotes.length} markers
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Create form drawer */}
       {isCreating && (

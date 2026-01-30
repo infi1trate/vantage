@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { CinematicPlayer, VideoMetaInfo, VideoDecodeError } from "@/components/player/CinematicPlayer";
-import { AnnotationsPanel } from "@/components/player/AnnotationsPanel";
+import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
+import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import {
@@ -13,6 +13,7 @@ import {
   getVideoAssets,
   getAudioTracks,
   deleteAnnotation,
+  createAnnotation,
   permanentlyDeleteSession,
   CaptureSession,
   Annotation,
@@ -65,6 +66,14 @@ export default function SessionReview() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  
+  // Timeline selection state
+  const [selection, setSelection] = useState<SelectionState>({ type: null });
+  
+  // Annotations panel mode
+  const [panelMode, setPanelMode] = useState<PanelMode>("list");
+  const [pendingTime, setPendingTime] = useState<number | undefined>();
+  const [pendingEndTime, setPendingEndTime] = useState<number | undefined>();
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -176,6 +185,55 @@ export default function SessionReview() {
       toast.success("Marker removed");
     } catch (error) {
       toast.error("Failed to delete");
+    }
+  }, []);
+
+  // Handle instant marker creation from floating bar
+  const handleCreateMarker = useCallback(async (
+    type: "kill" | "death" | "highlight" | "marker", 
+    time: number, 
+    endTime?: number
+  ) => {
+    if (!user) return;
+    
+    const sessionIdToUse = isLocalSession ? localSession?.id : session?.id;
+    if (!sessionIdToUse) return;
+    
+    try {
+      const annotation = await createAnnotation(sessionIdToUse, user.id, time, type);
+      setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
+      setSelection({ type: null }); // Clear selection after creating
+      toast.success("Marker added", {
+        action: {
+          label: "Undo",
+          onClick: () => handleAnnotationDelete(annotation.id),
+        },
+      });
+    } catch (error) {
+      toast.error("Failed to add marker");
+    }
+  }, [user, isLocalSession, localSession?.id, session?.id, handleAnnotationDelete]);
+
+  // Handle opening note mode from floating bar
+  const handleOpenNote = useCallback((time: number, endTime?: number) => {
+    setPendingTime(time);
+    setPendingEndTime(endTime);
+    setPanelMode("note");
+  }, []);
+
+  // Handle opening voice mode from floating bar
+  const handleOpenVoice = useCallback((time: number) => {
+    setPendingTime(time);
+    setPanelMode("voice");
+  }, []);
+
+  // Handle panel mode change
+  const handlePanelModeChange = useCallback((mode: PanelMode) => {
+    setPanelMode(mode);
+    if (mode === "list") {
+      setPendingTime(undefined);
+      setPendingEndTime(undefined);
+      setSelection({ type: null });
     }
   }, []);
 
@@ -400,6 +458,11 @@ export default function SessionReview() {
             onVideoLoaded={handleVideoLoaded}
             onVideoError={handleVideoError}
             onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
+            selection={selection}
+            onSelectionChange={setSelection}
+            onCreateMarker={handleCreateMarker}
+            onOpenNote={handleOpenNote}
+            onOpenVoice={handleOpenVoice}
           />
         </div>
 
@@ -416,6 +479,10 @@ export default function SessionReview() {
             onAnnotationCreated={handleAnnotationCreated}
             onMarkerClick={handleMarkerClick}
             onAnnotationDelete={handleAnnotationDelete}
+            mode={panelMode}
+            onModeChange={handlePanelModeChange}
+            pendingTime={pendingTime}
+            pendingEndTime={pendingEndTime}
           />
         </div>
       </div>
