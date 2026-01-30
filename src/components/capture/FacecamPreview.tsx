@@ -29,6 +29,7 @@ interface FacecamPreviewProps {
   cameraSize?: CameraSize;
   backgroundColor?: BackgroundColorId;
   backgroundImage?: string | null;
+  flipCamera?: boolean;
   className?: string;
 }
 
@@ -38,6 +39,7 @@ export function FacecamPreview({
   cameraSize = "small",
   backgroundColor = "transparent",
   backgroundImage = null,
+  flipCamera = true,
   className 
 }: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -204,7 +206,8 @@ export function FacecamPreview({
         playsInline
         muted
         className={cn(
-          "w-full h-full object-cover scale-x-[-1]",
+          "w-full h-full object-cover",
+          flipCamera && "scale-x-[-1]",
           frameShape === "circle" && "rounded-full"
         )}
       />
