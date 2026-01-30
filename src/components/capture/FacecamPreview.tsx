@@ -140,11 +140,12 @@ export function FacecamPreview({
   };
 
   const getContainerClasses = () => {
+    // Semantic sizing: small uses constrained widths, large fills available space
     const sizeClasses = cameraSize === "large" 
-      ? "max-w-none" 
+      ? "w-full max-w-sm" 
       : frameShape === "circle" 
-        ? "max-w-[140px]" 
-        : "max-w-[200px]";
+        ? "w-2/5 max-w-36" // ~40% width, capped at 9rem
+        : "w-1/2 max-w-48"; // ~50% width, capped at 12rem
     
     if (frameShape === "circle") {
       return cn("aspect-square mx-auto", sizeClasses);
