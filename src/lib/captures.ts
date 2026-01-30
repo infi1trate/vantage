@@ -266,7 +266,7 @@ export interface VoiceNote {
   created_at: string;
 }
 
-// ==================== AI Analysis ====================
+// ==================== Coach Analysis ====================
 export type AnalysisType = "general" | "aim" | "positioning" | "decision" | "economy";
 
 export interface AIInsight {

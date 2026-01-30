@@ -8,16 +8,16 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  Brain, 
+  GraduationCap, 
   Target, 
-  Lightbulb, 
   TrendingUp,
   Loader2,
   Sparkles,
   AlertTriangle,
-  CheckCircle,
   MessageSquare,
   BarChart3,
+  Clock,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +34,7 @@ interface Recommendation {
   category: string;
 }
 
-interface AIAnalysisPanelProps {
+interface CoachPanelProps {
   analyses: AIAnalysis[];
   feedbackCards?: FeedbackCardData[];
   patterns?: Pattern[];
@@ -45,7 +45,7 @@ interface AIAnalysisPanelProps {
   analysisError?: string | null;
 }
 
-export function AIAnalysisPanel({ 
+export function CoachPanel({ 
   analyses, 
   feedbackCards = [],
   patterns = [],
@@ -54,7 +54,7 @@ export function AIAnalysisPanel({
   onSeekTo,
   isAnalyzing,
   analysisError,
-}: AIAnalysisPanelProps) {
+}: CoachPanelProps) {
   const [activeTab, setActiveTab] = useState("feedback");
 
   const latestAnalysis = analyses[0];
@@ -97,29 +97,48 @@ export function AIAnalysisPanel({
       <Card className="flex flex-col h-full bg-card border-border/50">
         <div className="p-4 border-b border-border/50">
           <h3 className="font-semibold flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
-            AI Analysis
+            <GraduationCap className="h-4 w-4 text-primary" />
+            Coach
           </h3>
         </div>
 
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <Sparkles className="h-8 w-8 text-primary" />
+              <GraduationCap className="h-8 w-8 text-primary" />
             </div>
-            <h4 className="font-semibold mb-2">Get AI-Powered Insights</h4>
-            <p className="text-sm text-muted-foreground mb-2">
-              AI will analyze your gameplay and voice annotations to provide:
+            <h4 className="font-semibold mb-2">Get Coach Review</h4>
+            <p className="text-sm text-muted-foreground mb-3">
+              Post-game review of your recorded session:
             </p>
-            <ul className="text-xs text-muted-foreground mb-4 space-y-1">
-              <li>• Moment-level feedback cards</li>
-              <li>• Pattern detection (hesitation, overconfidence)</li>
-              <li>• Intent-to-outcome analysis from voice notes</li>
-              <li>• Actionable recommendations</li>
+            <ul className="text-xs text-muted-foreground mb-4 space-y-1.5 text-left max-w-xs mx-auto">
+              <li className="flex items-start gap-2">
+                <Target className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                Positioning mistakes & suggestions
+              </li>
+              <li className="flex items-start gap-2">
+                <Clock className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                Timing patterns & decision points
+              </li>
+              <li className="flex items-start gap-2">
+                <TrendingUp className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                Repeated death patterns in similar contexts
+              </li>
+              <li className="flex items-start gap-2">
+                <MessageSquare className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                References your annotations & voice notes
+              </li>
             </ul>
+            
+            {/* Non-cheating disclaimer */}
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground mb-4 bg-muted/30 rounded-md py-2 px-3">
+              <Shield className="h-3 w-3" />
+              <span>Post-game only • Never real-time • Educational</span>
+            </div>
+            
             <Button onClick={onRequestAnalysis}>
-              <Brain className="h-4 w-4 mr-2" />
-              Analyze Session
+              <GraduationCap className="h-4 w-4 mr-2" />
+              Start Coach Review
             </Button>
           </div>
         </div>
@@ -132,8 +151,8 @@ export function AIAnalysisPanel({
       <div className="p-4 border-b border-border/50">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
-            AI Analysis
+            <GraduationCap className="h-4 w-4 text-primary" />
+            Coach Review
           </h3>
           <Button 
             variant="outline" 
@@ -144,12 +163,12 @@ export function AIAnalysisPanel({
             {isAnalyzing ? (
               <>
                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Analyzing...
+                Reviewing...
               </>
             ) : (
               <>
                 <Sparkles className="h-3 w-3 mr-1" />
-                Re-analyze
+                Re-review
               </>
             )}
           </Button>
@@ -172,10 +191,10 @@ export function AIAnalysisPanel({
           <div className="text-center">
             <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
             <p className="text-sm text-muted-foreground">
-              Analyzing your gameplay...
+              Reviewing your gameplay...
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Reviewing annotations and voice notes
+              Analyzing annotations and voice notes
             </p>
           </div>
         </div>
@@ -211,7 +230,7 @@ export function AIAnalysisPanel({
             <TabsList className="grid w-full grid-cols-3 mx-4 mt-2" style={{ width: 'calc(100% - 2rem)' }}>
               <TabsTrigger value="feedback" className="text-xs gap-1">
                 <MessageSquare className="h-3 w-3" />
-                Feedback ({feedbackCards.length})
+                Insights ({feedbackCards.length})
               </TabsTrigger>
               <TabsTrigger value="patterns" className="text-xs gap-1">
                 <BarChart3 className="h-3 w-3" />
@@ -229,7 +248,7 @@ export function AIAnalysisPanel({
                 {feedbackCards.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No feedback cards yet</p>
+                    <p className="text-sm">No insights yet</p>
                   </div>
                 ) : (
                   feedbackCards.map((card) => (
@@ -313,3 +332,6 @@ export function AIAnalysisPanel({
     </Card>
   );
 }
+
+// Re-export with old name for backwards compatibility
+export const AIAnalysisPanel = CoachPanel;

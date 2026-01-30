@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Brain,
+  GraduationCap,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
@@ -477,9 +477,9 @@ export default function Insights() {
             
             {patterns.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <Brain className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <GraduationCap className="h-12 w-12 mx-auto mb-3 opacity-30" />
                 <p className="text-sm">No patterns detected yet</p>
-                <p className="text-xs">Run AI analysis on your sessions to identify behavioral patterns</p>
+                <p className="text-xs">Run Coach review on your sessions to identify behavioral patterns</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

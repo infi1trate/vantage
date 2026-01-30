@@ -194,7 +194,7 @@ export function CaptureConsentDialog({
               <div className="flex items-start gap-2">
                 <CheckCircle className="h-4 w-4 text-vantage-success mt-0.5 shrink-0" />
                 <span className="text-muted-foreground">
-                  <strong className="text-foreground">AI is opt-in.</strong> AI analysis only runs when you request it, never automatically.
+                  <strong className="text-foreground">Coach is opt-in.</strong> Coach review only runs after recording, never in real-time.
                 </span>
               </div>
             </div>

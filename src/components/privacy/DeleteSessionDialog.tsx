@@ -52,7 +52,7 @@ export function DeleteSessionDialog({
     { icon: FileAudio, label: "Voice notes", color: "text-vantage-success" },
     { icon: MessageSquare, label: "Comments & reactions", color: "text-vantage-warning" },
     { icon: PenTool, label: "Drawings & annotations", color: "text-vantage-purple" },
-    { icon: Brain, label: "AI analysis results", color: "text-destructive" },
+    { icon: Brain, label: "Coach review results", color: "text-destructive" },
   ];
 
   const canDelete = confirmText === "DELETE" && understandPermanent;
