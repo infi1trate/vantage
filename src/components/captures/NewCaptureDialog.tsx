@@ -797,27 +797,26 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-border/30 bg-muted/10">
             <div className="flex items-center justify-between">
-              <div className="text-xs text-muted-foreground">
-                {preflightResult?.selectedFormat && (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-vantage-success" />
-                    {preflightResult.selectedFormat.mimeType.split(";")[0]}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => onOpenChange(false)}
-                  disabled={loading}
-                >
-                  Cancel
-                </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={loading}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </Button>
+              <div className="flex flex-col items-end gap-1">
                 <Button 
                   type="submit" 
                   disabled={loading}
-                  className="min-w-[140px]"
+                  className={cn(
+                    "min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
+                    // Visual emphasis when settings have been customized
+                    (includeFacecam || frameShape !== "circle" || cameraSize !== "small" || 
+                     backgroundColor !== "transparent" || backgroundImage || !flipCamera || !includeGameAudio) &&
+                    "ring-2 ring-vantage-500/30 ring-offset-2 ring-offset-background shadow-lg shadow-vantage-500/20"
+                  )}
                 >
                   {loading ? (
                     <>
@@ -831,6 +830,9 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     </>
                   )}
                 </Button>
+                <p className="text-[10px] text-muted-foreground/70">
+                  You can adjust effects during capture
+                </p>
               </div>
             </div>
           </div>
