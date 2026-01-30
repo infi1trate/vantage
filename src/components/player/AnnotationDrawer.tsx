@@ -62,6 +62,10 @@ const EVENT_TYPES: { type: AnnotationType; label: string; icon: React.ComponentT
   { type: "objective", label: "Objective", icon: Bookmark, color: "text-muted-foreground" },
 ];
 
+// Authored types require explicit "Done" action
+const AUTHORED_TYPES: AnnotationType[] = ["note"];
+const isAuthoredType = (type: AnnotationType) => AUTHORED_TYPES.includes(type);
+
 export function AnnotationDrawer({
   sessionId,
   currentTime,
@@ -97,9 +101,12 @@ export function AnnotationDrawer({
   // Auto-save debounce
   const saveTimeoutRef = useRef<number | null>(null);
   const [annotationId, setAnnotationId] = useState<string | null>(null);
+  const [pendingClose, setPendingClose] = useState(false);
   
   // Undo state
   const [undoStack, setUndoStack] = useState<{ title: string; notes: string }[]>([]);
+
+  const isAuthored = isAuthoredType(eventType);
 
   const isEditing = !!drawerAnnotation?.annotation;
   const timestamp = drawerAnnotation?.timestamp ?? currentTime;
@@ -303,25 +310,132 @@ export function AnnotationDrawer({
     Math.abs(v.timestamp_seconds - timestamp) < 1
   );
 
+  // Content checks for authored types
+  const hasContent = title.trim() !== "" || notes.trim() !== "" || audioBlob !== null || linkedVoiceNotes.length > 0;
+  const hasVoiceContent = audioBlob !== null || linkedVoiceNotes.length > 0;
+  const canCommit = !isRecording && (!isAuthored || hasContent);
+
   const currentEventConfig = EVENT_TYPES.find(e => e.type === eventType) || EVENT_TYPES[0];
+
+  // Handle Done/Commit action
+  const handleDone = useCallback(async () => {
+    // Cancel any pending auto-save
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    
+    if (!user || !sessionId) return;
+    
+    try {
+      setSaving(true);
+      
+      if (annotationId) {
+        // Update existing
+        const updated = await updateAnnotation(annotationId, {
+          annotation_type: eventType,
+          title: title || null,
+          content: notes || null,
+        });
+        onAnnotationUpdated(updated);
+      } else if (hasContent) {
+        // Create new only if there's content
+        const created = await createAnnotation(
+          sessionId,
+          user.id,
+          timestamp,
+          eventType,
+          title || undefined,
+          notes || undefined
+        );
+        onAnnotationCreated(created);
+      }
+      
+      toast.success("Annotation saved");
+      onClose();
+    } catch (error) {
+      console.error("Save failed:", error);
+      toast.error("Failed to save annotation");
+    } finally {
+      setSaving(false);
+    }
+  }, [user, sessionId, annotationId, eventType, title, notes, timestamp, hasContent, onAnnotationCreated, onAnnotationUpdated, onClose]);
+
+  // Handle cancel with confirmation for authored types
+  const handleCancel = useCallback(() => {
+    if (isAuthored && hasContent && !annotationId) {
+      // Has unsaved content - show confirmation
+      setPendingClose(true);
+    } else {
+      onClose();
+    }
+  }, [isAuthored, hasContent, annotationId, onClose]);
+
+  const confirmDiscard = useCallback(() => {
+    // Cancel any pending auto-save
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    setPendingClose(false);
+    onClose();
+  }, [onClose]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        // Allow Escape in input fields for authored types
+        if (e.key === "Escape" && isAuthored) {
+          e.preventDefault();
+          handleCancel();
+        }
+        return;
+      }
       
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
         handleUndo();
       }
+      
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancel();
+      }
+      
+      // Enter to commit for authored types
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && isAuthored && canCommit) {
+        e.preventDefault();
+        handleDone();
+      }
     };
     
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo]);
+  }, [handleUndo, handleCancel, handleDone, isAuthored, canCommit]);
 
   return (
     <div className="flex flex-col h-full">
+      {/* Discard confirmation overlay */}
+      {pendingClose && (
+        <div className="absolute inset-0 z-50 bg-background/95 flex flex-col items-center justify-center p-6 gap-4">
+          <p className="text-sm text-muted-foreground text-center">
+            Discard unsaved changes?
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPendingClose(false)}
+            >
+              Keep Editing
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={confirmDiscard}
+              className="text-destructive hover:text-destructive"
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="shrink-0 px-4 py-3 border-b border-border/30 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -329,7 +443,7 @@ export function AnnotationDrawer({
             variant="ghost" 
             size="icon" 
             className="h-8 w-8" 
-            onClick={onClose}
+            onClick={handleCancel}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -528,12 +642,36 @@ export function AnnotationDrawer({
         </div>
       </ScrollArea>
 
-      {/* Footer hint */}
-      <div className="shrink-0 px-4 py-2 border-t border-border/30 bg-muted/20">
-        <p className="text-[11px] text-muted-foreground text-center">
-          Changes save automatically • <kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">⌘Z</kbd> to undo
-        </p>
-      </div>
+      {/* Footer - different for authored vs instant-save types */}
+      {isAuthored ? (
+        <div className="shrink-0 px-4 py-3 border-t border-border/30 bg-muted/10">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] text-muted-foreground">
+                Changes save automatically
+              </span>
+              <span className="text-[10px] text-muted-foreground/60">
+                <kbd className="px-1 py-0.5 rounded bg-muted text-[9px]">Esc</kbd> to cancel
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleDone}
+              disabled={!canCommit || saving}
+              className="h-8 px-4 text-xs font-medium bg-secondary/80 hover:bg-secondary border-0 shadow-sm"
+            >
+              {saving ? "Saving..." : "Done"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="shrink-0 px-4 py-2 border-t border-border/30 bg-muted/20">
+          <p className="text-[11px] text-muted-foreground text-center">
+            Changes save automatically • <kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">⌘Z</kbd> to undo
+          </p>
+        </div>
+      )}
     </div>
   );
 }
