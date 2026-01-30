@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
+import { RouteErrorFallback } from "@/components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Capture from "./pages/Capture";
@@ -18,15 +19,15 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const router = createBrowserRouter([
-  { path: "/", element: <Dashboard /> },
-  { path: "/auth", element: <Auth /> },
-  { path: "/library", element: <SessionLibrary /> },
-  { path: "/insights", element: <Insights /> },
-  { path: "/community", element: <Community /> },
-  { path: "/community/:postId", element: <CommunityPost /> },
-  { path: "/community/p/:token", element: <CommunityPost /> },
-  { path: "/capture/:sessionId", element: <Capture /> },
-  { path: "/session/:sessionId", element: <SessionReview /> },
+  { path: "/", element: <Dashboard />, errorElement: <RouteErrorFallback /> },
+  { path: "/auth", element: <Auth />, errorElement: <RouteErrorFallback /> },
+  { path: "/library", element: <SessionLibrary />, errorElement: <RouteErrorFallback /> },
+  { path: "/insights", element: <Insights />, errorElement: <RouteErrorFallback /> },
+  { path: "/community", element: <Community />, errorElement: <RouteErrorFallback /> },
+  { path: "/community/:postId", element: <CommunityPost />, errorElement: <RouteErrorFallback /> },
+  { path: "/community/p/:token", element: <CommunityPost />, errorElement: <RouteErrorFallback /> },
+  { path: "/capture/:sessionId", element: <Capture />, errorElement: <RouteErrorFallback /> },
+  { path: "/session/:sessionId", element: <SessionReview />, errorElement: <RouteErrorFallback /> },
   { path: "*", element: <NotFound /> },
 ]);
 
