@@ -20,12 +20,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ExportDrawer, ExportTab } from "@/components/export/ExportDrawer";
 import { 
   Play, 
   MoreVertical, 
   Trash2, 
   Eye, 
-  Share2, 
+  Share2,
+  Download,
   Gamepad2,
   Mic,
   Video,
@@ -49,6 +51,8 @@ interface SessionLibraryCardProps {
 export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibraryCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
+  const [exportDefaultTab, setExportDefaultTab] = useState<ExportTab>("export");
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -184,7 +188,16 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                     <Eye className="h-4 w-4 mr-2" /> View
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setExportDefaultTab("export");
+                  setExportDrawerOpen(true);
+                }}>
+                  <Download className="h-4 w-4 mr-2" /> Export
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setExportDefaultTab("community");
+                  setExportDrawerOpen(true);
+                }}>
                   <Share2 className="h-4 w-4 mr-2" /> Share
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -304,7 +317,16 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                     <Eye className="h-4 w-4 mr-2" /> View
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setExportDefaultTab("export");
+                  setExportDrawerOpen(true);
+                }}>
+                  <Download className="h-4 w-4 mr-2" /> Export
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setExportDefaultTab("community");
+                  setExportDrawerOpen(true);
+                }}>
                   <Share2 className="h-4 w-4 mr-2" /> Share
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -394,6 +416,15 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Export Drawer */}
+      <ExportDrawer
+        open={exportDrawerOpen}
+        onOpenChange={setExportDrawerOpen}
+        defaultTab={exportDefaultTab}
+        sessionId={session.id}
+        sessionTitle={session.title}
+      />
     </>
   );
 }

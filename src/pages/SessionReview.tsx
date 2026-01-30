@@ -11,6 +11,8 @@ import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import { KeyboardShortcutsOverlay, useKeyboardShortcuts } from "@/components/player/KeyboardShortcutsOverlay";
 import { TimelineEmptyState } from "@/components/player/OnboardingHint";
+import { ExportCTAs } from "@/components/export/ExportCTAs";
+import { ExportOptions } from "@/components/export/ExportDrawer";
 import {
   getCaptureSession,
   getAnnotations,
@@ -35,11 +37,10 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { 
   Loader2, 
   ArrowLeft, 
-  Share2, 
-  Download, 
   Gamepad2, 
   Trash2,
   Maximize2,
@@ -54,6 +55,7 @@ export default function SessionReview() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Session data
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -589,6 +591,15 @@ export default function SessionReview() {
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Export/Share CTAs - Desktop only in header */}
+            {!isMobile && !focusMode && (
+              <ExportCTAs
+                sessionId={displaySessionId || sessionId || ""}
+                sessionTitle={displayTitle}
+                variant="header"
+              />
+            )}
+            <div className="w-px h-4 bg-border/50 mx-1 hidden lg:block" />
             <Button 
               variant="ghost" 
               size="icon"
@@ -596,20 +607,6 @@ export default function SessionReview() {
               onClick={() => setFocusMode(!focusMode)}
             >
               {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-            {!isLocal && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShareDialogOpen(true)}>
-                <Share2 className="h-4 w-4" />
-              </Button>
-            )}
-            <Button 
-              variant="ghost" 
-              size="icon"
-              className="h-8 w-8"
-              onClick={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
-              aria-label="Download recording"
-            >
-              <Download className="h-4 w-4" />
             </Button>
             <Button 
               variant="ghost" 
@@ -733,6 +730,15 @@ export default function SessionReview() {
         open={showShortcuts} 
         onOpenChange={setShowShortcuts} 
       />
+
+      {/* Mobile floating Export/Share CTAs */}
+      {isMobile && !focusMode && (
+        <ExportCTAs
+          sessionId={displaySessionId || sessionId || ""}
+          sessionTitle={displayTitle}
+          variant="floating"
+        />
+      )}
     </div>
   );
 }
