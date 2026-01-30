@@ -1,38 +1,23 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Play,
-  Pause,
-  Clock,
   Eye,
   MessageSquare,
-  Send,
   Share2,
-  Flag,
   ArrowLeft,
   Lock,
   AlertCircle,
   Copy,
   Check,
-  User,
-  Pencil,
-  Trash2,
-  MoreVertical,
-  Maximize2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -54,28 +39,15 @@ import {
   CommunityPost,
   CommunityAnnotation,
 } from "@/lib/community";
+import { ReactionEmoji } from "@/lib/communityReactions";
 import { useAuth } from "@/contexts/AuthContext";
-
-function formatDuration(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  if (hrs > 0) {
-    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  }
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-function formatTimestamp(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
+import { useCommunityReactions } from "@/hooks/useCommunityReactions";
+import { CommunityVideoPlayer } from "@/components/community/CommunityVideoPlayer";
+import { CommunityAnnotationsPanel } from "@/components/community/CommunityAnnotationsPanel";
 
 export default function CommunityPostPage() {
   const { postId, token } = useParams();
   const { user } = useAuth();
-  const videoRef = useRef<HTMLVideoElement>(null);
   
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [annotations, setAnnotations] = useState<CommunityAnnotation[]>([]);
@@ -83,18 +55,23 @@ export default function CommunityPostPage() {
   const [error, setError] = useState<string | null>(null);
   
   // Video state
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  
-  // Annotation input
-  const [annotationInput, setAnnotationInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Share
   const [copied, setCopied] = useState(false);
 
   const isAuthor = user?.id === post?.author_id;
+
+  // Reactions hook
+  const {
+    reactions,
+    addReaction,
+    canReact,
+  } = useCommunityReactions({
+    postId: post?.id || "",
+    enabled: !!post,
+  });
 
   useEffect(() => {
     async function loadPost() {
@@ -105,10 +82,8 @@ export default function CommunityPostPage() {
         let postData: CommunityPost | null = null;
         
         if (token) {
-          // Load by share token
           postData = await getCommunityPostByToken(token);
         } else if (postId) {
-          // Load by ID
           postData = await getCommunityPost(postId);
         }
         
@@ -138,68 +113,46 @@ export default function CommunityPostPage() {
     loadPost();
   }, [postId, token, user?.id]);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-    }
-  };
+  const handleTimeUpdate = useCallback((time: number) => {
+    setCurrentTime(time);
+  }, []);
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-    }
-  };
+  const handleDurationChange = useCallback((dur: number) => {
+    setDuration(dur);
+  }, []);
 
-  const handlePlayPause = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
-    }
-  };
+  const handleSeekToAnnotation = useCallback((timestamp: number) => {
+    // The video player handles its own seeking via the timeline
+    setCurrentTime(timestamp);
+  }, []);
 
-  const handleSeekToAnnotation = (timestamp: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = timestamp;
-      setCurrentTime(timestamp);
-    }
-  };
-
-  const handleAddAnnotation = async () => {
-    if (!post || !user || !annotationInput.trim()) return;
+  const handleAddAnnotation = async (content: string, timestamp: number) => {
+    if (!post || !user) return;
     
-    try {
-      setIsSubmitting(true);
-      const annotation = await createCommunityAnnotation(
-        post.id,
-        user.id,
-        currentTime,
-        annotationInput.trim()
-      );
-      setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
-      setAnnotationInput("");
-      toast.success("Annotation added");
-    } catch (err) {
-      console.error("[CommunityPost] Add annotation error:", err);
-      toast.error("Failed to add annotation");
-    } finally {
-      setIsSubmitting(false);
-    }
+    const annotation = await createCommunityAnnotation(
+      post.id,
+      user.id,
+      timestamp,
+      content
+    );
+    setAnnotations((prev) => 
+      [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds)
+    );
+    toast.success("Annotation added");
   };
 
   const handleDeleteAnnotation = async (annotationId: string) => {
-    try {
-      await deleteCommunityAnnotation(annotationId);
-      setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
-      toast.success("Annotation deleted");
-    } catch (err) {
-      console.error("[CommunityPost] Delete annotation error:", err);
-      toast.error("Failed to delete annotation");
-    }
+    await deleteCommunityAnnotation(annotationId);
+    setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
+    toast.success("Annotation deleted");
   };
+
+  const handleReact = useCallback(
+    async (emoji: ReactionEmoji, timestamp: number) => {
+      await addReaction(emoji, timestamp);
+    },
+    [addReaction]
+  );
 
   const handleCopyLink = async () => {
     if (!post) return;
@@ -284,25 +237,16 @@ export default function CommunityPostPage() {
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Video + Info Column */}
             <div className="lg:col-span-2 space-y-4">
-              {/* Video Player */}
-              <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
-                {post.video_url ? (
-                  <video
-                    ref={videoRef}
-                    src={post.video_url}
-                    className="w-full h-full object-contain"
-                    onTimeUpdate={handleTimeUpdate}
-                    onLoadedMetadata={handleLoadedMetadata}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    controls
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    <p>Video not available</p>
-                  </div>
-                )}
-              </div>
+              {/* Custom Video Player with reactions */}
+              <CommunityVideoPlayer
+                videoUrl={post.video_url}
+                reactions={reactions}
+                annotations={annotations}
+                onTimeUpdate={handleTimeUpdate}
+                onDurationChange={handleDurationChange}
+                onReact={handleReact}
+                canReact={canReact}
+              />
               
               {/* Title + Meta */}
               <div className="space-y-2">
@@ -384,124 +328,19 @@ export default function CommunityPostPage() {
               </div>
             </div>
             
-            {/* Sidebar - Annotations/Comments */}
+            {/* Sidebar */}
             <div className="lg:col-span-1 space-y-4">
               {/* Annotations Panel */}
-              <div className="rounded-xl bg-card border border-border/50 overflow-hidden">
-                <div className="p-3 border-b border-border/50 flex items-center justify-between">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <Pencil className="h-4 w-4" />
-                    Annotations
-                  </h3>
-                  {!post.allow_public_annotations && !isAuthor && (
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Lock className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Creator disabled public annotations
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </div>
-                
-                <ScrollArea className="h-[300px]">
-                  {!post.allow_public_annotations && !isAuthor ? (
-                    <div className="p-6 text-center">
-                      <Lock className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        Creator has disabled annotations for this post.
-                      </p>
-                    </div>
-                  ) : annotations.length === 0 ? (
-                    <div className="p-6 text-center">
-                      <Pencil className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        No annotations yet.
-                        {canAddAnnotation && " Add the first one!"}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border/30">
-                      {annotations.map((annotation) => (
-                        <div
-                          key={annotation.id}
-                          className="p-3 hover:bg-muted/20 transition-colors group"
-                        >
-                          <div className="flex items-start gap-2">
-                            <button
-                              onClick={() => handleSeekToAnnotation(annotation.timestamp_seconds)}
-                              className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono shrink-0 hover:bg-primary/20 transition-colors"
-                            >
-                              {formatTimestamp(annotation.timestamp_seconds)}
-                            </button>
-                            <p className="text-sm flex-1">{annotation.content}</p>
-                            {(user?.id === annotation.user_id || isAuthor) && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <MoreVertical className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteAnnotation(annotation.id)}
-                                    className="text-destructive"
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                          </div>
-                          {annotation.tags.length > 0 && (
-                            <div className="flex gap-1 mt-1 ml-10">
-                              {annotation.tags.map((tag) => (
-                                <Badge key={tag} variant="secondary" className="text-[10px]">
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-                
-                {/* Add annotation input */}
-                {canAddAnnotation && user && (
-                  <div className="p-3 border-t border-border/50">
-                    <div className="flex gap-2">
-                      <div className="flex-1 relative">
-                        <Input
-                          value={annotationInput}
-                          onChange={(e) => setAnnotationInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleAddAnnotation()}
-                          placeholder={`Add note at ${formatTimestamp(currentTime)}...`}
-                          className="pr-10 bg-muted/30 text-sm"
-                          disabled={isSubmitting}
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono">
-                          {formatTimestamp(currentTime)}
-                        </span>
-                      </div>
-                      <Button
-                        size="icon"
-                        onClick={handleAddAnnotation}
-                        disabled={!annotationInput.trim() || isSubmitting}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CommunityAnnotationsPanel
+                annotations={annotations}
+                currentTime={currentTime}
+                isAllowed={post.allow_public_annotations}
+                isAuthor={isAuthor}
+                currentUserId={user?.id}
+                onAddAnnotation={handleAddAnnotation}
+                onDeleteAnnotation={handleDeleteAnnotation}
+                onSeekToAnnotation={handleSeekToAnnotation}
+              />
               
               {/* Comments Panel */}
               <div className="rounded-xl bg-card border border-border/50 overflow-hidden">
