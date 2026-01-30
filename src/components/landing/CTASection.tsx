@@ -1,4 +1,4 @@
-import { motion, useInView } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -29,17 +29,26 @@ function getAnnotationColors(color: string) {
 export function CTASection() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const prefersReducedMotion = useReducedMotion();
+
+  const animate = prefersReducedMotion ? {} : { opacity: 1, y: 0 };
+  const initial = prefersReducedMotion ? {} : { opacity: 0, y: 30 };
 
   return (
-    <section className="py-32 relative overflow-hidden">
+    <section 
+      className="py-32 relative overflow-hidden" 
+      aria-labelledby="cta-heading"
+    >
       <div className="container mx-auto px-6 relative z-10">
         <div ref={ref} className="max-w-5xl mx-auto">
           {/* Gameplay frame with annotations */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.8 }}
+            initial={initial}
+            animate={isInView ? animate : {}}
+            transition={prefersReducedMotion ? {} : { duration: 0.8 }}
             className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/50 mb-16"
+            role="img"
+            aria-label="Gameplay review interface showing multiple annotations including Entry Frag, Clutch Round, Overextended warning, and Rotate Timing markers on a paused timeline"
           >
             {/* Fake gameplay background */}
             <div className="absolute inset-0 bg-gradient-to-br from-muted/30 via-background to-muted/20">
@@ -53,11 +62,12 @@ export function CTASection() {
               return (
                 <motion.div
                   key={annotation.id}
-                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                  animate={isInView ? { opacity: 1, scale: 1, y: 0 } : {}}
-                  transition={{ duration: 0.4, delay: 0.3 + index * 0.15 }}
+                  initial={prefersReducedMotion ? {} : { opacity: 0, scale: 0.8, y: 10 }}
+                  animate={isInView && !prefersReducedMotion ? { opacity: 1, scale: 1, y: 0 } : prefersReducedMotion ? {} : {}}
+                  transition={prefersReducedMotion ? {} : { duration: 0.4, delay: 0.3 + index * 0.15 }}
                   className="absolute"
                   style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                  aria-hidden="true"
                 >
                   <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${colors.bg} ${colors.border} backdrop-blur-sm`}>
                     <Icon className={`w-3.5 h-3.5 ${colors.icon}`} />
@@ -73,19 +83,22 @@ export function CTASection() {
               <div className="absolute bottom-4 left-4 right-4">
                 <div className="flex items-center gap-3 mb-2">
                   {/* Pause indicator */}
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/20 border border-primary/30">
+                  <div 
+                    className="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/20 border border-primary/30"
+                    aria-label="Playback paused"
+                  >
                     <div className="w-1 h-3 bg-primary rounded-sm" />
                     <div className="w-1 h-3 bg-primary rounded-sm" />
                   </div>
-                  <span className="font-mono text-sm text-primary">2:04</span>
-                  <div className="flex-1 h-1.5 bg-muted/50 rounded-full overflow-hidden">
+                  <span className="font-mono text-sm text-primary" aria-label="Current time 2 minutes 4 seconds">2:04</span>
+                  <div className="flex-1 h-1.5 bg-muted/50 rounded-full overflow-hidden" role="progressbar" aria-valuenow={41} aria-valuemin={0} aria-valuemax={100}>
                     <div className="h-full w-[41%] bg-primary/60 rounded-full" />
                   </div>
-                  <span className="font-mono text-sm text-muted-foreground">5:00</span>
+                  <span className="font-mono text-sm text-muted-foreground" aria-label="Total duration 5 minutes">5:00</span>
                 </div>
 
                 {/* Timeline markers */}
-                <div className="relative h-1 ml-20 mr-12">
+                <div className="relative h-1 ml-20 mr-12" aria-hidden="true">
                   {annotations.map((annotation, i) => {
                     const colors = getAnnotationColors(annotation.color);
                     const position = [17, 35, 41, 52][i];
@@ -94,9 +107,9 @@ export function CTASection() {
                         key={annotation.id}
                         className={`absolute w-2 h-2 rounded-full ${colors.bg} ${colors.border} border`}
                         style={{ left: `${position}%`, top: "-2px" }}
-                        initial={{ opacity: 0 }}
-                        animate={isInView ? { opacity: 1 } : {}}
-                        transition={{ delay: 0.8 + i * 0.1 }}
+                        initial={prefersReducedMotion ? {} : { opacity: 0 }}
+                        animate={isInView && !prefersReducedMotion ? { opacity: 1 } : prefersReducedMotion ? {} : {}}
+                        transition={prefersReducedMotion ? {} : { delay: 0.8 + i * 0.1 }}
                       />
                     );
                   })}
@@ -105,38 +118,40 @@ export function CTASection() {
             </div>
 
             {/* Vignette */}
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,hsl(var(--background)/0.5)_100%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,hsl(var(--background)/0.5)_100%)]" aria-hidden="true" />
           </motion.div>
 
           {/* Closing copy */}
           <div className="text-center">
             <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.6, delay: 0.6 }}
+              id="cta-heading"
+              initial={initial}
+              animate={isInView ? animate : {}}
+              transition={prefersReducedMotion ? {} : { duration: 0.6, delay: 0.6 }}
               className="font-display text-4xl md:text-6xl lg:text-7xl leading-tight mb-4"
             >
               Great players don't just play more.
             </motion.h2>
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.6, delay: 0.75 }}
+            <motion.p
+              initial={initial}
+              animate={isInView ? animate : {}}
+              transition={prefersReducedMotion ? {} : { duration: 0.6, delay: 0.75 }}
               className="font-display text-4xl md:text-6xl lg:text-7xl leading-tight mb-12 text-gradient-primary"
+              aria-label="They see more."
             >
               They see more.
-            </motion.h2>
+            </motion.p>
 
             {/* CTA */}
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.5, delay: 0.9 }}
+              initial={initial}
+              animate={isInView ? animate : {}}
+              transition={prefersReducedMotion ? {} : { duration: 0.5, delay: 0.9 }}
               className="flex flex-col items-center gap-4"
             >
               <Button
                 size="lg"
-                className="h-14 px-10 text-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+                className="h-14 px-10 text-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-offset-background"
                 asChild
               >
                 <Link to="/auth">Record Your First Session</Link>
