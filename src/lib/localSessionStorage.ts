@@ -25,6 +25,12 @@ export interface LocalSession {
   blobSize: number; // bytes
   /** MIME type of the recording (e.g., "video/webm;codecs=vp9,opus") */
   mimeType: string;
+  /** File extension ("mp4" or "webm") */
+  fileExt?: "mp4" | "webm";
+  /** Human-readable codecs label (e.g., "VP9 + Opus") */
+  codecsLabel?: string;
+  /** Simplified browser label (e.g., "Chrome 120") */
+  browserLabel?: string;
   /** Duration in milliseconds for more precision */
   durationMs?: number;
   /** Debug: What stream source was used for the recording */

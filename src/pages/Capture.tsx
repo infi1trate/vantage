@@ -171,6 +171,9 @@ export default function CapturePage() {
         thumbnailDataUrl,
         blobSize: recordedData.compositeBlob.size,
         mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
+        fileExt: recordedData.fileExt,
+        codecsLabel: recordedData.codecsLabel,
+        browserLabel: recordedData.browserLabel,
         durationMs: recordedData.duration * 1000,
         recordedSource: recordedData.recordedSource,
       };
@@ -462,6 +465,7 @@ export default function CapturePage() {
                   recorderState={capture.debugInfo.recorderState || undefined}
                   chunksCount={capture.debugInfo.chunksCount}
                   totalBytes={capture.debugInfo.totalBytes}
+                  mimeTypeInfo={capture.debugInfo.mimeTypeInfo || undefined}
                   recordedSource={
                     capture.captureState === "recording" || capture.captureState === "paused"
                       ? "composed" // During active recording, we're always using composed mode

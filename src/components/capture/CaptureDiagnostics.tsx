@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import type { CaptureState } from "@/hooks/useCaptureManager";
 import type { RecordedSourceType } from "@/lib/localSessionStorage";
+import type { RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
+import { getAllMimeTypeSupportStatus } from "@/lib/recordingMimeTypes";
 
 interface CaptureDiagnosticsProps {
   captureState: CaptureState;
@@ -33,6 +35,8 @@ interface CaptureDiagnosticsProps {
   recorderState?: RecordingState;
   chunksCount?: number;
   totalBytes?: number;
+  /** Current MIME type info from chooseRecordingMimeType */
+  mimeTypeInfo?: RecordingMimeTypeInfo;
   /** Debug: What stream source will be/was recorded */
   recordedSource?: RecordedSourceType;
 }
@@ -45,21 +49,7 @@ function detectBrowserCapabilities() {
     getUserMedia: !!(navigator.mediaDevices && "getUserMedia" in navigator.mediaDevices),
     audioContext: typeof AudioContext !== "undefined" || typeof (window as any).webkitAudioContext !== "undefined",
     indexedDB: typeof indexedDB !== "undefined",
-    mimeTypes: {
-      "video/webm;codecs=vp9,opus": false,
-      "video/webm;codecs=vp8,opus": false,
-      "video/webm;codecs=vp9": false,
-      "video/webm;codecs=vp8": false,
-      "video/webm": false,
-    } as Record<string, boolean>,
   };
-
-  // Check mime type support
-  if (capabilities.mediaRecorder) {
-    for (const mimeType of Object.keys(capabilities.mimeTypes)) {
-      capabilities.mimeTypes[mimeType] = MediaRecorder.isTypeSupported(mimeType);
-    }
-  }
 
   return capabilities;
 }
@@ -117,13 +107,16 @@ export function CaptureDiagnostics({
   recorderState,
   chunksCount = 0,
   totalBytes = 0,
+  mimeTypeInfo,
   recordedSource,
 }: CaptureDiagnosticsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<ReturnType<typeof detectBrowserCapabilities> | null>(null);
+  const [mimeTypeSupport, setMimeTypeSupport] = useState<ReturnType<typeof getAllMimeTypeSupportStatus> | null>(null);
 
   useEffect(() => {
     setCapabilities(detectBrowserCapabilities());
+    setMimeTypeSupport(getAllMimeTypeSupportStatus());
   }, []);
 
   const screenVideo = getTrackInfo(screenStream, "video");
@@ -224,23 +217,64 @@ export function CaptureDiagnostics({
               </div>
             </div>
 
-            {/* Mime Types */}
-            {capabilities && (
+            {/* Mime Types with Compatibility */}
+            {mimeTypeSupport && (
               <div>
                 <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                  Supported Codecs
+                  Format Compatibility (Record + Playback)
                 </h4>
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(capabilities.mimeTypes).map(([mime, supported]) => (
-                    <Badge 
-                      key={mime} 
-                      variant="outline" 
-                      className={`text-[10px] ${supported ? "text-vantage-success border-vantage-success/30" : "text-muted-foreground"}`}
-                    >
-                      {mime.replace("video/webm;codecs=", "").replace("video/webm", "webm")}
-                      {supported && " ✓"}
-                    </Badge>
+                <div className="space-y-1">
+                  {mimeTypeSupport.map(({ mimeType, canRecord, canPlayback, compatible }) => (
+                    <div key={mimeType} className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {mimeType.replace("video/", "")}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[9px] ${canRecord ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
+                        >
+                          rec {canRecord ? "✓" : "✗"}
+                        </Badge>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[9px] ${canPlayback ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
+                        >
+                          play {canPlayback ? "✓" : "✗"}
+                        </Badge>
+                        {compatible && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-[9px] bg-vantage-success/20 text-vantage-success border-vantage-success/30"
+                          >
+                            ✓
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
                   ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Selected MIME Type */}
+            {mimeTypeInfo && (
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                  Selected Format
+                </h4>
+                <div className="p-2 bg-vantage-success/10 rounded border border-vantage-success/30">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-vantage-success" />
+                    <span className="text-xs font-mono text-vantage-success">{mimeTypeInfo.mimeType}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                    <span>Codecs: {mimeTypeInfo.codecsLabel}</span>
+                    <span>•</span>
+                    <span>File: .{mimeTypeInfo.fileExt}</span>
+                    <span>•</span>
+                    <span>{mimeTypeInfo.browserLabel}</span>
+                  </div>
                 </div>
               </div>
             )}
