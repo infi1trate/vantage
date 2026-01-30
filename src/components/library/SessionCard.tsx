@@ -284,7 +284,7 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
           onClick={handleOpenDetail}
         >
           {/* Thumbnail */}
-          <div className="shrink-0">
+          <div className="shrink-0 group/thumb">
             <div className="w-40 aspect-video relative bg-muted/50 rounded-lg overflow-hidden">
               {thumbnailSrc ? (
                 <img src={thumbnailSrc} alt={title} className="w-full h-full object-cover" />
@@ -296,9 +296,20 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                   <Gamepad2 className="h-8 w-8 text-white/30" />
                 </div>
               )}
-              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm">
+              {/* Duration badge - bottom left */}
+              <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm">
                 <span className="text-xs font-mono-data font-medium">{formatDuration(duration)}</span>
               </div>
+              {/* Preview pill - bottom right */}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="absolute bottom-1 right-1 h-6 px-2 text-xs gap-1 bg-background/90 backdrop-blur-sm hover:bg-background opacity-0 group-hover/thumb:opacity-100 transition-opacity touch-device-visible"
+                onClick={handleOpenPreview}
+              >
+                <Play className="h-3 w-3" fill="currentColor" />
+                Preview
+              </Button>
             </div>
           </div>
 
@@ -515,28 +526,24 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
             </div>
           )}
           
-          {/* Play overlay on hover */}
-          <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <div className="p-4 rounded-full bg-primary/90 glow-primary">
-              <Play className="h-8 w-8 text-primary-foreground" fill="currentColor" />
-            </div>
+          {/* Hover overlay (subtle) */}
+          <div className="absolute inset-0 bg-background/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
+          {/* Duration badge - bottom left */}
+          <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-background/80 backdrop-blur-sm">
+            <span className="text-xs font-mono-data font-medium">{formatDuration(duration)}</span>
           </div>
 
-          {/* Preview button (top-left, on hover) */}
+          {/* Preview pill button - bottom right, visible on hover + always on touch */}
           <Button
             size="sm"
             variant="secondary"
-            className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute bottom-2 right-2 h-7 px-2.5 text-xs gap-1 bg-background/90 backdrop-blur-sm hover:bg-background opacity-0 group-hover:opacity-100 transition-opacity touch-device-visible"
             onClick={handleOpenPreview}
           >
-            <Play className="h-4 w-4 mr-1" />
+            <Play className="h-3.5 w-3.5" fill="currentColor" />
             Preview
           </Button>
-
-          {/* Duration badge */}
-          <div className="absolute bottom-2 right-2 px-2 py-1 rounded bg-background/80 backdrop-blur-sm">
-            <span className="text-xs font-mono-data font-medium">{formatDuration(duration)}</span>
-          </div>
 
           {/* Status/Local badge */}
           <div className="absolute top-2 left-2">
