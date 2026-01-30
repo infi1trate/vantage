@@ -172,6 +172,7 @@ export default function CapturePage() {
         blobSize: recordedData.compositeBlob.size,
         mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
         durationMs: recordedData.duration * 1000,
+        recordedSource: recordedData.recordedSource,
       };
 
       await saveLocalSession(localSession, recordedData.compositeBlob);
@@ -461,6 +462,11 @@ export default function CapturePage() {
                   recorderState={capture.debugInfo.recorderState || undefined}
                   chunksCount={capture.debugInfo.chunksCount}
                   totalBytes={capture.debugInfo.totalBytes}
+                  recordedSource={
+                    capture.captureState === "recording" || capture.captureState === "paused"
+                      ? "composed" // During active recording, we're always using composed mode
+                      : undefined
+                  }
                 />
               )}
             </div>

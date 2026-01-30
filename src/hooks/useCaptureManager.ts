@@ -38,11 +38,16 @@ export interface CaptureConfig {
   facecamDeviceId?: string;
 }
 
+/** Debug indicator of what stream was actually recorded */
+export type RecordedSourceType = "composed" | "screenOnly" | "unknown";
+
 export interface RecordedData {
   /** Single composited video with PiP and mixed audio */
   compositeBlob: Blob | null;
   /** MIME type of the composite blob (e.g., "video/webm;codecs=vp9,opus") */
   compositeMimeType: string | null;
+  /** Debug: What stream source was used for the recording */
+  recordedSource: RecordedSourceType;
   /** Legacy: screen only (null when using composite) */
   screenBlob: Blob | null;
   microphoneBlob: Blob | null;
@@ -614,6 +619,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       return {
         compositeBlob,
         compositeMimeType,
+        recordedSource: "composed" as const, // This blob came from the composed canvas stream
         screenBlob: null, // Using composite instead
         microphoneBlob: null,
         facecamBlob: null,
