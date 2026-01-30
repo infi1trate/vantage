@@ -3,6 +3,7 @@
  * Ensures the selected format works for BOTH MediaRecorder AND HTMLVideoElement playback.
  */
 
+import { mark, measure, recordMetric } from "@/lib/performanceMetrics";
 export interface RecordingMimeTypeInfo {
   mimeType: string;
   fileExt: "mp4" | "webm";
@@ -180,6 +181,9 @@ export async function tryRecordWithFallback(
         audioBitsPerSecond: options.audioBitsPerSecond,
       });
       
+      // Mark recorder start for timing first data
+      mark(`recorder:start:${mime}`);
+      
       // Try to start the recorder
       recorder.start(1000);
       
@@ -194,12 +198,27 @@ export async function tryRecordWithFallback(
           clearTimeout(checkTimeout);
           resolve(false);
         };
+        
+        // Listen for first data to measure startup time
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            measure(
+              `recorder:first-data:${mime}`,
+              `recorder:start:${mime}`,
+              undefined,
+              "capture:recorder:first-data"
+            );
+          }
+        };
       });
       
       if (isRecording) {
         console.log(`[MimeType] SUCCESS: ${mime} is working`);
         
-        // Clear the error handler we set
+        // Record the successful recorder start time
+        recordMetric("capture:recorder", 250, { mimeType: mime, success: true });
+        
+        // Clear the error handler we set (but keep ondataavailable for timing)
         recorder.onerror = null;
         
         return {

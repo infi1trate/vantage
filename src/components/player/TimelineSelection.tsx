@@ -109,10 +109,17 @@ export function TimelineSelection({
       return;
     }
 
+    // Record scrub start for responsiveness measurement
+    const scrubStart = performance.now();
+    
     setDragStart(time);
     setDragType("seek");
     setIsDragging(true);
     onSeek(time);
+    
+    // Measure scrub responsiveness (time from input to seek call)
+    const scrubDuration = performance.now() - scrubStart;
+    recordMetric("playback:seek", scrubDuration, { type: "click", time });
   }, [getTimeFromPosition, selection, duration, pushHistory, onSeek]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {

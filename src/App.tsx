@@ -6,6 +6,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
 import { RouteErrorFallback } from "@/components/ErrorBoundary";
+import { DevPerfOverlay } from "@/components/dev/DevPerfOverlay";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
@@ -43,6 +44,8 @@ const App = () => (
           <Toaster />
           <Sonner />
           <RouterProvider router={router} />
+          {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
+          <DevPerfOverlay />
         </TooltipProvider>
       </JobsProvider>
     </AuthProvider>

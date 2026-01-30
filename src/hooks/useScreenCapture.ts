@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
+import { mark, measure } from "@/lib/performanceMetrics";
 
 export interface ScreenCaptureOptions {
   video?: {
@@ -33,6 +34,9 @@ export function useScreenCapture(): UseScreenCaptureReturn {
   const streamRef = useRef<MediaStream | null>(null);
 
   const startCapture = useCallback(async (options?: ScreenCaptureOptions): Promise<MediaStream | null> => {
+    // Mark screen capture request start
+    mark("screen:permission-request");
+    
     try {
       setError(null);
       setCaptureError(null);
@@ -56,10 +60,37 @@ export function useScreenCapture(): UseScreenCaptureReturn {
 
       const mediaStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
       
+      // Measure time from permission request to stream acquired
+      const permissionTime = measure(
+        "screen:permission-to-stream",
+        "screen:permission-request",
+        undefined,
+        "capture:screen"
+      );
+      
+      // Mark for first frame timing
+      mark("screen:stream-acquired");
+      
       // Handle user stopping share via browser UI
       mediaStream.getVideoTracks()[0].addEventListener("ended", () => {
         stopCapture();
       });
+      
+      // Get first frame timing from track settings
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack) {
+        const settings = videoTrack.getSettings();
+        if (settings.width && settings.height) {
+          const firstFrameTime = measure(
+            "screen:first-frame",
+            "screen:stream-acquired",
+            undefined,
+            "capture:screen:first-frame"
+          );
+          
+          console.log(`[Perf] Screen capture ready: permission=${permissionTime.toFixed(0)}ms, resolution=${settings.width}x${settings.height}`);
+        }
+      }
 
       streamRef.current = mediaStream;
       setStream(mediaStream);
@@ -69,6 +100,9 @@ export function useScreenCapture(): UseScreenCaptureReturn {
       return mediaStream;
     } catch (err: any) {
       console.error("Screen capture error:", err);
+      
+      // Clear marks on error
+      measure("screen:error", "screen:permission-request");
       
       const parsedError = parseMediaError(err, "screen");
       setError(parsedError.message);
