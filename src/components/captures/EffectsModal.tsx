@@ -271,28 +271,47 @@ export function EffectsModal({
 
                   {/* Background Mask */}
                   <div className="space-y-3">
-                    <p className="text-xs font-medium text-muted-foreground">Background Mask</p>
-                    <div className="grid grid-cols-5 sm:grid-cols-6 gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Background Mask
+                      </p>
+                      {backgroundImage && (
+                        <span className="text-xs text-vantage-500/80 font-medium">
+                          Image active
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Color Swatches - 12 preset colors in 6x2 grid */}
+                    <div className="grid grid-cols-6 gap-2">
                       {BACKGROUND_COLORS.map((color) => (
                         <button
                           key={color.id}
                           type="button"
-                          onClick={() => setBackgroundColor(color.id)}
+                          onClick={() => {
+                            setBackgroundColor(color.id);
+                            // Clear image when selecting a color
+                            if (backgroundImage) setBackgroundImage(null);
+                          }}
                           className={cn(
                             "relative w-full aspect-square rounded-lg transition-all duration-150",
-                            "hover:scale-105 hover:ring-2 hover:ring-primary/30 active:scale-100",
-                            color.id === "transparent" && "bg-[conic-gradient(from_45deg,#1a1a1a_25%,#2a2a2a_25%,#2a2a2a_50%,#1a1a1a_50%,#1a1a1a_75%,#2a2a2a_75%)] bg-[length:8px_8px]",
-                            backgroundColor === color.id && !backgroundImage && "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                            "hover:scale-110 hover:ring-2 hover:ring-vantage-500/40 hover:z-10 active:scale-100",
+                            // Checkerboard pattern for transparent
+                            color.id === "transparent" && "bg-[conic-gradient(from_45deg,hsl(var(--muted))_25%,hsl(var(--muted-foreground)/0.15)_25%,hsl(var(--muted-foreground)/0.15)_50%,hsl(var(--muted))_50%,hsl(var(--muted))_75%,hsl(var(--muted-foreground)/0.15)_75%)] bg-[length:8px_8px]",
+                            // Selected state
+                            backgroundColor === color.id && !backgroundImage && "ring-2 ring-vantage-500 ring-offset-2 ring-offset-background shadow-[0_0_12px_-3px_hsl(65_70%_45%/0.5)]",
+                            // Dimmed when image is active
+                            backgroundImage && "opacity-50"
                           )}
                           style={{ 
                             backgroundColor: color.id !== "transparent" ? color.value : undefined 
                           }}
-                          disabled={disabled || !!backgroundImage}
+                          disabled={disabled}
                           title={color.label}
                         >
                           {backgroundColor === color.id && !backgroundImage && (
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <Check className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
+                              <Check className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]" />
                             </div>
                           )}
                         </button>
@@ -301,26 +320,28 @@ export function EffectsModal({
 
                     {/* Custom Background Image */}
                     {backgroundImage ? (
-                      <div className="flex items-center gap-3 p-3 bg-muted/20 rounded-lg border border-border/30">
+                      <div className="flex items-center gap-3 p-3 bg-vantage-500/10 rounded-xl border border-vantage-500/30">
                         <div 
-                          className="w-12 h-12 rounded-lg bg-cover bg-center border border-border/40"
+                          className="w-12 h-12 rounded-lg bg-cover bg-center border-2 border-vantage-500/40 shadow-sm"
                           style={{ backgroundImage: `url(${backgroundImage})` }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">Custom image</p>
-                          <p className="text-xs text-muted-foreground">Overrides color mask</p>
+                          <p className="text-sm font-medium text-foreground truncate">Custom image</p>
+                          <p className="text-xs text-muted-foreground">
+                            Replaces color • Remove to restore
+                          </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setBackgroundImage(null)}
-                          className="p-2 rounded-lg hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                          title="Remove image"
+                          className="p-2 rounded-lg bg-muted/20 hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-95"
+                          title="Remove image and restore color"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </div>
                     ) : (
-                      <label className="flex items-center gap-3 p-3 bg-muted/10 rounded-lg border border-dashed border-border/40 cursor-pointer hover:border-primary/40 hover:bg-muted/20 transition-colors">
+                      <label className="group flex items-center gap-3 p-3 bg-muted/10 rounded-xl border-2 border-dashed border-border/40 cursor-pointer hover:border-vantage-500/50 hover:bg-vantage-500/5 transition-all duration-150">
                         <input
                           type="file"
                           accept="image/png,image/jpeg,image/jpg"
@@ -328,10 +349,17 @@ export function EffectsModal({
                           className="sr-only"
                           disabled={disabled}
                         />
-                        <div className="w-10 h-10 rounded-lg bg-muted/30 flex items-center justify-center">
-                          <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                        <div className="w-10 h-10 rounded-lg bg-muted/30 group-hover:bg-vantage-500/15 flex items-center justify-center transition-colors">
+                          <ImagePlus className="h-5 w-5 text-muted-foreground group-hover:text-vantage-500 transition-colors" />
                         </div>
-                        <span className="text-sm text-muted-foreground">Upload background image</span>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                            Add background image
+                          </p>
+                          <p className="text-xs text-muted-foreground/60">
+                            PNG or JPG
+                          </p>
+                        </div>
                       </label>
                     )}
                   </div>
