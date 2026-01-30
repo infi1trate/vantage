@@ -1,10 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink, AlertTriangle, Copy, Check, RotateCcw } from "lucide-react";
+import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink, AlertTriangle, Copy, Check, RotateCcw, Zap, Settings } from "lucide-react";
 import type { CaptureState, CaptureError } from "@/hooks/useCaptureManager";
 import { type PreflightCheck } from "@/hooks/usePreflightChecks";
 import { PreflightChecklist } from "./PreflightChecklist";
+import { getMimeTypeDiagnosticsText } from "@/lib/recordingMimeTypes";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,6 +28,10 @@ interface CaptureControlsProps {
   inlineError?: CaptureError | null;
   onDismissError?: () => void;
   onRetryRecording?: () => void;
+  /** Callback for retry with low-power settings */
+  onRetryLowQuality?: () => void;
+  /** Callback for continuing in preview mode (gives up on recording) */
+  onContinuePreviewMode?: () => void;
 }
 
 export function CaptureControls({
@@ -45,6 +50,8 @@ export function CaptureControls({
   inlineError,
   onDismissError,
   onRetryRecording,
+  onRetryLowQuality,
+  onContinuePreviewMode,
 }: CaptureControlsProps) {
   const [copied, setCopied] = useState(false);
   
@@ -57,18 +64,83 @@ export function CaptureControls({
   
   const canStartRecording = !previewOnly && preflightPassed && !preflightRunning && !isStarting && !inlineError;
 
+  // Build comprehensive diagnostics for RECORDER_ERROR
+  const buildRecorderDiagnostics = () => {
+    const lines: string[] = [
+      "=== Recording Error Diagnostics ===",
+      `Timestamp: ${new Date().toISOString()}`,
+      "",
+    ];
+    
+    // Exception info
+    if (inlineError?.recorderDiagnostics) {
+      const diag = inlineError.recorderDiagnostics;
+      lines.push("=== Exception ===");
+      if (diag.exceptionName) lines.push(`Name: ${diag.exceptionName}`);
+      if (diag.exceptionMessage) lines.push(`Message: ${diag.exceptionMessage}`);
+      lines.push("");
+      
+      lines.push("=== Encoder Settings ===");
+      if (diag.mimeType) lines.push(`MIME Type: ${diag.mimeType}`);
+      if (diag.frameRate) lines.push(`Frame Rate: ${diag.frameRate} fps`);
+      if (diag.videoBitsPerSecond) lines.push(`Video Bitrate: ${(diag.videoBitsPerSecond / 1_000_000).toFixed(1)} Mbps`);
+      if (diag.audioBitsPerSecond) lines.push(`Audio Bitrate: ${(diag.audioBitsPerSecond / 1000).toFixed(0)} kbps`);
+      lines.push(`Low Power Attempted: ${diag.lowPowerAttempted ? "Yes" : "No"}`);
+      lines.push("");
+      
+      if (diag.videoTrackSettings) {
+        lines.push("=== Video Track ===");
+        const v = diag.videoTrackSettings;
+        if (v.width && v.height) lines.push(`Resolution: ${v.width}x${v.height}`);
+        if (v.frameRate) lines.push(`Frame Rate: ${v.frameRate} fps`);
+        if (v.label) lines.push(`Label: ${v.label}`);
+        lines.push("");
+      }
+      
+      if (diag.audioTrackSettings) {
+        lines.push("=== Audio Track ===");
+        const a = diag.audioTrackSettings;
+        if (a.channelCount) lines.push(`Channels: ${a.channelCount}`);
+        if (a.sampleRate) lines.push(`Sample Rate: ${a.sampleRate} Hz`);
+        if (a.label) lines.push(`Label: ${a.label}`);
+        lines.push("");
+      }
+    }
+    
+    // General error info
+    lines.push("=== Error Details ===");
+    lines.push(`Code: ${inlineError?.code}`);
+    lines.push(`Message: ${inlineError?.message}`);
+    if (inlineError?.details) lines.push(`Details: ${inlineError.details}`);
+    lines.push("");
+    
+    // Add MIME type support
+    lines.push(getMimeTypeDiagnosticsText());
+    
+    return lines.join("\n");
+  };
+
   // Copy diagnostics for inline error
   const handleCopyDiagnostics = async () => {
-    const diagnostics = {
-      timestamp: new Date().toISOString(),
-      error: inlineError,
-      userAgent: navigator.userAgent,
-      isSecureContext: window.isSecureContext,
-      mediaRecorderSupported: typeof MediaRecorder !== "undefined",
-    };
+    let diagnosticsText: string;
+    
+    // For RECORDER_ERROR with diagnostics, use detailed format
+    if (inlineError?.code === "RECORDER_ERROR" && inlineError?.recorderDiagnostics) {
+      diagnosticsText = buildRecorderDiagnostics();
+    } else {
+      // Default format for other errors
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        error: inlineError,
+        userAgent: navigator.userAgent,
+        isSecureContext: window.isSecureContext,
+        mediaRecorderSupported: typeof MediaRecorder !== "undefined",
+      };
+      diagnosticsText = JSON.stringify(diagnostics, null, 2);
+    }
     
     try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      await navigator.clipboard.writeText(diagnosticsText);
       setCopied(true);
       toast.success("Diagnostics copied");
       setTimeout(() => setCopied(false), 2000);
@@ -88,16 +160,119 @@ export function CaptureControls({
               ? "This Browser Can't Record This Format"
               : inlineError.code === "STREAM_NOT_READY"
               ? "Capture Stream Not Ready"
+              : inlineError.code === "RECORDER_ERROR"
+              ? "Encoder Initialization Failed"
               : "Recording Failed"}
           </AlertTitle>
           <AlertDescription className="mt-2 space-y-3">
-            <p className="text-sm">{inlineError.message}</p>
-            {inlineError.details && (
-              <p className="text-xs text-muted-foreground font-mono bg-muted/30 p-2 rounded">{inlineError.details}</p>
+            {/* For RECORDER_ERROR, show exception details prominently */}
+            {inlineError.code === "RECORDER_ERROR" && inlineError.recorderDiagnostics && (
+              <div className="space-y-2">
+                {/* Exception name and message */}
+                {inlineError.recorderDiagnostics.exceptionName && (
+                  <div className="p-2 bg-destructive/10 rounded border border-destructive/20">
+                    <code className="text-xs font-mono text-destructive">
+                      {inlineError.recorderDiagnostics.exceptionName}
+                      {inlineError.recorderDiagnostics.exceptionMessage && (
+                        <span className="text-muted-foreground">: {inlineError.recorderDiagnostics.exceptionMessage}</span>
+                      )}
+                    </code>
+                  </div>
+                )}
+                
+                {/* Encoder settings grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {inlineError.recorderDiagnostics.mimeType && (
+                    <div className="p-2 bg-muted/30 rounded">
+                      <span className="text-muted-foreground">MIME Type:</span>
+                      <br />
+                      <code className="font-mono text-[10px]">{inlineError.recorderDiagnostics.mimeType}</code>
+                    </div>
+                  )}
+                  <div className="p-2 bg-muted/30 rounded">
+                    <span className="text-muted-foreground">Frame Rate:</span>
+                    <br />
+                    <span className="font-medium">{inlineError.recorderDiagnostics.frameRate || "?"} fps</span>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded">
+                    <span className="text-muted-foreground">Video Bitrate:</span>
+                    <br />
+                    <span className="font-medium">
+                      {inlineError.recorderDiagnostics.videoBitsPerSecond 
+                        ? `${(inlineError.recorderDiagnostics.videoBitsPerSecond / 1_000_000).toFixed(1)} Mbps` 
+                        : "?"}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded">
+                    <span className="text-muted-foreground">Audio Bitrate:</span>
+                    <br />
+                    <span className="font-medium">
+                      {inlineError.recorderDiagnostics.audioBitsPerSecond 
+                        ? `${(inlineError.recorderDiagnostics.audioBitsPerSecond / 1000).toFixed(0)} kbps` 
+                        : "?"}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Video/Audio track details */}
+                {(inlineError.recorderDiagnostics.videoTrackSettings || inlineError.recorderDiagnostics.audioTrackSettings) && (
+                  <div className="text-xs space-y-1 p-2 bg-muted/20 rounded">
+                    {inlineError.recorderDiagnostics.videoTrackSettings && (
+                      <div className="flex items-center gap-2">
+                        <Settings className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">Video:</span>
+                        <span className="font-mono text-[10px]">
+                          {inlineError.recorderDiagnostics.videoTrackSettings.width}x{inlineError.recorderDiagnostics.videoTrackSettings.height}
+                          {inlineError.recorderDiagnostics.videoTrackSettings.frameRate && 
+                            ` @${inlineError.recorderDiagnostics.videoTrackSettings.frameRate}fps`}
+                        </span>
+                      </div>
+                    )}
+                    {inlineError.recorderDiagnostics.audioTrackSettings && (
+                      <div className="flex items-center gap-2">
+                        <Settings className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">Audio:</span>
+                        <span className="font-mono text-[10px]">
+                          {inlineError.recorderDiagnostics.audioTrackSettings.channelCount}ch
+                          {inlineError.recorderDiagnostics.audioTrackSettings.sampleRate && 
+                            ` @${inlineError.recorderDiagnostics.audioTrackSettings.sampleRate}Hz`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
+            
+            {/* Standard error message (for non-RECORDER_ERROR or as fallback) */}
+            {(inlineError.code !== "RECORDER_ERROR" || !inlineError.recorderDiagnostics) && (
+              <>
+                <p className="text-sm">{inlineError.message}</p>
+                {inlineError.details && (
+                  <p className="text-xs text-muted-foreground font-mono bg-muted/30 p-2 rounded">{inlineError.details}</p>
+                )}
+              </>
+            )}
+            
             <div className="flex flex-wrap gap-2 mt-3">
-              {/* Retry button for recoverable errors */}
-              {inlineError.recoverable && onRetryRecording && (
+              {/* RECORDER_ERROR specific: Retry with lower quality */}
+              {inlineError.code === "RECORDER_ERROR" && 
+               onRetryLowQuality && 
+               !inlineError.recorderDiagnostics?.lowPowerAttempted && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onRetryLowQuality}
+                  className="text-xs"
+                >
+                  <Zap className="mr-1.5 h-3 w-3" />
+                  Retry with Lower Quality
+                  <Badge variant="secondary" className="ml-1.5 text-[9px]">24fps, 1.5Mbps</Badge>
+                </Button>
+              )}
+              
+              {/* Retry button for recoverable errors (except RECORDER_ERROR which has specific button above) */}
+              {inlineError.recoverable && onRetryRecording && inlineError.code !== "RECORDER_ERROR" && (
                 <Button
                   variant="default"
                   size="sm"
@@ -108,6 +283,20 @@ export function CaptureControls({
                   Retry
                 </Button>
               )}
+              
+              {/* Continue in Preview Mode */}
+              {onContinuePreviewMode && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onContinuePreviewMode}
+                  className="text-xs"
+                >
+                  <Eye className="mr-1.5 h-3 w-3" />
+                  Continue in Preview Mode
+                </Button>
+              )}
+              
               <Button
                 variant="outline"
                 size="sm"
@@ -117,6 +306,7 @@ export function CaptureControls({
                 {copied ? <Check className="mr-1.5 h-3 w-3" /> : <Copy className="mr-1.5 h-3 w-3" />}
                 {copied ? "Copied" : "Copy Diagnostics"}
               </Button>
+              
               {/* Show Chrome link only for browser capability errors */}
               {(inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED") && (
                 <a
@@ -131,6 +321,7 @@ export function CaptureControls({
                   </Button>
                 </a>
               )}
+              
               {onDismissError && (
                 <Button
                   variant="ghost"
