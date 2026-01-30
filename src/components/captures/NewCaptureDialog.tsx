@@ -760,6 +760,15 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     </div>
                     <Switch defaultChecked={true} />
                   </div>
+
+                  {/* Record System Audio */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Record System Audio</p>
+                      <p className="text-[10px] text-muted-foreground">Game sounds and system output</p>
+                    </div>
+                    <Switch checked={includeGameAudio} onCheckedChange={setIncludeGameAudio} />
+                  </div>
                 </div>
               </div>
 
