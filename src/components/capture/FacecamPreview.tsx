@@ -28,6 +28,7 @@ interface FacecamPreviewProps {
   frameShape?: FrameShape;
   cameraSize?: CameraSize;
   backgroundColor?: BackgroundColorId;
+  backgroundImage?: string | null;
   className?: string;
 }
 
@@ -36,6 +37,7 @@ export function FacecamPreview({
   frameShape = "circle", 
   cameraSize = "small",
   backgroundColor = "transparent",
+  backgroundImage = null,
   className 
 }: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -44,6 +46,20 @@ export function FacecamPreview({
   const [loading, setLoading] = useState(false);
   
   const bgColor = BACKGROUND_COLORS.find(c => c.id === backgroundColor)?.value || "transparent";
+  
+  // Background image overrides color
+  const getBackgroundStyle = (): React.CSSProperties => {
+    if (backgroundImage) {
+      return {
+        backgroundImage: `url(${backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {
+      backgroundColor: bgColor === "transparent" ? "black" : bgColor,
+    };
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -180,7 +196,7 @@ export function FacecamPreview({
         getFrameClasses(),
         className
       )}
-      style={{ backgroundColor: bgColor === "transparent" ? "black" : bgColor }}
+      style={getBackgroundStyle()}
     >
       <video
         ref={videoRef}

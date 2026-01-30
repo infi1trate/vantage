@@ -40,6 +40,8 @@ import {
   Volume2,
   Circle,
   Square,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -84,6 +86,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [frameShape, setFrameShape] = useState<FrameShape>("circle");
   const [cameraSize, setCameraSize] = useState<CameraSize>("small");
   const [backgroundColor, setBackgroundColor] = useState<BackgroundColorId>("transparent");
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -110,8 +113,31 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setFrameShape("circle");
       setCameraSize("small");
       setBackgroundColor("transparent");
+      setBackgroundImage(null);
     }
   }, [open]);
+
+  const handleBackgroundImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith("image/") || !["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
+      toast.error("Please upload a PNG or JPG image");
+      return;
+    }
+    
+    // Read file as data URL for preview
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setBackgroundImage(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeBackgroundImage = () => {
+    setBackgroundImage(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -573,10 +599,10 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                             style={{ 
                               backgroundColor: color.id !== "transparent" ? color.value : undefined 
                             }}
-                            disabled={loading}
+                            disabled={loading || !!backgroundImage}
                             title={color.label}
                           >
-                            {backgroundColor === color.id && (
+                            {backgroundColor === color.id && !backgroundImage && (
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <Check className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
                               </div>
@@ -584,6 +610,42 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                           </button>
                         ))}
                       </div>
+
+                      {/* Custom Background Image */}
+                      {backgroundImage ? (
+                        <div className="flex items-center gap-2 p-2 bg-muted/20 rounded-lg border border-border/30">
+                          <div 
+                            className="w-10 h-10 rounded-md bg-cover bg-center border border-border/40"
+                            style={{ backgroundImage: `url(${backgroundImage})` }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">Custom image</p>
+                            <p className="text-[10px] text-muted-foreground">Overrides color</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={removeBackgroundImage}
+                            className="p-1.5 rounded-md hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                            title="Remove image"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="flex items-center gap-2 p-2 bg-muted/10 rounded-lg border border-dashed border-border/40 cursor-pointer hover:border-primary/40 hover:bg-muted/20 transition-colors">
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg"
+                            onChange={handleBackgroundImageUpload}
+                            className="sr-only"
+                            disabled={loading}
+                          />
+                          <div className="w-8 h-8 rounded-md bg-muted/30 flex items-center justify-center">
+                            <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                          <span className="text-xs text-muted-foreground">Add background image</span>
+                        </label>
+                      )}
                     </div>
                   </>
                 )}
@@ -594,6 +656,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   frameShape={frameShape} 
                   cameraSize={cameraSize} 
                   backgroundColor={backgroundColor}
+                  backgroundImage={backgroundImage}
                 />
               </div>
 
