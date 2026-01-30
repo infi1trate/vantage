@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect } from "react";
-
+import { recordMetric, createFPSCounter, measureSync } from "@/lib/performanceMetrics";
 export interface CompositeRecorderConfig {
   screenStream: MediaStream;
   microphoneStream?: MediaStream | null;
@@ -55,6 +55,9 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
   
   // Config storage
   const configRef = useRef<CompositeRecorderConfig | null>(null);
+  
+  // FPS counter for composite rendering
+  const fpsCounterRef = useRef(createFPSCounter("CompositeRecorder"));
 
   // Create hidden video element for a stream
   const createVideoElement = useCallback((stream: MediaStream): HTMLVideoElement => {
@@ -156,6 +159,9 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
       
       ctx.restore();
     }
+
+    // Update FPS counter
+    fpsCounterRef.current.tick();
 
     // Continue animation loop
     if (isCompositingRef.current) {

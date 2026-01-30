@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { SuggestionMarkers, AnnotationSuggestion } from "./SuggestionMarkers";
-
+import { recordMetric } from "@/lib/performanceMetrics";
 export interface SelectionState {
   type: "point" | "range" | null;
   point?: number;

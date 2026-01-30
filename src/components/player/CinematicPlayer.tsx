@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { VoiceNote } from "@/lib/captures";
+import { startTiming, endTiming, recordMetric } from "@/lib/performanceMetrics";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
@@ -124,10 +125,15 @@ export function CinematicPlayer({
   const activeSelection = onSelectionChange ? selection : internalSelection;
   const handleSelectionChange = onSelectionChange || setInternalSelection;
 
-  // Reset video state when URL changes
+  // Reset video state and start timing when URL changes
   useEffect(() => {
     setVideoReady(false);
     setVideoDecodeError(null);
+    
+    // Start timing playback startup
+    if (videoUrl) {
+      startTiming(`playback:${videoUrl.slice(-20)}`);
+    }
   }, [videoUrl]);
 
   // Simulated playback for demo
@@ -157,8 +163,19 @@ export function CinematicPlayer({
   const handleVideoLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     setVideoReady(true);
     setVideoDecodeError(null);
+    
+    // Record playback startup time
+    if (videoUrl) {
+      const startupTime = endTiming(`playback:${videoUrl.slice(-20)}`, "playback:startup", {
+        duration: e.currentTarget.duration,
+      });
+      if (startupTime > 0) {
+        console.log(`[Perf] Playback startup: ${startupTime.toFixed(0)}ms`);
+      }
+    }
+    
     onVideoLoaded?.(e.currentTarget.duration);
-  }, [onVideoLoaded]);
+  }, [onVideoLoaded, videoUrl]);
 
   const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const mediaError = e.currentTarget.error;
