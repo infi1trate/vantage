@@ -12,6 +12,9 @@ const THUMBNAILS_STORE = "thumbnails";
 /** Debug indicator of what stream was actually recorded */
 export type RecordedSourceType = "composed" | "screenOnly" | "unknown";
 
+/** Storage status for the session */
+export type LocalStorageStatus = "stored_local" | "not_stored_locally";
+
 export interface LocalSession {
   id: string;
   title: string;
@@ -36,6 +39,10 @@ export interface LocalSession {
   durationMs?: number;
   /** Debug: What stream source was used for the recording */
   recordedSource?: RecordedSourceType;
+  /** Storage status: whether blob was saved locally */
+  status: LocalStorageStatus;
+  /** Total bytes captured during recording */
+  totalBytes?: number;
 }
 
 // Initialize the IndexedDB database
@@ -77,21 +84,125 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
+/** Result of a save operation */
+export interface SaveSessionResult {
+  success: boolean;
+  status: LocalStorageStatus;
+  error?: {
+    type: "quota_exceeded" | "storage_error" | "unknown";
+    message: string;
+    details?: string;
+  };
+}
+
 /**
- * Save a recording session to IndexedDB
+ * Save a recording session to IndexedDB with adaptive storage
+ * If blob storage fails due to quota, saves metadata only with status "not_stored_locally"
  * @param session Session metadata
  * @param blob Video blob
  * @param thumbnailBlob Optional thumbnail blob (JPEG)
+ * @returns Result indicating success/failure and storage status
  */
 export async function saveLocalSession(
   session: LocalSession,
   blob: Blob,
   thumbnailBlob?: Blob | null
-): Promise<void> {
+): Promise<SaveSessionResult> {
   const db = await openDatabase();
 
+  // First, try to save the full session with blob
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const storeNames = [SESSIONS_STORE, BLOBS_STORE];
+      if (thumbnailBlob) {
+        storeNames.push(THUMBNAILS_STORE);
+      }
+      
+      const transaction = db.transaction(storeNames, "readwrite");
+
+      transaction.onerror = () => {
+        console.error("[LocalStorage] Transaction error:", transaction.error);
+        reject(transaction.error);
+      };
+
+      transaction.oncomplete = () => {
+        console.log(`[LocalStorage] Session ${session.id} saved successfully`);
+        resolve();
+      };
+
+      // Save metadata with stored_local status
+      const sessionsStore = transaction.objectStore(SESSIONS_STORE);
+      sessionsStore.put({ 
+        ...session, 
+        blobSize: blob.size, 
+        status: "stored_local" as LocalStorageStatus,
+        totalBytes: blob.size,
+      });
+
+      // Save video blob
+      const blobsStore = transaction.objectStore(BLOBS_STORE);
+      blobsStore.put({ id: session.id, blob });
+
+      // Save thumbnail blob if provided
+      if (thumbnailBlob) {
+        const thumbnailsStore = transaction.objectStore(THUMBNAILS_STORE);
+        thumbnailsStore.put({ id: session.id, blob: thumbnailBlob });
+        console.log(`[LocalStorage] Thumbnail saved: ${thumbnailBlob.size} bytes`);
+      }
+    });
+
+    return { success: true, status: "stored_local" };
+  } catch (err: any) {
+    console.error("[LocalStorage] Full save failed:", err);
+    
+    // Check if it's a quota error
+    const isQuotaError = 
+      err?.name === "QuotaExceededError" ||
+      err?.code === 22 || // DOMException quota code
+      err?.message?.toLowerCase().includes("quota") ||
+      err?.message?.toLowerCase().includes("storage");
+    
+    // Try to save metadata only (without blob)
+    try {
+      await saveMetadataOnly(db, session, blob.size, thumbnailBlob);
+      
+      return {
+        success: false,
+        status: "not_stored_locally",
+        error: {
+          type: isQuotaError ? "quota_exceeded" : "storage_error",
+          message: isQuotaError 
+            ? "Browser storage is full. The recording wasn't saved locally."
+            : "Storage error. The recording wasn't saved locally.",
+          details: err?.message || err?.toString(),
+        },
+      };
+    } catch (metadataErr) {
+      console.error("[LocalStorage] Even metadata save failed:", metadataErr);
+      return {
+        success: false,
+        status: "not_stored_locally",
+        error: {
+          type: "unknown",
+          message: "Failed to save session data.",
+          details: (metadataErr as any)?.message,
+        },
+      };
+    }
+  }
+}
+
+/**
+ * Save only session metadata (no blob) for quota-exceeded scenarios
+ */
+async function saveMetadataOnly(
+  db: IDBDatabase,
+  session: LocalSession,
+  blobSize: number,
+  thumbnailBlob?: Blob | null
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const storeNames = [SESSIONS_STORE, BLOBS_STORE];
+    const storeNames = [SESSIONS_STORE];
     if (thumbnailBlob) {
       storeNames.push(THUMBNAILS_STORE);
     }
@@ -99,28 +210,31 @@ export async function saveLocalSession(
     const transaction = db.transaction(storeNames, "readwrite");
 
     transaction.onerror = () => {
-      console.error("[LocalStorage] Transaction error:", transaction.error);
       reject(transaction.error);
     };
 
     transaction.oncomplete = () => {
-      console.log(`[LocalStorage] Session ${session.id} saved successfully`);
+      console.log(`[LocalStorage] Metadata-only saved for ${session.id}`);
       resolve();
     };
 
-    // Save metadata
+    // Save metadata with not_stored_locally status
     const sessionsStore = transaction.objectStore(SESSIONS_STORE);
-    sessionsStore.put({ ...session, blobSize: blob.size });
+    sessionsStore.put({ 
+      ...session, 
+      blobSize,
+      status: "not_stored_locally" as LocalStorageStatus,
+      totalBytes: blobSize,
+    });
 
-    // Save video blob
-    const blobsStore = transaction.objectStore(BLOBS_STORE);
-    blobsStore.put({ id: session.id, blob });
-
-    // Save thumbnail blob if provided
+    // Still try to save thumbnail (small, usually succeeds)
     if (thumbnailBlob) {
-      const thumbnailsStore = transaction.objectStore(THUMBNAILS_STORE);
-      thumbnailsStore.put({ id: session.id, blob: thumbnailBlob });
-      console.log(`[LocalStorage] Thumbnail saved: ${thumbnailBlob.size} bytes`);
+      try {
+        const thumbnailsStore = transaction.objectStore(THUMBNAILS_STORE);
+        thumbnailsStore.put({ id: session.id, blob: thumbnailBlob });
+      } catch (thumbErr) {
+        console.warn("[LocalStorage] Thumbnail save failed (quota):", thumbErr);
+      }
     }
   });
 }
