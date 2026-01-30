@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -385,10 +385,10 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
               Preview
             </Button>
             <Button asChild size="sm">
-              <span onClick={handleOpenDetail}>
+              <Link to={`/session/${sessionId}`} onClick={(e) => e.stopPropagation()}>
                 <Eye className="h-4 w-4 mr-1" />
                 Open
-              </span>
+              </Link>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -396,8 +396,8 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleOpenDetail}>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenDetail(); }}>
                   <Eye className="h-4 w-4 mr-2" /> View Details
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleOpenPreview}>
@@ -414,14 +414,14 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                   </DropdownMenuItem>
                 )}
                 {!isLocal && (
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
                     <Share2 className="h-4 w-4 mr-2" /> Share
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-destructive focus:text-destructive"
-                  onClick={() => setShowDeleteDialog(true)}
+                  onClick={(e) => { e.stopPropagation(); setShowDeleteDialog(true); }}
                 >
                   <Trash2 className="h-4 w-4 mr-2" /> Delete
                 </DropdownMenuItem>
@@ -572,7 +572,7 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenDetail(); }}>
                   <Eye className="h-4 w-4 mr-2" /> View Details
                 </DropdownMenuItem>
