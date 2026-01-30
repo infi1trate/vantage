@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createAudioTrack, createFacecamTrack } from "@/lib/captures";
+import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager, RecordedData } from "@/hooks/useCaptureManager";
 import { CapturePreview } from "@/components/capture/CapturePreview";
@@ -86,117 +86,43 @@ export default function CapturePage() {
         throw new Error("No recorded data");
       }
 
-      // Upload recorded files to storage
-      const uploadPromises: Promise<void>[] = [];
-      
-      // Upload screen recording
-      if (recordedData.screenBlob) {
-        const screenPath = `${user.id}/${session.id}/gameplay.webm`;
-        uploadPromises.push(
-          supabase.storage
-            .from("video-assets")
-            .upload(screenPath, recordedData.screenBlob, { contentType: "video/webm" })
-            .then(async ({ data, error }) => {
-              if (error) throw error;
-              const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(screenPath);
-              
-              await createVideoAsset({
-                session_id: session.id,
-                user_id: user.id,
-                asset_type: "gameplay",
-                storage_url: urlData.publicUrl,
-                storage_path: screenPath,
-                duration_ms: recordedData.duration * 1000,
-                status: "ready",
-                processing_progress: 100,
-                mime_type: "video/webm",
-                file_size_bytes: recordedData.screenBlob!.size,
-                width: null,
-                height: null,
-                framerate: null,
-                bitrate: null,
-                codec: null,
-                thumbnail_url: null,
-                thumbnail_sprite_url: null,
-                error_message: null,
-              });
-            })
-        );
+      // Upload the single composite recording (screen + PiP webcam + mixed audio)
+      if (recordedData.compositeBlob) {
+        const compositePath = `${user.id}/${session.id}/gameplay.webm`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from("video-assets")
+          .upload(compositePath, recordedData.compositeBlob, { contentType: "video/webm" });
+        
+        if (uploadError) throw uploadError;
+        
+        const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(compositePath);
+        
+        await createVideoAsset({
+          session_id: session.id,
+          user_id: user.id,
+          asset_type: "gameplay",
+          storage_url: urlData.publicUrl,
+          storage_path: compositePath,
+          duration_ms: recordedData.duration * 1000,
+          status: "ready",
+          processing_progress: 100,
+          mime_type: "video/webm",
+          file_size_bytes: recordedData.compositeBlob.size,
+          width: null,
+          height: null,
+          framerate: 60,
+          bitrate: null,
+          codec: null,
+          thumbnail_url: null,
+          thumbnail_sprite_url: null,
+          error_message: null,
+        });
+        
+        console.log(`[Capture] Uploaded composite video: ${recordedData.compositeBlob.size} bytes`);
+      } else {
+        throw new Error("No composite recording data");
       }
-
-      // Upload microphone recording
-      if (recordedData.microphoneBlob) {
-        const micPath = `${user.id}/${session.id}/microphone.webm`;
-        uploadPromises.push(
-          supabase.storage
-            .from("audio-tracks")
-            .upload(micPath, recordedData.microphoneBlob, { contentType: "audio/webm" })
-            .then(async ({ data, error }) => {
-              if (error) throw error;
-              const { data: urlData } = supabase.storage.from("audio-tracks").getPublicUrl(micPath);
-              
-              await createAudioTrack({
-                session_id: session.id,
-                user_id: user.id,
-                video_asset_id: null,
-                track_type: "microphone",
-                track_name: "Microphone",
-                storage_url: urlData.publicUrl,
-                storage_path: micPath,
-                duration_ms: recordedData.duration * 1000,
-                status: "ready",
-                mime_type: "audio/webm",
-                file_size_bytes: recordedData.microphoneBlob!.size,
-                sample_rate: 48000,
-                channels: 1,
-                bitrate: null,
-                codec: null,
-                volume_level: 1.0,
-                is_muted: false,
-                offset_ms: 0,
-                waveform_data: null,
-              });
-            })
-        );
-      }
-
-      // Upload facecam recording if available
-      if (recordedData.facecamBlob) {
-        const facecamPath = `${user.id}/${session.id}/facecam.webm`;
-        uploadPromises.push(
-          supabase.storage
-            .from("facecam-tracks")
-            .upload(facecamPath, recordedData.facecamBlob, { contentType: "video/webm" })
-            .then(async ({ data, error }) => {
-              if (error) throw error;
-              const { data: urlData } = supabase.storage.from("facecam-tracks").getPublicUrl(facecamPath);
-              
-              await createFacecamTrack({
-                session_id: session.id,
-                user_id: user.id,
-                video_asset_id: null,
-                storage_url: urlData.publicUrl,
-                storage_path: facecamPath,
-                duration_ms: recordedData.duration * 1000,
-                status: "ready",
-                file_size_bytes: recordedData.facecamBlob!.size,
-                width: null,
-                height: null,
-                framerate: null,
-                position_x: 0.85,
-                position_y: 0.75,
-                scale: 0.2,
-                opacity: 1,
-                border_radius: 8,
-                is_visible: true,
-                offset_ms: 0,
-              });
-            })
-        );
-      }
-
-      // Wait for all uploads
-      await Promise.all(uploadPromises);
 
       // Update session status
       await updateCaptureSession(session.id, {
