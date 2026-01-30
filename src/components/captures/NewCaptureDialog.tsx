@@ -87,6 +87,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [cameraSize, setCameraSize] = useState<CameraSize>("small");
   const [backgroundColor, setBackgroundColor] = useState<BackgroundColorId>("transparent");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [flipCamera, setFlipCamera] = useState(true);
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -114,6 +115,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setCameraSize("small");
       setBackgroundColor("transparent");
       setBackgroundImage(null);
+      setFlipCamera(true);
     }
   }, [open]);
 
@@ -657,6 +659,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   cameraSize={cameraSize} 
                   backgroundColor={backgroundColor}
                   backgroundImage={backgroundImage}
+                  flipCamera={flipCamera}
                 />
               </div>
 
@@ -729,6 +732,15 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                         </SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* Flip Camera */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Flip Camera</p>
+                      <p className="text-[10px] text-muted-foreground">Mirror your facecam</p>
+                    </div>
+                    <Switch checked={flipCamera} onCheckedChange={setFlipCamera} />
                   </div>
 
                   {/* Push-to-talk */}
