@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -15,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -38,15 +36,13 @@ import {
   Monitor,
   Settings2,
   Volume2,
-  Circle,
-  Square,
-  ImagePlus,
-  X,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { FacecamPreview, BACKGROUND_COLORS, type FrameShape, type CameraSize, type BackgroundColorId } from "@/components/capture/FacecamPreview";
+import { EffectsModal, type EffectsConfig } from "./EffectsModal";
+import { SettingsModal, type SettingsConfig } from "./SettingsModal";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -79,15 +75,33 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [copied, setCopied] = useState(false);
   const [previewOnlyMode, setPreviewOnlyMode] = useState(false);
 
-  // Capture settings
+  // Child modal states
+  const [effectsModalOpen, setEffectsModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
+  // Capture settings (audio toggles remain in main dialog)
   const [includeMicrophone, setIncludeMicrophone] = useState(true);
-  const [includeFacecam, setIncludeFacecam] = useState(false);
   const [includeGameAudio, setIncludeGameAudio] = useState(true);
-  const [frameShape, setFrameShape] = useState<FrameShape>("circle");
-  const [cameraSize, setCameraSize] = useState<CameraSize>("small");
-  const [backgroundColor, setBackgroundColor] = useState<BackgroundColorId>("transparent");
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-  const [flipCamera, setFlipCamera] = useState(true);
+
+  // Effects config
+  const [effectsConfig, setEffectsConfig] = useState<EffectsConfig>({
+    includeFacecam: false,
+    frameShape: "circle",
+    cameraSize: "small",
+    backgroundColor: "transparent",
+    backgroundImage: null,
+    flipCamera: true,
+  });
+
+  // Settings config
+  const [settingsConfig, setSettingsConfig] = useState<SettingsConfig>({
+    videoQuality: "1080p60",
+    audioBitrate: "128",
+    cameraQuality: "720p",
+    pushToTalk: false,
+    autoStop: true,
+    monoAudio: true,
+  });
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -96,10 +110,8 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setPreflightResult(result);
       
       if (result.supported) {
-        // All checks passed - show form
         setView("form");
       } else {
-        // Browser not supported - show error screen
         setView("not_supported");
       }
     } else {
@@ -109,37 +121,25 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setGameName("");
       setPreviewOnlyMode(false);
       setIncludeMicrophone(true);
-      setIncludeFacecam(false);
       setIncludeGameAudio(true);
-      setFrameShape("circle");
-      setCameraSize("small");
-      setBackgroundColor("transparent");
-      setBackgroundImage(null);
-      setFlipCamera(true);
+      setEffectsConfig({
+        includeFacecam: false,
+        frameShape: "circle",
+        cameraSize: "small",
+        backgroundColor: "transparent",
+        backgroundImage: null,
+        flipCamera: true,
+      });
+      setSettingsConfig({
+        videoQuality: "1080p60",
+        audioBitrate: "128",
+        cameraQuality: "720p",
+        pushToTalk: false,
+        autoStop: true,
+        monoAudio: true,
+      });
     }
   }, [open]);
-
-  const handleBackgroundImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    // Validate file type
-    if (!file.type.startsWith("image/") || !["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
-      toast.error("Please upload a PNG or JPG image");
-      return;
-    }
-    
-    // Read file as data URL for preview
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setBackgroundImage(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeBackgroundImage = () => {
-    setBackgroundImage(null);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,261 +149,208 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       return;
     }
 
-    // Generate default title if not provided
-    const sessionTitle = title.trim() || `Session ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
-
     setLoading(true);
     try {
       const session = await createCaptureSession(
         user.id,
-        sessionTitle,
+        title.trim() || `Session ${new Date().toLocaleDateString()}`,
         gameName || undefined
       );
-      
-      toast.success("Capture session created!");
+
+      toast.success("Session created! Preparing capture...");
       onOpenChange(false);
-      // Navigate with preview mode flag if applicable
-      // Pass capture settings as URL params
-      const params = new URLSearchParams();
-      if (previewOnlyMode) params.set("mode", "preview");
-      if (includeMicrophone) params.set("mic", "1");
-      if (includeFacecam) params.set("facecam", "1");
-      if (includeGameAudio) params.set("audio", "1");
       
-      const url = `/capture/${session.id}${params.toString() ? `?${params.toString()}` : ""}`;
-      navigate(url);
-    } catch (error: any) {
-      console.error("Error creating session:", error);
-      toast.error(error.message || "Failed to create capture session");
+      navigate(`/capture/${session.id}`, { 
+        state: { 
+          includeMicrophone,
+          includeGameAudio,
+          ...effectsConfig,
+          ...settingsConfig,
+          previewOnly: previewOnlyMode,
+        } 
+      });
+    } catch (err) {
+      console.error("Failed to create session:", err);
+      toast.error("Failed to create session");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopyDiagnostics = async () => {
-    if (!preflightResult) return;
-    
-    const diagnostics = {
-      timestamp: new Date().toISOString(),
-      browser: preflightResult.browserInfo,
-      issues: preflightResult.issues,
-      selectedFormat: preflightResult.selectedFormat,
-      supported: preflightResult.supported,
-      canPreview: preflightResult.canPreview,
-    };
-    
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
-      setCopied(true);
-      toast.success("Diagnostics copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Failed to copy");
-    }
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(window.location.origin);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  // Loading/checking view
-  if (view === "preflight") {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md glass-strong">
-          <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-            <p className="text-sm text-muted-foreground">Checking browser compatibility...</p>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  const handleProceedPreviewOnly = () => {
+    setPreviewOnlyMode(true);
+    setView("form");
+  };
 
-  // Browser not supported view
+  // Check if any effects have been customized
+  const hasCustomEffects = effectsConfig.includeFacecam || 
+    effectsConfig.frameShape !== "circle" || 
+    effectsConfig.cameraSize !== "small" || 
+    effectsConfig.backgroundColor !== "transparent" || 
+    effectsConfig.backgroundImage !== null;
+
+  // Check if any settings have been customized
+  const hasCustomSettings = settingsConfig.videoQuality !== "1080p60" ||
+    settingsConfig.audioBitrate !== "128" ||
+    !settingsConfig.autoStop ||
+    settingsConfig.pushToTalk;
+
+  // ============= Not Supported View =============
   if (view === "not_supported" && preflightResult) {
-    const criticalIssues = preflightResult.issues.filter(i => i.severity === "critical");
-    const warnings = preflightResult.issues.filter(i => i.severity === "warning");
-    
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg glass-strong">
-          <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-destructive/20 flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <DialogTitle>Browser Not Supported</DialogTitle>
-                <DialogDescription>
-                  Your browser is missing capabilities required for capture.
-                </DialogDescription>
-              </div>
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-md glass-strong">
+          <DialogHeader className="space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+              <XCircle className="h-6 w-6 text-destructive" />
             </div>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Detected Browser */}
-            <div className="flex items-center gap-2 p-2 bg-muted/30 rounded text-sm">
-              <Globe className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Detected: <strong>{preflightResult.browserInfo.name} {preflightResult.browserInfo.version}</strong>
-              </span>
-            </div>
-
-            {/* Critical Issues */}
-            {criticalIssues.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium uppercase tracking-wider text-destructive">
-                  Missing Capabilities
-                </h4>
-                {criticalIssues.map(issue => (
-                  <div 
-                    key={issue.id}
-                    className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-sm"
-                  >
-                    <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-medium text-destructive">{issue.title}</span>
-                      <p className="text-xs text-muted-foreground">{issue.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Warnings */}
-            {warnings.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium uppercase tracking-wider text-warning">
-                  Warnings
-                </h4>
-                {warnings.map(issue => (
-                  <div 
-                    key={issue.id}
-                    className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/20 rounded text-sm"
-                  >
-                    <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-medium text-warning">{issue.title}</span>
-                      <p className="text-xs text-muted-foreground">{issue.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Recommended Browsers */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Recommended Browsers
-              </h4>
-              <div className="grid grid-cols-3 gap-2">
-                <a
-                  href="https://www.google.com/chrome/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex flex-col items-center gap-1 p-3 rounded border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                >
-                  <Chrome className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-xs font-medium">Chrome</span>
-                  <Badge variant="outline" className="text-[9px] bg-vantage-success/10 text-vantage-success">Best</Badge>
-                </a>
-                <a
-                  href="https://www.microsoft.com/edge"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex flex-col items-center gap-1 p-3 rounded border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                >
-                  <Globe className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-xs font-medium">Edge</span>
-                </a>
-                <a
-                  href="https://brave.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex flex-col items-center gap-1 p-3 rounded border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                >
-                  <Globe className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-xs font-medium">Brave</span>
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            {preflightResult.canPreview && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setPreviewOnlyMode(true);
-                  setView("form");
-                }}
-                className="w-full sm:w-auto"
-              >
-                Continue in Preview Mode
-                <Badge variant="outline" className="ml-2 text-[9px]">No Recording</Badge>
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={handleCopyDiagnostics}
-              className="w-full sm:w-auto"
-            >
-              {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-              {copied ? "Copied" : "Copy Diagnostics"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-  // Capture Setup form view - Premium responsive layout
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl glass-strong p-0 overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b border-border/30">
-          <DialogHeader className="space-y-1">
-            <DialogTitle className="font-display text-lg sm:text-xl tracking-wide">
-              New Capture Session
+            <DialogTitle className="text-center font-display text-xl">
+              Browser Not Supported
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              Configure your recording setup before starting capture.
+            <DialogDescription className="text-center">
+              Your current browser doesn't support the screen capture features we need.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Show warning if there are any issues but we're proceeding anyway */}
-          {preflightResult && preflightResult.issues.length > 0 && (
-            <div className="flex items-start gap-2 p-2 mt-3 sm:mt-4 bg-warning/10 border border-warning/20 rounded text-sm">
-              <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-              <div>
-                <span className="text-xs font-medium text-warning">Limited Support</span>
-                <p className="text-xs text-muted-foreground">
-                  Some features may not work as expected in your browser.
-                </p>
+          <div className="space-y-4 py-4">
+            {/* Show specific issues */}
+            <div className="space-y-2">
+              {preflightResult.issues.map((issue, i) => (
+                <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-destructive">{issue.title}</p>
+                    <p className="text-xs text-muted-foreground">{issue.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Recommended browsers */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Recommended Browsers
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <a 
+                  href="https://www.google.com/chrome/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/20 rounded-lg border border-border/30 hover:border-primary/30 hover:bg-muted/30 transition-colors"
+                >
+                  <Chrome className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">Chrome</p>
+                    <p className="text-[10px] text-muted-foreground">Recommended</p>
+                  </div>
+                </a>
+                <a 
+                  href="https://www.microsoft.com/edge"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/20 rounded-lg border border-border/30 hover:border-primary/30 hover:bg-muted/30 transition-colors"
+                >
+                  <Globe className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Edge</p>
+                    <p className="text-[10px] text-muted-foreground">Also works</p>
+                  </div>
+                </a>
               </div>
             </div>
-          )}
 
-          {/* Preview mode badge */}
-          {previewOnlyMode && (
-            <Badge variant="outline" className="mt-3 bg-warning/10 text-warning border-warning/30">
-              Preview Mode — Recording disabled
-            </Badge>
-          )}
-        </div>
+            {/* Copy link option */}
+            <div className="pt-2">
+              <p className="text-xs text-muted-foreground text-center mb-2">
+                Or copy this link to open in a supported browser:
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={handleCopyUrl}
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Link
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          {/* Scrollable content area */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {/* Responsive grid: single column on mobile, two columns on sm+ */}
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/30">
-              {/* Left Column: Session Basics - lower visual priority */}
-              <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-                    Session Basics
-                  </h3>
+          <div className="flex flex-col gap-2 pt-2 border-t border-border/30">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleProceedPreviewOnly}
+              className="text-xs text-muted-foreground"
+            >
+              Continue anyway (preview only)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // ============= Main Capture Setup Form =============
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-lg glass-strong p-0 overflow-hidden max-h-[90vh] flex flex-col">
+          {/* Header */}
+          <div className="shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b border-border/30">
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="font-display text-lg sm:text-xl tracking-wide">
+                New Capture Session
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm">
+                Configure your recording setup before starting capture.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Show warning if there are any issues but we're proceeding anyway */}
+            {preflightResult && preflightResult.issues.length > 0 && (
+              <div className="flex items-start gap-2 p-2 mt-3 sm:mt-4 bg-warning/10 border border-warning/20 rounded text-sm">
+                <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-xs font-medium text-warning">Limited Support</span>
+                  <p className="text-xs text-muted-foreground">
+                    Some features may not work as expected in your browser.
+                  </p>
                 </div>
+              </div>
+            )}
 
+            {/* Preview mode badge */}
+            {previewOnlyMode && (
+              <Badge variant="outline" className="mt-3 bg-warning/10 text-warning border-warning/30">
+                Preview Mode — Recording disabled
+              </Badge>
+            )}
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+            {/* Scrollable content area */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-5">
+              {/* Session Basics */}
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="title" className="text-sm text-muted-foreground">
                     Session Title
@@ -418,9 +365,6 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     disabled={loading}
                     autoFocus
                   />
-                  <p className="text-[11px] text-muted-foreground/60">
-                    Used for highlights, insights, and sharing.
-                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -440,347 +384,117 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-muted-foreground/60">
-                    Auto-detection coming soon.
-                  </p>
                 </div>
               </div>
 
-              {/* Right Column: Settings + Effects */}
-              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 bg-muted/5">
-                {/* Capture Settings */}
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Settings2 className="h-4 w-4 text-primary" />
-                    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Capture Settings
-                    </h3>
-                  </div>
-
-                <div className="space-y-3">
-                  <CaptureToggle
-                    id="game-audio"
-                    icon={Volume2}
-                    label="Game Audio"
-                    description="Capture in-game sound"
-                    checked={includeGameAudio}
-                    onCheckedChange={setIncludeGameAudio}
-                    disabled={loading}
-                  />
-
-                  <CaptureToggle
-                    id="microphone"
-                    icon={Mic}
-                    label="Microphone"
-                    description="Voice commentary and callouts"
-                    checked={includeMicrophone}
-                    onCheckedChange={setIncludeMicrophone}
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-
-              <Separator className="bg-border/20" />
-
-              {/* Effects Section */}
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Effects
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-                    How you appear in the recording
-                  </p>
-                </div>
-
-                {/* Facecam Toggle */}
+              {/* Audio Capture Toggles */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Audio Sources
+                </h3>
+                
                 <CaptureToggle
-                  id="facecam"
-                  icon={Camera}
-                  label="Facecam"
-                  description="Picture-in-picture webcam overlay"
-                  checked={includeFacecam}
-                  onCheckedChange={setIncludeFacecam}
+                  id="game-audio"
+                  icon={Volume2}
+                  label="Game Audio"
+                  description="Capture in-game sound"
+                  checked={includeGameAudio}
+                  onCheckedChange={setIncludeGameAudio}
                   disabled={loading}
                 />
 
-                {/* Facecam Settings (only shown when enabled) */}
-                {includeFacecam && (
-                  <>
-                    {/* Frame Shape Selector */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground/80">Frame Shape</p>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFrameShape("circle")}
-                          className={cn(
-                            "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
-                            "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
-                            frameShape === "circle"
-                              ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                              : "border-border/40 bg-muted/20"
-                          )}
-                          disabled={loading}
-                        >
-                          <Circle 
-                            className={cn(
-                              "h-6 w-6 transition-colors",
-                              frameShape === "circle" ? "text-primary" : "text-muted-foreground/60"
-                            )} 
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFrameShape("rounded-square")}
-                          className={cn(
-                            "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
-                            "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
-                            frameShape === "rounded-square"
-                              ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                              : "border-border/40 bg-muted/20"
-                          )}
-                          disabled={loading}
-                        >
-                          <Square 
-                            className={cn(
-                              "h-5 w-5 rounded transition-colors",
-                              frameShape === "rounded-square" ? "text-primary" : "text-muted-foreground/60"
-                            )} 
-                          />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Camera Size Selector */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground/80">Size</p>
-                      <div className="inline-flex rounded-lg border border-border/40 p-0.5 bg-muted/10">
-                        <button
-                          type="button"
-                          onClick={() => setCameraSize("small")}
-                          className={cn(
-                            "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
-                            cameraSize === "small"
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                          )}
-                          disabled={loading}
-                        >
-                          Small
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCameraSize("large")}
-                          className={cn(
-                            "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
-                            cameraSize === "large"
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                          )}
-                          disabled={loading}
-                        >
-                          Large
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Background Mask */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground/80">Background Mask</p>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {BACKGROUND_COLORS.map((color) => (
-                          <button
-                            key={color.id}
-                            type="button"
-                            onClick={() => setBackgroundColor(color.id)}
-                            className={cn(
-                              "relative w-full aspect-square rounded-md transition-all duration-200",
-                              "hover:scale-105 hover:ring-2 hover:ring-primary/30",
-                              color.id === "transparent" && "bg-[conic-gradient(from_45deg,#1a1a1a_25%,#2a2a2a_25%,#2a2a2a_50%,#1a1a1a_50%,#1a1a1a_75%,#2a2a2a_75%)] bg-[length:8px_8px]",
-                              backgroundColor === color.id && "ring-2 ring-primary ring-offset-1 ring-offset-background"
-                            )}
-                            style={{ 
-                              backgroundColor: color.id !== "transparent" ? color.value : undefined 
-                            }}
-                            disabled={loading || !!backgroundImage}
-                            title={color.label}
-                          >
-                            {backgroundColor === color.id && !backgroundImage && (
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <Check className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Custom Background Image */}
-                      {backgroundImage ? (
-                        <div className="flex items-center gap-2 p-2 bg-muted/20 rounded-lg border border-border/30">
-                          <div 
-                            className="w-10 h-10 rounded-md bg-cover bg-center border border-border/40"
-                            style={{ backgroundImage: `url(${backgroundImage})` }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">Custom image</p>
-                            <p className="text-[10px] text-muted-foreground">Overrides color</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={removeBackgroundImage}
-                            className="p-1.5 rounded-md hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                            title="Remove image"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="flex items-center gap-2 p-2 bg-muted/10 rounded-lg border border-dashed border-border/40 cursor-pointer hover:border-primary/40 hover:bg-muted/20 transition-colors">
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg"
-                            onChange={handleBackgroundImageUpload}
-                            className="sr-only"
-                            disabled={loading}
-                          />
-                          <div className="w-8 h-8 rounded-md bg-muted/30 flex items-center justify-center">
-                            <ImagePlus className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <span className="text-xs text-muted-foreground">Add background image</span>
-                        </label>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* Live Camera Preview */}
-                <FacecamPreview 
-                  enabled={includeFacecam} 
-                  frameShape={frameShape} 
-                  cameraSize={cameraSize} 
-                  backgroundColor={backgroundColor}
-                  backgroundImage={backgroundImage}
-                  flipCamera={flipCamera}
+                <CaptureToggle
+                  id="microphone"
+                  icon={Mic}
+                  label="Microphone"
+                  description="Voice commentary and callouts"
+                  checked={includeMicrophone}
+                  onCheckedChange={setIncludeMicrophone}
+                  disabled={loading}
                 />
               </div>
 
-              {/* Settings Panel */}
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-2">
-                    <Settings2 className="h-3.5 w-3.5" />
-                    Settings
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Recording quality and audio</p>
-                </div>
-
-                <div className="space-y-2">
-                  {/* Video Quality */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium">Video Quality</p>
-                      <p className="text-[10px] text-muted-foreground">Resolution and frame rate</p>
-                    </div>
-                    <Select defaultValue="1080p60">
-                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[110px] h-8 text-xs bg-background border-border/40 shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="720p30">720p 30fps</SelectItem>
-                        <SelectItem value="720p60">720p 60fps</SelectItem>
-                        <SelectItem value="1080p30">1080p 30fps</SelectItem>
-                        <SelectItem value="1080p60">1080p 60fps</SelectItem>
-                      </SelectContent>
-                    </Select>
+              {/* Effects & Settings CTAs */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Effects CTA */}
+                <button
+                  type="button"
+                  onClick={() => setEffectsModalOpen(true)}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-150",
+                    "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]",
+                    hasCustomEffects
+                      ? "border-primary/40 bg-primary/5 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.3)]"
+                      : "border-border/40 bg-muted/10 hover:bg-muted/20"
+                  )}
+                  disabled={loading}
+                >
+                  <div className={cn(
+                    "p-3 rounded-xl transition-colors",
+                    hasCustomEffects ? "bg-primary/15" : "bg-muted/30"
+                  )}>
+                    <Camera className={cn(
+                      "h-6 w-6 transition-colors",
+                      hasCustomEffects ? "text-primary" : "text-muted-foreground"
+                    )} />
                   </div>
-
-                  {/* Audio Bitrate */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium">Audio Quality</p>
-                      <p className="text-[10px] text-muted-foreground">Microphone bitrate</p>
-                    </div>
-                    <Select defaultValue="128">
-                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[90px] h-8 text-xs bg-background border-border/40 shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="64">64 kbps</SelectItem>
-                        <SelectItem value="128">128 kbps</SelectItem>
-                        <SelectItem value="192">192 kbps</SelectItem>
-                        <SelectItem value="320">320 kbps</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="text-center">
+                    <p className={cn(
+                      "text-sm font-medium transition-colors",
+                      hasCustomEffects ? "text-foreground" : "text-muted-foreground"
+                    )}>
+                      Effects
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {effectsConfig.includeFacecam ? "Facecam on" : "Facecam off"}
+                    </p>
                   </div>
+                  {hasCustomEffects && (
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/10 border-primary/30 text-primary">
+                      Customized
+                    </Badge>
+                  )}
+                </button>
 
-                  {/* Camera Quality */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium">Camera Quality</p>
-                      <p className="text-[10px] text-muted-foreground">Facecam resolution</p>
-                    </div>
-                    <Select defaultValue="720p">
-                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[120px] h-8 text-xs bg-background border-border/40 shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="720p">720p (Standard)</SelectItem>
-                        <SelectItem value="hd" disabled className="opacity-50">
-                          <span className="flex items-center gap-2">
-                            HD
-                            <span className="text-[10px] text-muted-foreground/70 italic">Soon</span>
-                          </span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                {/* Settings CTA */}
+                <button
+                  type="button"
+                  onClick={() => setSettingsModalOpen(true)}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-150",
+                    "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]",
+                    hasCustomSettings
+                      ? "border-primary/40 bg-primary/5 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.3)]"
+                      : "border-border/40 bg-muted/10 hover:bg-muted/20"
+                  )}
+                  disabled={loading}
+                >
+                  <div className={cn(
+                    "p-3 rounded-xl transition-colors",
+                    hasCustomSettings ? "bg-primary/15" : "bg-muted/30"
+                  )}>
+                    <Settings2 className={cn(
+                      "h-6 w-6 transition-colors",
+                      hasCustomSettings ? "text-primary" : "text-muted-foreground"
+                    )} />
                   </div>
-
-                  {/* Flip Camera */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium">Flip Camera</p>
-                      <p className="text-[10px] text-muted-foreground">Mirror your facecam</p>
-                    </div>
-                    <Switch checked={flipCamera} onCheckedChange={setFlipCamera} className="shrink-0" />
+                  <div className="text-center">
+                    <p className={cn(
+                      "text-sm font-medium transition-colors",
+                      hasCustomSettings ? "text-foreground" : "text-muted-foreground"
+                    )}>
+                      Settings
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {settingsConfig.videoQuality}
+                    </p>
                   </div>
-
-                  {/* Push-to-talk */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium">Push-to-Talk</p>
-                      <p className="text-[10px] text-muted-foreground">Hold key to record voice</p>
-                    </div>
-                    <Switch defaultChecked={false} className="shrink-0" />
-                  </div>
-
-                  {/* Auto-stop on inactivity */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium">Auto-Stop</p>
-                      <p className="text-[10px] text-muted-foreground">Stop after 30min inactivity</p>
-                    </div>
-                    <Switch defaultChecked={true} className="shrink-0" />
-                  </div>
-
-                  {/* Record System Audio */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium">System Audio</p>
-                      <p className="text-[10px] text-muted-foreground">Game sounds and output</p>
-                    </div>
-                    <Switch checked={includeGameAudio} onCheckedChange={setIncludeGameAudio} className="shrink-0" />
-                  </div>
-
-                  {/* Mono Audio */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium">Mono Audio</p>
-                      <p className="text-[10px] text-muted-foreground">Better for voice clarity</p>
-                    </div>
-                    <Switch defaultChecked={true} className="shrink-0" />
-                  </div>
-                </div>
+                  {hasCustomSettings && (
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/10 border-primary/30 text-primary">
+                      Customized
+                    </Badge>
+                  )}
+                </button>
               </div>
 
               {/* Screen Selection hint */}
@@ -794,56 +508,69 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                 </div>
               </div>
             </div>
-            {/* End right column */}
-          </div>
-          {/* End grid */}
-        </div>
-        {/* End scrollable content area */}
-          {/* Footer - sticky at bottom */}
-          <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/30 bg-muted/10">
-            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-                className="text-muted-foreground hover:text-foreground w-full sm:w-auto"
-              >
-                Cancel
-              </Button>
-              <div className="flex flex-col items-center sm:items-end gap-1 w-full sm:w-auto">
-                <Button 
-                  type="submit" 
+
+            {/* Footer - sticky at bottom */}
+            <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/30 bg-muted/10">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onOpenChange(false)}
                   disabled={loading}
-                  className={cn(
-                    "w-full sm:w-auto sm:min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
-                    // Visual emphasis when settings have been customized
-                    (includeFacecam || frameShape !== "circle" || cameraSize !== "small" || 
-                     backgroundColor !== "transparent" || backgroundImage || !flipCamera || !includeGameAudio) &&
-                    "ring-2 ring-vantage-500/30 ring-offset-2 ring-offset-background shadow-lg shadow-vantage-500/20"
-                  )}
+                  className="text-muted-foreground hover:text-foreground w-full sm:w-auto"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <Video className="mr-2 h-4 w-4" />
-                      Start Capture
-                    </>
-                  )}
+                  Cancel
                 </Button>
-                <p className="text-[10px] text-muted-foreground/70 text-center sm:text-right">
-                  You can adjust effects during capture
-                </p>
+                <div className="flex flex-col items-center sm:items-end gap-1 w-full sm:w-auto">
+                  <Button 
+                    type="submit" 
+                    disabled={loading}
+                    className={cn(
+                      "w-full sm:w-auto sm:min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
+                      // Visual emphasis when settings have been customized
+                      (hasCustomEffects || hasCustomSettings || !includeGameAudio) &&
+                      "ring-2 ring-vantage-500/30 ring-offset-2 ring-offset-background shadow-lg shadow-vantage-500/20"
+                    )}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Video className="mr-2 h-4 w-4" />
+                        Start Capture
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground/70 text-center sm:text-right">
+                    You can adjust effects during capture
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Child Modals */}
+      <EffectsModal
+        open={effectsModalOpen}
+        onOpenChange={setEffectsModalOpen}
+        config={effectsConfig}
+        onSave={setEffectsConfig}
+        disabled={loading}
+      />
+
+      <SettingsModal
+        open={settingsModalOpen}
+        onOpenChange={setSettingsModalOpen}
+        config={settingsConfig}
+        onSave={setSettingsConfig}
+        disabled={loading}
+      />
+    </>
   );
 }
 
