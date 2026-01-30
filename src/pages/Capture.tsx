@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -10,9 +10,8 @@ import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
 import { PermissionError } from "@/components/capture/PermissionError";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Play } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CapturePage() {
@@ -22,8 +21,6 @@ export default function CapturePage() {
   
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [setupComplete, setSetupComplete] = useState(false);
   
   const capture = useCaptureManager();
 
@@ -57,27 +54,30 @@ export default function CapturePage() {
     }
   };
 
+  // Setup complete → acquire sources (preview_ready)
   const handleSetupComplete = async (config: { enableFacecam: boolean; enableSystemAudio: boolean }) => {
-    const success = await capture.requestPermissions(config);
-    if (success) {
-      setSetupComplete(true);
-      // Auto-start recording
-      await capture.startRecording();
+    await capture.selectSources(config);
+    // Don't auto-start recording - user must explicitly click "Start Recording"
+  };
+
+  // User clicks "Start Recording" from preview_ready state
+  const handleStartRecording = async () => {
+    const success = await capture.startRecording();
+    if (!success) {
+      toast.error("Failed to start recording");
     }
   };
 
-  const handlePauseResume = () => {
-    if (capture.isPaused) {
-      capture.resumeRecording();
-    } else {
-      capture.pauseRecording();
-    }
-  };
-
+  // User clicks "End Capture" - stops recording and saves
   const handleEndCapture = async () => {
     if (!session || !user) return;
     
-    setSaving(true);
+    // Only proceed if we're actually recording
+    if (capture.captureState !== "recording") {
+      console.warn("handleEndCapture called but not in recording state");
+      return;
+    }
+
     try {
       // Stop recording and get data
       const recordedData = await capture.stopRecording();
@@ -209,12 +209,17 @@ export default function CapturePage() {
     } catch (error: any) {
       console.error("Error saving capture:", error);
       toast.error(error.message || "Failed to save capture");
-      setSaving(false);
     }
   };
 
+  // Stop preview without recording (from preview_ready state)
+  const handleStopPreview = () => {
+    capture.stopPreview();
+  };
+
+  // Cancel everything and go back
   const handleCancel = async () => {
-    capture.cancelRecording();
+    capture.cancelCapture();
     
     if (session) {
       try {
@@ -225,6 +230,11 @@ export default function CapturePage() {
     }
     
     navigate("/");
+  };
+
+  // Retry from error state
+  const handleRetry = () => {
+    capture.retryFromError();
   };
 
   const formatTime = (seconds: number) => {
@@ -250,7 +260,7 @@ export default function CapturePage() {
     return null;
   }
 
-  // Show permission error
+  // ERROR STATE
   if (capture.captureState === "error" && capture.error) {
     return (
       <div className="min-h-screen bg-background">
@@ -258,8 +268,8 @@ export default function CapturePage() {
         <main className="container py-8">
           <div className="max-w-2xl mx-auto">
             <PermissionError 
-              error={capture.error} 
-              onRetry={() => setSetupComplete(false)}
+              error={capture.error.message} 
+              onRetry={handleRetry}
               onCancel={handleCancel}
             />
           </div>
@@ -268,8 +278,8 @@ export default function CapturePage() {
     );
   }
 
-  // Show setup screen
-  if (!setupComplete) {
+  // IDLE or SELECTING_SOURCES STATE - show setup
+  if (capture.captureState === "idle" || capture.captureState === "selecting_sources") {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -278,7 +288,7 @@ export default function CapturePage() {
             <Button
               variant="ghost"
               onClick={handleCancel}
-              className="mb-6"
+              className="mb-6 uppercase tracking-wider text-xs"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Cancel
@@ -287,7 +297,7 @@ export default function CapturePage() {
             <CaptureSetup
               session={session}
               onStart={handleSetupComplete}
-              isLoading={capture.captureState === "requesting_permissions"}
+              isLoading={capture.captureState === "selecting_sources"}
             />
           </div>
         </main>
@@ -295,24 +305,62 @@ export default function CapturePage() {
     );
   }
 
+  // SAVED STATE - should redirect, but show loading
+  if (capture.captureState === "saved") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Redirecting to session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // PREVIEW_READY, RECORDING, or FINALIZING STATE
+  const isRecording = capture.captureState === "recording";
+  const isFinalizing = capture.captureState === "finalizing";
+  const isPreviewReady = capture.captureState === "preview_ready";
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
       <main className="container py-8">
         <div className="max-w-4xl mx-auto">
-          {/* Session Info */}
+          {/* Session Info & Status */}
           <div className="mb-6">
             <div className="flex items-center gap-3 mb-2">
-              <span className={`w-3 h-3 rounded-full ${capture.isPaused ? "bg-yellow-500" : "bg-red-500 recording-pulse"}`} />
-              <Badge variant="outline" className={capture.isPaused ? "border-yellow-500/30 text-yellow-400" : "border-red-500/30 text-red-400"}>
-                {capture.isPaused ? "PAUSED" : "RECORDING"}
-              </Badge>
-              <span className="text-2xl font-bold font-mono-data">{formatTime(capture.duration)}</span>
+              {isRecording && (
+                <>
+                  <span className="w-3 h-3 rounded-full bg-destructive recording-pulse" />
+                  <Badge variant="outline" className="border-destructive/30 text-destructive uppercase tracking-wider text-xs">
+                    REC
+                  </Badge>
+                  <span className="font-display text-3xl">{formatTime(capture.duration)}</span>
+                </>
+              )}
+              {isPreviewReady && (
+                <>
+                  <span className="w-3 h-3 rounded-full bg-vantage-success" />
+                  <Badge variant="outline" className="border-vantage-success/30 text-vantage-success uppercase tracking-wider text-xs">
+                    PREVIEW
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">Ready to record</span>
+                </>
+              )}
+              {isFinalizing && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <Badge variant="outline" className="border-primary/30 text-primary uppercase tracking-wider text-xs">
+                    SAVING
+                  </Badge>
+                </>
+              )}
             </div>
-            <h1 className="text-xl font-semibold">{session.title}</h1>
+            <h1 className="font-display text-2xl tracking-wide">{session.title.toUpperCase()}</h1>
             {session.game_name && (
-              <p className="text-sm text-primary">{session.game_name}</p>
+              <p className="text-sm text-primary uppercase tracking-wider">{session.game_name}</p>
             )}
           </div>
 
@@ -320,17 +368,16 @@ export default function CapturePage() {
           <CapturePreview
             screenStream={capture.screenStream}
             facecamStream={capture.facecamStream}
-            isPaused={capture.isPaused}
+            isRecording={isRecording}
             microphoneLevel={capture.microphoneLevel}
           />
 
           {/* Controls */}
           <CaptureControls
-            isRecording={capture.isRecording}
-            isPaused={capture.isPaused}
-            isSaving={saving}
-            onPauseResume={handlePauseResume}
-            onStop={handleEndCapture}
+            captureState={capture.captureState}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleEndCapture}
+            onStopPreview={handleStopPreview}
             onCancel={handleCancel}
           />
         </div>

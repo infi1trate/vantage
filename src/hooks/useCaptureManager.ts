@@ -3,14 +3,32 @@ import { useScreenCapture } from "./useScreenCapture";
 import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 
+/**
+ * EXPLICIT CAPTURE STATE MACHINE
+ * 
+ * States and valid transitions:
+ * 
+ * idle → selecting_sources (user initiates capture)
+ * selecting_sources → preview_ready (all required streams acquired)
+ * selecting_sources → error (permission denied or failure)
+ * preview_ready → recording (user clicks start recording)
+ * preview_ready → idle (user cancels)
+ * recording → finalizing (user clicks end capture)
+ * recording → preview_ready (user stops recording but keeps preview)
+ * finalizing → saved (blobs created successfully)
+ * finalizing → error (blob creation failed)
+ * saved → idle (reset for new capture)
+ * error → idle (user dismisses error)
+ * error → selecting_sources (user retries)
+ */
 export type CaptureState = 
-  | "idle" 
-  | "requesting_permissions"
-  | "ready" 
-  | "recording" 
-  | "paused" 
-  | "stopping"
-  | "error";
+  | "idle"                  // No streams, no recording
+  | "selecting_sources"     // Requesting permissions, acquiring streams
+  | "preview_ready"         // Streams active, preview visible, NOT recording
+  | "recording"             // MediaRecorder actively recording, timer running
+  | "finalizing"            // Stop requested, waiting for recorder.onstop, building blobs
+  | "saved"                 // Session persisted successfully
+  | "error";                // Actionable error state
 
 export interface CaptureConfig {
   enableFacecam: boolean;
@@ -27,20 +45,26 @@ export interface RecordedData {
   duration: number;
 }
 
+export interface CaptureError {
+  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "UNKNOWN";
+  message: string;
+  recoverable: boolean;
+}
+
 export interface UseCaptureManagerReturn {
   // State
   captureState: CaptureState;
-  isRecording: boolean;
-  isPaused: boolean;
-  duration: number;
-  error: string | null;
+  error: CaptureError | null;
   
-  // Streams
+  // Only valid in recording state
+  duration: number;
+  
+  // Streams (only valid in preview_ready, recording, or finalizing)
   screenStream: MediaStream | null;
   microphoneStream: MediaStream | null;
   facecamStream: MediaStream | null;
   
-  // Audio level
+  // Audio level (only valid when mic stream active)
   microphoneLevel: number;
   
   // Device management
@@ -49,13 +73,13 @@ export interface UseCaptureManagerReturn {
   selectedMicrophone: string | null;
   selectedCamera: string | null;
   
-  // Actions
-  requestPermissions: (config: CaptureConfig) => Promise<boolean>;
-  startRecording: () => Promise<boolean>;
-  stopRecording: () => Promise<RecordedData | null>;
-  pauseRecording: () => void;
-  resumeRecording: () => void;
-  cancelRecording: () => void;
+  // Actions - each only valid in specific states
+  selectSources: (config: CaptureConfig) => Promise<void>;  // idle → selecting_sources
+  startRecording: () => Promise<boolean>;                    // preview_ready → recording
+  stopRecording: () => Promise<RecordedData | null>;        // recording → finalizing → saved
+  stopPreview: () => void;                                   // preview_ready → idle (or recording → preview_ready)
+  cancelCapture: () => void;                                 // any → idle
+  retryFromError: () => void;                               // error → idle
   selectMicrophone: (deviceId: string) => void;
   selectCamera: (deviceId: string) => void;
   refreshDevices: () => Promise<void>;
@@ -64,7 +88,7 @@ export interface UseCaptureManagerReturn {
 export function useCaptureManager(): UseCaptureManagerReturn {
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [duration, setDuration] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CaptureError | null>(null);
   const [config, setConfig] = useState<CaptureConfig>({
     enableFacecam: false,
     enableSystemAudio: true,
@@ -87,10 +111,6 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   const microphone = useMicrophoneCapture();
   const facecam = useFacecamCapture();
 
-  // Derived state
-  const isRecording = captureState === "recording";
-  const isPaused = captureState === "paused";
-
   // Refresh all devices
   const refreshDevices = useCallback(async () => {
     await Promise.all([
@@ -99,9 +119,14 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     ]);
   }, [microphone, facecam]);
 
-  // Request all necessary permissions and start streams
-  const requestPermissions = useCallback(async (captureConfig: CaptureConfig): Promise<boolean> => {
-    setCaptureState("requesting_permissions");
+  // TRANSITION: idle → selecting_sources → preview_ready | error
+  const selectSources = useCallback(async (captureConfig: CaptureConfig): Promise<void> => {
+    if (captureState !== "idle") {
+      console.warn(`selectSources called in invalid state: ${captureState}`);
+      return;
+    }
+
+    setCaptureState("selecting_sources");
     setError(null);
     setConfig(captureConfig);
 
@@ -112,44 +137,60 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       });
       
       if (!micStream) {
-        setError(microphone.error || "Microphone is required for capture.");
-        setCaptureState("error");
-        return false;
+        throw {
+          code: "PERMISSION_DENIED" as const,
+          message: microphone.error || "Microphone access is required. Please allow microphone permissions.",
+          recoverable: true,
+        };
       }
 
-      // Start screen capture
+      // Start screen capture (required)
       const screenStream = await screen.startCapture({
         audio: captureConfig.enableSystemAudio,
       });
       
       if (!screenStream) {
         microphone.stopCapture();
-        setError(screen.error || "Screen capture is required.");
-        setCaptureState("error");
-        return false;
+        throw {
+          code: "PERMISSION_DENIED" as const,
+          message: screen.error || "Screen capture is required. Please select a screen or window to share.",
+          recoverable: true,
+        };
       }
 
-      // Start facecam if enabled
+      // Start facecam if enabled (optional)
       if (captureConfig.enableFacecam) {
         const facecamStream = await facecam.startCapture({
           deviceId: captureConfig.facecamDeviceId,
         });
         
         if (!facecamStream) {
-          // Facecam is optional, just log warning
-          console.warn("Facecam capture failed:", facecam.error);
+          console.warn("Facecam capture failed (optional):", facecam.error);
+          // Don't fail - facecam is optional
         }
       }
 
-      setCaptureState("ready");
-      return true;
+      // SUCCESS: Transition to preview_ready
+      setCaptureState("preview_ready");
     } catch (err: any) {
-      console.error("Permission request failed:", err);
-      setError(err.message || "Failed to request permissions.");
+      console.error("Source selection failed:", err);
+      
+      // Clean up any partial streams
+      screen.stopCapture();
+      microphone.stopCapture();
+      facecam.stopCapture();
+      
+      // Set error state
+      const captureError: CaptureError = err.code ? err : {
+        code: "UNKNOWN" as const,
+        message: err.message || "Failed to acquire capture sources.",
+        recoverable: true,
+      };
+      
+      setError(captureError);
       setCaptureState("error");
-      return false;
     }
-  }, [screen, microphone, facecam]);
+  }, [captureState, screen, microphone, facecam]);
 
   // Create MediaRecorder for a stream
   const createRecorder = useCallback((
@@ -173,10 +214,10 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     return recorder;
   }, []);
 
-  // Start recording all streams
+  // TRANSITION: preview_ready → recording
   const startRecording = useCallback(async (): Promise<boolean> => {
-    if (captureState !== "ready") {
-      setError("Capture is not ready. Request permissions first.");
+    if (captureState !== "preview_ready") {
+      console.warn(`startRecording called in invalid state: ${captureState}. Must be in preview_ready.`);
       return false;
     }
 
@@ -188,7 +229,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
           screenChunksRef,
           "video/webm;codecs=vp9"
         );
-        screenRecorderRef.current.start(1000); // Buffer every 1 second
+        screenRecorderRef.current.start(1000);
       }
 
       // Create microphone recorder
@@ -211,8 +252,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         facecamRecorderRef.current.start(1000);
       }
 
-      // Start duration timer
+      // Start duration timer - ONLY in recording state
       startTimeRef.current = Date.now();
+      setDuration(0);
       durationIntervalRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 100);
@@ -221,19 +263,24 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       return true;
     } catch (err: any) {
       console.error("Failed to start recording:", err);
-      setError(err.message || "Failed to start recording.");
+      setError({
+        code: "RECORDING_FAILED",
+        message: err.message || "Failed to start recording. Please try again.",
+        recoverable: true,
+      });
       setCaptureState("error");
       return false;
     }
   }, [captureState, screen.stream, microphone.stream, facecam.stream, createRecorder]);
 
-  // Stop recording and return data
+  // TRANSITION: recording → finalizing → saved
   const stopRecording = useCallback(async (): Promise<RecordedData | null> => {
-    if (captureState !== "recording" && captureState !== "paused") {
+    if (captureState !== "recording") {
+      console.warn(`stopRecording called in invalid state: ${captureState}. Must be in recording.`);
       return null;
     }
 
-    setCaptureState("stopping");
+    setCaptureState("finalizing");
 
     // Stop duration timer
     if (durationIntervalRef.current) {
@@ -263,65 +310,67 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       });
     };
 
-    // Stop all recorders
-    const [screenBlob, microphoneBlob, facecamBlob] = await Promise.all([
-      stopRecorder(screenRecorderRef.current, screenChunksRef.current, "video/webm"),
-      stopRecorder(micRecorderRef.current, micChunksRef.current, "audio/webm"),
-      stopRecorder(facecamRecorderRef.current, facecamChunksRef.current, "video/webm"),
-    ]);
+    try {
+      // Stop all recorders and wait for blobs
+      const [screenBlob, microphoneBlob, facecamBlob] = await Promise.all([
+        stopRecorder(screenRecorderRef.current, screenChunksRef.current, "video/webm"),
+        stopRecorder(micRecorderRef.current, micChunksRef.current, "audio/webm"),
+        stopRecorder(facecamRecorderRef.current, facecamChunksRef.current, "video/webm"),
+      ]);
+
+      // Stop all streams
+      screen.stopCapture();
+      microphone.stopCapture();
+      facecam.stopCapture();
+
+      // Clear refs
+      screenRecorderRef.current = null;
+      micRecorderRef.current = null;
+      facecamRecorderRef.current = null;
+      screenChunksRef.current = [];
+      micChunksRef.current = [];
+      facecamChunksRef.current = [];
+
+      setCaptureState("saved");
+
+      return {
+        screenBlob,
+        microphoneBlob,
+        facecamBlob,
+        systemAudioBlob: null,
+        duration: finalDuration,
+      };
+    } catch (err: any) {
+      console.error("Failed to finalize recording:", err);
+      setError({
+        code: "RECORDING_FAILED",
+        message: "Failed to save recording data. Some data may be lost.",
+        recoverable: false,
+      });
+      setCaptureState("error");
+      return null;
+    }
+  }, [captureState, screen, microphone, facecam]);
+
+  // TRANSITION: preview_ready → idle (stops streams without recording)
+  const stopPreview = useCallback(() => {
+    if (captureState !== "preview_ready") {
+      console.warn(`stopPreview called in invalid state: ${captureState}. Must be in preview_ready.`);
+      return;
+    }
 
     // Stop all streams
     screen.stopCapture();
     microphone.stopCapture();
     facecam.stopCapture();
 
-    // Clear refs
-    screenRecorderRef.current = null;
-    micRecorderRef.current = null;
-    facecamRecorderRef.current = null;
-
     setCaptureState("idle");
     setDuration(0);
-
-    return {
-      screenBlob,
-      microphoneBlob,
-      facecamBlob,
-      systemAudioBlob: null, // System audio is included in screen capture
-      duration: finalDuration,
-    };
+    setError(null);
   }, [captureState, screen, microphone, facecam]);
 
-  // Pause recording
-  const pauseRecording = useCallback(() => {
-    if (captureState !== "recording") return;
-
-    [screenRecorderRef.current, micRecorderRef.current, facecamRecorderRef.current].forEach(recorder => {
-      if (recorder && recorder.state === "recording") {
-        recorder.pause();
-      }
-    });
-
-    screen.pauseCapture();
-    setCaptureState("paused");
-  }, [captureState, screen]);
-
-  // Resume recording
-  const resumeRecording = useCallback(() => {
-    if (captureState !== "paused") return;
-
-    [screenRecorderRef.current, micRecorderRef.current, facecamRecorderRef.current].forEach(recorder => {
-      if (recorder && recorder.state === "paused") {
-        recorder.resume();
-      }
-    });
-
-    screen.resumeCapture();
-    setCaptureState("recording");
-  }, [captureState, screen]);
-
-  // Cancel recording without saving
-  const cancelRecording = useCallback(() => {
+  // TRANSITION: any → idle (hard reset)
+  const cancelCapture = useCallback(() => {
     // Stop duration timer
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
@@ -331,7 +380,11 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Stop all recorders without saving
     [screenRecorderRef.current, micRecorderRef.current, facecamRecorderRef.current].forEach(recorder => {
       if (recorder && recorder.state !== "inactive") {
-        recorder.stop();
+        try {
+          recorder.stop();
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
       }
     });
 
@@ -353,6 +406,17 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     setError(null);
   }, [screen, microphone, facecam]);
 
+  // TRANSITION: error → idle
+  const retryFromError = useCallback(() => {
+    if (captureState !== "error") {
+      console.warn(`retryFromError called in invalid state: ${captureState}`);
+      return;
+    }
+    
+    setError(null);
+    setCaptureState("idle");
+  }, [captureState]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -365,10 +429,10 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   return {
     // State
     captureState,
-    isRecording,
-    isPaused,
+    error,
+    
+    // Duration - only meaningful in recording state
     duration,
-    error: error || screen.error || microphone.error || facecam.error,
     
     // Streams
     screenStream: screen.stream,
@@ -385,12 +449,12 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     selectedCamera: facecam.selectedDeviceId,
     
     // Actions
-    requestPermissions,
+    selectSources,
     startRecording,
     stopRecording,
-    pauseRecording,
-    resumeRecording,
-    cancelRecording,
+    stopPreview,
+    cancelCapture,
+    retryFromError,
     selectMicrophone: microphone.selectDevice,
     selectCamera: facecam.selectDevice,
     refreshDevices,
