@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 export function FooterSection() {
   return (
-    <footer className="py-12 border-t border-border/30">
+    <footer className="py-12 border-t border-border/30" role="contentinfo">
       <div className="container mx-auto px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-4">
@@ -12,17 +12,26 @@ export function FooterSection() {
             </span>
           </div>
           
-          <div className="flex items-center gap-6">
-            <Link to="/auth" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <nav className="flex items-center gap-6" aria-label="Footer navigation">
+            <Link 
+              to="/auth" 
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
+            >
               Login
             </Link>
-            <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <a 
+              href="#features" 
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
+            >
               Features
             </a>
-            <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <a 
+              href="#how-it-works" 
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
+            >
               How It Works
             </a>
-          </div>
+          </nav>
         </div>
       </div>
     </footer>
