@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Annotation, VoiceNote, createAnnotation } from "@/lib/captures";
 import { AnnotationsList } from "./AnnotationsList";
+import { CoachRail } from "./coach";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,10 +110,10 @@ export function AnnotationsPanel({
     }
   }, [user, sessionId, activeTime, title, notes, onAnnotationCreated, onModeChange]);
 
-  // List mode - use the dedicated list component
+  // List mode - use the new CoachRail component
   if (mode === "list") {
     return (
-      <AnnotationsList
+      <CoachRail
         annotations={annotations}
         voiceNotes={voiceNotes}
         currentTime={currentTime}
