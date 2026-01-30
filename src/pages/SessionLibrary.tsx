@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { SessionLibraryCard } from "@/components/library/SessionLibraryCard";
-import { LocalSessionCard } from "@/components/library/LocalSessionCard";
+import { SessionCard } from "@/components/library/SessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { getSessionsWithAssets, SessionWithAssets } from "@/lib/sessionLibrary";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
@@ -410,9 +409,9 @@ export default function SessionLibrary() {
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredLocalSessions.map((session) => (
-                  <LocalSessionCard 
+                  <SessionCard 
                     key={session.id} 
-                    session={session} 
+                    session={{ type: "local", data: session }}
                     onDeleted={loadLocalSessions}
                     viewMode="grid"
                   />
@@ -421,9 +420,9 @@ export default function SessionLibrary() {
             ) : (
               <div className="space-y-3">
                 {filteredLocalSessions.map((session) => (
-                  <LocalSessionCard 
+                  <SessionCard 
                     key={session.id} 
-                    session={session} 
+                    session={{ type: "local", data: session }}
                     onDeleted={loadLocalSessions}
                     viewMode="list"
                   />
@@ -641,9 +640,9 @@ export default function SessionLibrary() {
                 ) : viewMode === "grid" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {filteredCloudSessions.map((session) => (
-                      <SessionLibraryCard 
+                      <SessionCard 
                         key={session.id} 
-                        session={session} 
+                        session={{ type: "cloud", data: session }}
                         onDeleted={loadCloudSessions}
                         viewMode="grid"
                       />
@@ -652,9 +651,9 @@ export default function SessionLibrary() {
                 ) : (
                   <div className="space-y-3">
                     {filteredCloudSessions.map((session) => (
-                      <SessionLibraryCard 
+                      <SessionCard 
                         key={session.id} 
-                        session={session} 
+                        session={{ type: "cloud", data: session }}
                         onDeleted={loadCloudSessions}
                         viewMode="list"
                       />
