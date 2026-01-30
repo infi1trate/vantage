@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Annotation, VoiceNote } from "@/lib/captures";
+import { VoiceNote } from "@/lib/captures";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
@@ -24,6 +24,18 @@ import {
   SkipForward,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Annotation } from "@/lib/captures";
+
+// Hoisted helper function to avoid temporal dead zone
+function getMarkerColor(type: Annotation["annotation_type"] | string): string {
+  switch (type) {
+    case "kill": return "bg-vantage-success";
+    case "death": return "bg-destructive";
+    case "highlight": return "bg-vantage-warning";
+    case "marker": return "bg-primary";
+    default: return "bg-muted-foreground"; // Safe fallback for unknown types
+  }
+}
 
 export interface VideoDecodeError {
   type: "decode" | "network" | "src" | "unknown";
@@ -248,15 +260,6 @@ export function CinematicPlayer({
   };
 
   const progressPercentage = (currentTime / duration) * 100;
-
-  const getMarkerColor = (type: Annotation["annotation_type"]) => {
-    switch (type) {
-      case "kill": return "bg-vantage-success";
-      case "death": return "bg-destructive";
-      case "highlight": return "bg-vantage-warning";
-      default: return "bg-primary";
-    }
-  };
 
   return (
     <div 
