@@ -161,46 +161,77 @@ export function EffectsModal({
               {includeFacecam && (
                 <div className="space-y-5">
                   {/* Frame Shape Selector */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Frame Shape</p>
-                    <div className="flex gap-2">
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Camera Frame Shape
+                    </p>
+                    <div className="flex gap-3">
+                      {/* Circle Option */}
                       <button
                         type="button"
                         onClick={() => setFrameShape("circle")}
                         className={cn(
-                          "flex items-center justify-center w-14 h-14 rounded-lg border-2 transition-all duration-150",
-                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md active:scale-95",
+                          "group flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all duration-150",
+                          "hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]",
                           frameShape === "circle"
-                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                            : "border-border/40 bg-muted/20"
+                            ? "border-vantage-500 bg-vantage-500/10 shadow-[0_0_16px_-4px_hsl(65_70%_45%/0.5)]"
+                            : "border-border/40 bg-muted/20 hover:border-vantage-500/50 hover:bg-muted/30"
                         )}
                         disabled={disabled}
                       >
-                        <Circle 
-                          className={cn(
-                            "h-7 w-7 transition-colors",
-                            frameShape === "circle" ? "text-primary" : "text-muted-foreground/60"
-                          )} 
-                        />
+                        <div className={cn(
+                          "w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-150",
+                          frameShape === "circle"
+                            ? "border-vantage-500 bg-vantage-500/20"
+                            : "border-muted-foreground/30 bg-muted/30 group-hover:border-vantage-500/40"
+                        )}>
+                          <Circle 
+                            className={cn(
+                              "h-6 w-6 transition-colors",
+                              frameShape === "circle" ? "text-vantage-500" : "text-muted-foreground/60 group-hover:text-vantage-500/60"
+                            )} 
+                          />
+                        </div>
+                        <span className={cn(
+                          "text-xs font-medium transition-colors",
+                          frameShape === "circle" ? "text-vantage-500" : "text-muted-foreground group-hover:text-foreground"
+                        )}>
+                          Circle
+                        </span>
                       </button>
+
+                      {/* Rounded Square Option */}
                       <button
                         type="button"
                         onClick={() => setFrameShape("rounded-square")}
                         className={cn(
-                          "flex items-center justify-center w-14 h-14 rounded-lg border-2 transition-all duration-150",
-                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md active:scale-95",
+                          "group flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all duration-150",
+                          "hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]",
                           frameShape === "rounded-square"
-                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                            : "border-border/40 bg-muted/20"
+                            ? "border-vantage-500 bg-vantage-500/10 shadow-[0_0_16px_-4px_hsl(65_70%_45%/0.5)]"
+                            : "border-border/40 bg-muted/20 hover:border-vantage-500/50 hover:bg-muted/30"
                         )}
                         disabled={disabled}
                       >
-                        <Square 
-                          className={cn(
-                            "h-6 w-6 rounded transition-colors",
-                            frameShape === "rounded-square" ? "text-primary" : "text-muted-foreground/60"
-                          )} 
-                        />
+                        <div className={cn(
+                          "w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all duration-150",
+                          frameShape === "rounded-square"
+                            ? "border-vantage-500 bg-vantage-500/20"
+                            : "border-muted-foreground/30 bg-muted/30 group-hover:border-vantage-500/40"
+                        )}>
+                          <Square 
+                            className={cn(
+                              "h-5 w-5 rounded transition-colors",
+                              frameShape === "rounded-square" ? "text-vantage-500" : "text-muted-foreground/60 group-hover:text-vantage-500/60"
+                            )} 
+                          />
+                        </div>
+                        <span className={cn(
+                          "text-xs font-medium transition-colors",
+                          frameShape === "rounded-square" ? "text-vantage-500" : "text-muted-foreground group-hover:text-foreground"
+                        )}>
+                          Rounded
+                        </span>
                       </button>
                     </div>
                   </div>
