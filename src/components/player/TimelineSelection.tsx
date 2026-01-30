@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { SuggestionMarkers, AnnotationSuggestion } from "./SuggestionMarkers";
 
 export interface SelectionState {
   type: "point" | "range" | null;
@@ -16,6 +17,9 @@ interface TimelineSelectionProps {
   onSelectionChange: (selection: SelectionState) => void;
   markers?: Array<{ id: string; time: number; color?: string }>;
   onMarkerClick?: (id: string, time: number) => void;
+  suggestions?: AnnotationSuggestion[];
+  onSuggestionAccept?: (suggestion: AnnotationSuggestion) => void;
+  onSuggestionDismiss?: (suggestionId: string) => void;
   className?: string;
 }
 
@@ -27,6 +31,9 @@ export function TimelineSelection({
   onSelectionChange,
   markers = [],
   onMarkerClick,
+  suggestions = [],
+  onSuggestionAccept,
+  onSuggestionDismiss,
   className,
 }: TimelineSelectionProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -330,6 +337,17 @@ export function TimelineSelection({
           }}
         />
       ))}
+
+      {/* Suggestion markers (dashed, subtle) */}
+      {suggestions.length > 0 && onSuggestionAccept && onSuggestionDismiss && (
+        <SuggestionMarkers
+          suggestions={suggestions}
+          duration={duration}
+          onAccept={onSuggestionAccept}
+          onDismiss={onSuggestionDismiss}
+          onSeek={onSeek}
+        />
+      )}
 
       {/* Playhead */}
       <div
