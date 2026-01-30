@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError } from "@/components/player/CinematicPlayer";
-import { MarkerList } from "@/components/player/MarkerList";
+import { AnnotationsPanel } from "@/components/player/AnnotationsPanel";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import {
@@ -27,9 +27,19 @@ import {
 } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Share2, Download, Gamepad2, Trash2 } from "lucide-react";
+import { 
+  Loader2, 
+  ArrowLeft, 
+  Share2, 
+  Download, 
+  Gamepad2, 
+  Trash2,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function SessionReview() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -54,6 +64,7 @@ export default function SessionReview() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -66,6 +77,18 @@ export default function SessionReview() {
       }
     };
   }, []);
+
+  // Keyboard shortcut for focus mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.code === "Escape" && focusMode) {
+        setFocusMode(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [focusMode]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -83,7 +106,6 @@ export default function SessionReview() {
     if (!sessionId) return;
 
     try {
-      // Try local first
       const localData = await getLocalSession(sessionId);
       
       if (localData) {
@@ -116,7 +138,6 @@ export default function SessionReview() {
         return;
       }
 
-      // Cloud session
       const [sessionData, videoAssetsData, audioTracksData, annotationsData, voiceNotesData] = await Promise.all([
         getCaptureSession(sessionId!),
         getVideoAssets(sessionId!).catch(() => []),
@@ -154,8 +175,7 @@ export default function SessionReview() {
       setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
       toast.success("Marker removed");
     } catch (error) {
-      console.error("Error deleting annotation:", error);
-      toast.error("Failed to delete marker");
+      toast.error("Failed to delete");
     }
   }, []);
 
@@ -164,7 +184,7 @@ export default function SessionReview() {
   }, []);
 
   const handleVideoError = useCallback((error: VideoDecodeError) => {
-    console.error("Video decode error:", error);
+    console.error("Video error:", error);
     toast.error(error.message);
   }, []);
 
@@ -222,7 +242,7 @@ export default function SessionReview() {
       toast.success("Session deleted");
       navigate("/library");
     } catch (error) {
-      toast.error("Failed to delete session");
+      toast.error("Failed to delete");
     } finally {
       setIsDeleting(false);
       setDeleteDialogOpen(false);
@@ -261,20 +281,37 @@ export default function SessionReview() {
   } : null;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Header />
+    <div className={cn(
+      "min-h-screen bg-background flex flex-col",
+      focusMode && "fixed inset-0 z-50"
+    )}>
+      {/* Header - hidden in focus mode */}
+      {!focusMode && <Header />}
 
-      {/* Minimal header */}
-      <div className="border-b border-border/30">
-        <div className="container py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => navigate(isLocal ? "/library" : "/")}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1 className="text-lg font-semibold">{displayTitle}</h1>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      {/* Session bar */}
+      <div className={cn(
+        "shrink-0 border-b",
+        focusMode 
+          ? "border-border/20 bg-background/95 backdrop-blur-sm" 
+          : "border-border/30 bg-card/30"
+      )}>
+        <div className={cn(
+          "py-2.5 flex items-center justify-between",
+          focusMode ? "px-4" : "container"
+        )}>
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => focusMode ? setFocusMode(false) : navigate(isLocal ? "/library" : "/")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-sm font-semibold">{displayTitle}</h1>
+              {!focusMode && (
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   {displayGame && (
                     <span className="flex items-center gap-1">
                       <Gamepad2 className="h-3 w-3" />
@@ -288,31 +325,42 @@ export default function SessionReview() {
                     <Badge variant="outline" className="text-[10px] h-4">Local</Badge>
                   )}
                 </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {!isLocal && (
-                <Button variant="ghost" size="sm" onClick={() => setShareDialogOpen(true)}>
-                  <Share2 className="h-4 w-4" />
-                </Button>
               )}
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
-              >
-                <Download className="h-4 w-4" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setFocusMode(!focusMode)}
+            >
+              {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+            {!isLocal && (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShareDialogOpen(true)}>
+                <Share2 className="h-4 w-4" />
               </Button>
+            )}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+            {!focusMode && (
               <Button 
                 variant="ghost" 
-                size="sm"
-                className="text-destructive hover:text-destructive"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
                 onClick={() => setDeleteDialogOpen(true)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -335,39 +383,40 @@ export default function SessionReview() {
         isDeleting={isDeleting}
       />
 
-      {/* Main content - Clean 2-column */}
-      <div className="flex-1 container py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-[calc(100vh-160px)]">
-          {/* Player */}
-          <div className="min-h-[400px] lg:min-h-0">
-            <CinematicPlayer
-              videoUrl={videoUrl}
-              duration={displayDuration}
-              currentTime={currentTime}
-              onTimeUpdate={handleTimeUpdate}
-              onSeek={handleSeek}
-              annotations={annotations}
-              voiceNotes={voiceNotes}
-              onMarkerClick={handleMarkerClick}
-              videoMeta={isLocal ? videoMeta : cloudVideoMeta}
-              onVideoLoaded={handleVideoLoaded}
-              onVideoError={handleVideoError}
-              onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
-            />
-          </div>
+      {/* Main content - CapCut-style layout */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left: Video + Timeline (~70%) */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <CinematicPlayer
+            videoUrl={videoUrl}
+            duration={displayDuration}
+            currentTime={currentTime}
+            onTimeUpdate={handleTimeUpdate}
+            onSeek={handleSeek}
+            annotations={annotations}
+            voiceNotes={voiceNotes}
+            onMarkerClick={handleMarkerClick}
+            videoMeta={isLocal ? videoMeta : cloudVideoMeta}
+            onVideoLoaded={handleVideoLoaded}
+            onVideoError={handleVideoError}
+            onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
+          />
+        </div>
 
-          {/* Marker list */}
-          <div className="bg-card rounded-xl border border-border/30 overflow-hidden">
-            <MarkerList
-              sessionId={displaySessionId || sessionId || ""}
-              currentTime={currentTime}
-              annotations={annotations}
-              voiceNotes={voiceNotes}
-              onAnnotationCreated={handleAnnotationCreated}
-              onMarkerClick={handleMarkerClick}
-              onAnnotationDelete={handleAnnotationDelete}
-            />
-          </div>
+        {/* Right: Annotations (~30%) */}
+        <div className={cn(
+          "shrink-0 border-l border-border/30 bg-card/50",
+          focusMode ? "w-80" : "w-[340px]"
+        )}>
+          <AnnotationsPanel
+            sessionId={displaySessionId || sessionId || ""}
+            currentTime={currentTime}
+            annotations={annotations}
+            voiceNotes={voiceNotes}
+            onAnnotationCreated={handleAnnotationCreated}
+            onMarkerClick={handleMarkerClick}
+            onAnnotationDelete={handleAnnotationDelete}
+          />
         </div>
       </div>
     </div>
