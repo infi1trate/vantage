@@ -33,7 +33,6 @@ import {
   Check,
   Mic,
   Camera,
-  Monitor,
   Settings2,
   Volume2,
   ChevronRight,
@@ -355,35 +354,33 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
 
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable content area */}
-            <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-5">
-              {/* Session Basics */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-6">
+              {/* Session Info - clean, minimal */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="title" className="text-sm text-muted-foreground">
+                  <Label htmlFor="title" className="text-xs text-muted-foreground/80 uppercase tracking-wider">
                     Session Title
-                    <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
                   </Label>
                   <Input
                     id="title"
                     placeholder="Ranked Valorant – Bind"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="bg-transparent border-border/40 focus:border-primary/50 placeholder:text-muted-foreground/40"
+                    className="bg-transparent border-border/30 focus:border-primary/50 placeholder:text-muted-foreground/30 h-11"
                     disabled={loading}
                     autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="game" className="text-sm text-muted-foreground">
+                  <Label htmlFor="game" className="text-xs text-muted-foreground/80 uppercase tracking-wider">
                     Game
-                    <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
                   </Label>
                   <Select value={gameName} onValueChange={setGameName} disabled={loading}>
-                    <SelectTrigger className="w-full bg-transparent border-border/40">
+                    <SelectTrigger className="w-full bg-transparent border-border/30 h-11">
                       <SelectValue placeholder="Select game" />
                     </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
+                    <SelectContent className="bg-popover border-border">
                       {POPULAR_GAMES.map((game) => (
                         <SelectItem key={game} value={game}>
                           {game}
@@ -394,75 +391,78 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                 </div>
               </div>
 
-              {/* Audio Capture Toggles */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-                  Audio Sources
-                </h3>
-                
-                <CaptureToggle
-                  id="game-audio"
-                  icon={Volume2}
-                  label="Game Audio"
-                  description="Capture in-game sound"
-                  checked={includeGameAudio}
-                  onCheckedChange={setIncludeGameAudio}
-                  disabled={loading}
-                />
-
-                <CaptureToggle
-                  id="microphone"
-                  icon={Mic}
-                  label="Microphone"
-                  description="Voice commentary and callouts"
-                  checked={includeMicrophone}
-                  onCheckedChange={setIncludeMicrophone}
-                  disabled={loading}
-                />
+              {/* Audio - simplified inline row */}
+              <div className="flex items-center justify-between py-3 px-4 bg-muted/5 rounded-xl border border-border/20">
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setIncludeGameAudio(!includeGameAudio)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-150 active:scale-95",
+                      includeGameAudio 
+                        ? "bg-primary/10 text-primary" 
+                        : "bg-muted/20 text-muted-foreground hover:bg-muted/30"
+                    )}
+                    disabled={loading}
+                  >
+                    <Volume2 className="h-4 w-4" />
+                    <span className="text-sm font-medium">Game</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setIncludeMicrophone(!includeMicrophone)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-150 active:scale-95",
+                      includeMicrophone 
+                        ? "bg-primary/10 text-primary" 
+                        : "bg-muted/20 text-muted-foreground hover:bg-muted/30"
+                    )}
+                    disabled={loading}
+                  >
+                    <Mic className="h-4 w-4" />
+                    <span className="text-sm font-medium">Mic</span>
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground/60">Audio</span>
               </div>
 
-              {/* Effects & Settings CTAs */}
+              {/* Effects & Settings - clean card buttons */}
               <div className="grid grid-cols-2 gap-3">
                 {/* Effects CTA */}
                 <button
                   type="button"
                   onClick={() => setEffectsModalOpen(true)}
                   className={cn(
-                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-150",
-                    "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]",
+                    "group flex items-center gap-3 p-4 rounded-xl border transition-all duration-150",
+                    "hover:-translate-y-0.5 active:scale-[0.98]",
                     hasCustomEffects
-                      ? "border-primary/40 bg-primary/5 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.3)]"
-                      : "border-border/40 bg-muted/10 hover:bg-muted/20"
+                      ? "border-primary/30 bg-primary/5"
+                      : "border-border/20 bg-muted/5 hover:border-border/40 hover:bg-muted/10"
                   )}
                   disabled={loading}
                 >
                   <div className={cn(
-                    "p-3 rounded-xl transition-colors",
-                    hasCustomEffects ? "bg-primary/15" : "bg-muted/30"
+                    "p-2.5 rounded-lg transition-colors",
+                    hasCustomEffects ? "bg-primary/15" : "bg-muted/20 group-hover:bg-muted/30"
                   )}>
                     <Camera className={cn(
-                      "h-6 w-6 transition-colors",
-                      hasCustomEffects ? "text-primary" : "text-muted-foreground"
+                      "h-5 w-5 transition-colors",
+                      hasCustomEffects ? "text-primary" : "text-muted-foreground/70 group-hover:text-muted-foreground"
                     )} />
                   </div>
-                  <div className="text-center">
+                  <div className="text-left min-w-0">
                     <p className={cn(
                       "text-sm font-medium transition-colors",
-                      hasCustomEffects ? "text-foreground" : "text-muted-foreground"
+                      hasCustomEffects ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
                     )}>
                       Effects
                     </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {effectsConfig.includeFacecam 
-                        ? `${effectsConfig.frameShape === "circle" ? "⬤" : "⬜"} Facecam · ${effectsConfig.cameraSize}`
-                        : "Facecam off"}
+                    <p className="text-[11px] text-muted-foreground/60 truncate">
+                      {effectsConfig.includeFacecam ? "Facecam on" : "Off"}
                     </p>
                   </div>
-                  {hasCustomEffects && (
-                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/10 border-primary/30 text-primary">
-                      Customized
-                    </Badge>
-                  )}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 ml-auto shrink-0" />
                 </button>
 
                 {/* Settings CTA */}
@@ -470,93 +470,65 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   type="button"
                   onClick={() => setSettingsModalOpen(true)}
                   className={cn(
-                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-150",
-                    "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]",
+                    "group flex items-center gap-3 p-4 rounded-xl border transition-all duration-150",
+                    "hover:-translate-y-0.5 active:scale-[0.98]",
                     hasCustomSettings
-                      ? "border-primary/40 bg-primary/5 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.3)]"
-                      : "border-border/40 bg-muted/10 hover:bg-muted/20"
+                      ? "border-primary/30 bg-primary/5"
+                      : "border-border/20 bg-muted/5 hover:border-border/40 hover:bg-muted/10"
                   )}
                   disabled={loading}
                 >
                   <div className={cn(
-                    "p-3 rounded-xl transition-colors",
-                    hasCustomSettings ? "bg-primary/15" : "bg-muted/30"
+                    "p-2.5 rounded-lg transition-colors",
+                    hasCustomSettings ? "bg-primary/15" : "bg-muted/20 group-hover:bg-muted/30"
                   )}>
                     <Settings2 className={cn(
-                      "h-6 w-6 transition-colors",
-                      hasCustomSettings ? "text-primary" : "text-muted-foreground"
+                      "h-5 w-5 transition-colors",
+                      hasCustomSettings ? "text-primary" : "text-muted-foreground/70 group-hover:text-muted-foreground"
                     )} />
                   </div>
-                  <div className="text-center">
+                  <div className="text-left min-w-0">
                     <p className={cn(
                       "text-sm font-medium transition-colors",
-                      hasCustomSettings ? "text-foreground" : "text-muted-foreground"
+                      hasCustomSettings ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
                     )}>
                       Settings
                     </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {settingsConfig.videoQuality} · {settingsConfig.audioBitrate}kbps
+                    <p className="text-[11px] text-muted-foreground/60 truncate">
+                      {settingsConfig.videoQuality}
                     </p>
                   </div>
-                  {hasCustomSettings && (
-                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/10 border-primary/30 text-primary">
-                      Customized
-                    </Badge>
-                  )}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 ml-auto shrink-0" />
                 </button>
-              </div>
-
-              {/* Screen Selection hint */}
-              <div className="flex items-start gap-2 p-3 bg-muted/20 rounded-lg border border-border/20">
-                <Monitor className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Screen Selection</p>
-                  <p className="text-[11px] text-muted-foreground/60">
-                    You'll choose which screen or window after clicking Start.
-                  </p>
-                </div>
               </div>
             </div>
 
-            {/* Footer - sticky at bottom */}
-            <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/30 bg-muted/10">
-              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+            {/* Footer - clean, minimal */}
+            <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-border/20 bg-background/50">
+              <div className="flex items-center justify-between gap-3">
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => onOpenChange(false)}
                   disabled={loading}
-                  className="text-muted-foreground hover:text-foreground w-full sm:w-auto"
+                  className="text-muted-foreground/70 hover:text-foreground"
                 >
                   Cancel
                 </Button>
-                <div className="flex flex-col items-center sm:items-end gap-1 w-full sm:w-auto">
-                  <Button 
-                    type="submit" 
-                    disabled={loading}
-                    className={cn(
-                      "w-full sm:w-auto sm:min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
-                      // Visual emphasis when settings have been customized
-                      (hasCustomEffects || hasCustomSettings || !includeGameAudio) &&
-                      "ring-2 ring-vantage-500/30 ring-offset-2 ring-offset-background shadow-lg shadow-vantage-500/20"
-                    )}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <Video className="mr-2 h-4 w-4" />
-                        Start Capture
-                      </>
-                    )}
-                  </Button>
-                  <p className="text-[10px] text-muted-foreground/70 text-center sm:text-right">
-                    You can adjust effects during capture
-                  </p>
-                </div>
+                <Button 
+                  type="submit" 
+                  disabled={loading}
+                  className="min-w-[130px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    "Start Capture"
+                  )}
+                </Button>
               </div>
             </div>
           </form>
