@@ -52,7 +52,7 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
-  const [exportDefaultTab, setExportDefaultTab] = useState<ExportTab>("export");
+  const [exportDefaultTab, setExportDefaultTab] = useState<ExportTab>("download");
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -189,7 +189,7 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
-                  setExportDefaultTab("export");
+                  setExportDefaultTab("download");
                   setExportDrawerOpen(true);
                 }}>
                   <Download className="h-4 w-4 mr-2" /> Export
@@ -318,7 +318,7 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
-                  setExportDefaultTab("export");
+                  setExportDefaultTab("download");
                   setExportDrawerOpen(true);
                 }}>
                   <Download className="h-4 w-4 mr-2" /> Export
