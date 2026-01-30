@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Star, Crosshair, AlertTriangle, Timer } from "lucide-react";
+import marvelRivalsGameplay from "@/assets/marvel-rivals-gameplay.jpg";
 
 const annotations = [
   { id: 1, icon: Crosshair, label: "Entry Frag", time: "1:23", x: 20, y: 30, color: "vantage-success" },
@@ -50,8 +51,15 @@ export function CTASection() {
             role="img"
             aria-label="Gameplay review interface showing multiple annotations including Entry Frag, Clutch Round, Overextended warning, and Rotate Timing markers on a paused timeline"
           >
-            {/* Fake gameplay background */}
-            <div className="absolute inset-0 bg-gradient-to-br from-muted/30 via-background to-muted/20">
+            {/* Gameplay background image */}
+            <img 
+              src={marvelRivalsGameplay} 
+              alt="Marvel Rivals gameplay screenshot" 
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            
+            {/* Grid overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-muted/40 via-background/50 to-muted/30">
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:32px_32px]" />
             </div>
 
