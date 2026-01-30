@@ -22,7 +22,6 @@ export interface UsePreflightChecksOptions {
   screenStream: MediaStream | null;
   microphoneStream: MediaStream | null;
   facecamStream: MediaStream | null;
-  micRequired: boolean;
   webcamEnabled: boolean;
 }
 
@@ -37,7 +36,6 @@ export function usePreflightChecks({
   screenStream,
   microphoneStream,
   facecamStream,
-  micRequired,
   webcamEnabled,
 }: UsePreflightChecksOptions): UsePreflightChecksReturn {
   const [isRunning, setIsRunning] = useState(false);
@@ -89,27 +87,36 @@ export function usePreflightChecks({
       };
     }
     
-    // 3. Mic permission check (if required)
-    if (micRequired) {
-      if (microphoneStream) {
-        const audioTracks = microphoneStream.getAudioTracks();
-        const hasLiveAudioTrack = audioTracks.some(track => track.readyState === "live");
-        if (hasLiveAudioTrack) {
-          results.mic_permission = { status: "passed" };
-        } else {
-          results.mic_permission = { 
-            status: "failed", 
-            fix: "Microphone stopped. Reconnect your microphone." 
-          };
-        }
+    // 3. Mic permission check - ALWAYS REQUIRED for VANTAGE
+    if (microphoneStream) {
+      const audioTracks = microphoneStream.getAudioTracks();
+      // Check for live track that's enabled (not muted)
+      const hasLiveEnabledTrack = audioTracks.some(
+        track => track.readyState === "live" && track.enabled
+      );
+      if (hasLiveEnabledTrack) {
+        results.mic_permission = { status: "passed" };
+      } else if (audioTracks.some(track => track.readyState === "ended")) {
+        results.mic_permission = { 
+          status: "failed", 
+          fix: "Microphone is required for VANTAGE. Your mic connection ended — please reconnect." 
+        };
+      } else if (audioTracks.some(track => !track.enabled)) {
+        results.mic_permission = { 
+          status: "failed", 
+          fix: "Microphone is required for VANTAGE. Your mic is muted — please unmute." 
+        };
       } else {
         results.mic_permission = { 
           status: "failed", 
-          fix: "No microphone detected. Allow mic access or connect a microphone." 
+          fix: "Microphone is required for VANTAGE. Please enable mic access." 
         };
       }
     } else {
-      results.mic_permission = { status: "passed" }; // Not required, auto-pass
+      results.mic_permission = { 
+        status: "failed", 
+        fix: "Microphone is required for VANTAGE. Please enable mic access." 
+      };
     }
     
     // 4. Webcam check (if enabled)
@@ -155,7 +162,7 @@ export function usePreflightChecks({
     
     setCheckResults(results);
     setIsRunning(false);
-  }, [screenStream, microphoneStream, facecamStream, micRequired, webcamEnabled]);
+  }, [screenStream, microphoneStream, facecamStream, webcamEnabled]);
 
   // Auto-run checks when streams change
   useEffect(() => {
@@ -186,7 +193,7 @@ export function usePreflightChecks({
         label: "Microphone ready",
         status: checkResults.mic_permission.status,
         fix: checkResults.mic_permission.fix,
-        required: micRequired,
+        required: true, // Always required for VANTAGE
       },
       {
         id: "recorder_support",
@@ -209,7 +216,7 @@ export function usePreflightChecks({
     }
     
     return allChecks;
-  }, [checkResults, micRequired, webcamEnabled]);
+  }, [checkResults, webcamEnabled]);
 
   const allPassed = useMemo(() => {
     return checks.every(check => 

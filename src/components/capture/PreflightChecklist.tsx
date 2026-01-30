@@ -1,4 +1,4 @@
-import { Check, X, Loader2, AlertCircle } from "lucide-react";
+import { Check, X, Loader2, AlertCircle, Info } from "lucide-react";
 import { type PreflightCheck, type PreflightStatus } from "@/hooks/usePreflightChecks";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +97,14 @@ export function PreflightChecklist({ checks, allPassed, isRunning }: PreflightCh
           </li>
         ))}
       </ul>
+      
+      {/* Info callout about system audio */}
+      <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-muted/30 text-muted-foreground">
+        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+        <p className="text-xs">
+          Sharing a browser tab can include tab audio. Sharing a window often cannot.
+        </p>
+      </div>
     </div>
   );
 }
