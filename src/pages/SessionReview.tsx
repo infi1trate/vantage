@@ -41,6 +41,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSafeBack } from "@/hooks/useSafeBack";
 import { 
   Loader2, 
   ArrowLeft, 
@@ -59,6 +60,7 @@ export default function SessionReview() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { goBack } = useSafeBack("/library");
 
   // Session data
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -601,7 +603,7 @@ export default function SessionReview() {
               variant="ghost" 
               size="icon" 
               className="h-8 w-8"
-              onClick={() => focusMode ? setFocusMode(false) : navigate(isLocal ? "/library" : "/")}
+              onClick={() => focusMode ? setFocusMode(false) : goBack()}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
