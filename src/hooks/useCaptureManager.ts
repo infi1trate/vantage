@@ -41,6 +41,8 @@ export interface CaptureConfig {
 export interface RecordedData {
   /** Single composited video with PiP and mixed audio */
   compositeBlob: Blob | null;
+  /** MIME type of the composite blob (e.g., "video/webm;codecs=vp9,opus") */
+  compositeMimeType: string | null;
   /** Legacy: screen only (null when using composite) */
   screenBlob: Blob | null;
   microphoneBlob: Blob | null;
@@ -500,27 +502,45 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     const finalDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
     console.log(`[Capture] Final duration: ${finalDuration}s`);
 
-    // Stop composite recorder and get blob
-    const stopCompositeRecorder = (): Promise<Blob | null> => {
+    // Stop composite recorder and get blob with mimeType
+    const stopCompositeRecorder = (): Promise<{ blob: Blob | null; mimeType: string }> => {
       return new Promise((resolve) => {
         const recorder = compositeRecorderRef.current;
         const chunks = compositeChunksRef.current;
         
+        // Fallback mime type order
+        const getFallbackMimeType = (): string => {
+          const fallbacks = [
+            "video/webm;codecs=vp9,opus",
+            "video/webm;codecs=vp8,opus",
+            "video/webm",
+          ];
+          for (const type of fallbacks) {
+            if (MediaRecorder.isTypeSupported(type)) {
+              return type;
+            }
+          }
+          return "video/webm";
+        };
+        
         if (!recorder) {
           console.log("[Composite] No recorder to stop");
-          resolve(null);
+          resolve({ blob: null, mimeType: getFallbackMimeType() });
           return;
         }
+
+        // Get mimeType from recorder (most reliable source)
+        const recorderMimeType = recorder.mimeType || getFallbackMimeType();
+        console.log(`[Composite] Recorder mimeType: ${recorderMimeType}`);
 
         if (recorder.state === "inactive") {
           console.log(`[Composite] Recorder already inactive, chunks: ${chunks.length}`);
           if (chunks.length > 0) {
-            const mimeType = recorder.mimeType || "video/webm";
-            const blob = new Blob(chunks, { type: mimeType });
-            console.log(`[Composite] Created blob from existing chunks: ${blob.size} bytes`);
-            resolve(blob);
+            const blob = new Blob(chunks, { type: recorderMimeType });
+            console.log(`[Composite] Created blob from existing chunks: ${blob.size} bytes, type: ${blob.type}`);
+            resolve({ blob, mimeType: recorderMimeType });
           } else {
-            resolve(null);
+            resolve({ blob: null, mimeType: recorderMimeType });
           }
           return;
         }
@@ -530,13 +550,12 @@ export function useCaptureManager(): UseCaptureManagerReturn {
           console.log(`[Composite] onstop fired, chunks collected: ${chunks.length}`);
           
           if (chunks.length > 0) {
-            const mimeType = recorder.mimeType || "video/webm";
-            const blob = new Blob(chunks, { type: mimeType });
+            const blob = new Blob(chunks, { type: recorderMimeType });
             console.log(`[Composite] Created blob: ${blob.size} bytes, type: ${blob.type}`);
-            resolve(blob);
+            resolve({ blob, mimeType: recorderMimeType });
           } else {
             console.warn("[Composite] No chunks collected!");
-            resolve(null);
+            resolve({ blob: null, mimeType: recorderMimeType });
           }
         };
 
@@ -546,22 +565,23 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         } catch (err) {
           console.error("[Composite] Error stopping recorder:", err);
           if (chunks.length > 0) {
-            const blob = new Blob(chunks, { type: "video/webm" });
-            resolve(blob);
+            const blob = new Blob(chunks, { type: recorderMimeType });
+            resolve({ blob, mimeType: recorderMimeType });
           } else {
-            resolve(null);
+            resolve({ blob: null, mimeType: recorderMimeType });
           }
         }
       });
     };
 
     try {
-      // Stop composite recorder and wait for blob
+      // Stop composite recorder and wait for blob + mimeType
       console.log("[Capture] Waiting for composite recorder to stop...");
-      const compositeBlob = await stopCompositeRecorder();
+      const { blob: compositeBlob, mimeType: compositeMimeType } = await stopCompositeRecorder();
 
       console.log("[Capture] Composite recorder stopped:", {
         compositeSize: compositeBlob?.size || 0,
+        compositeMimeType,
         chunks: compositeChunksRef.current.length,
       });
 
@@ -593,6 +613,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
 
       return {
         compositeBlob,
+        compositeMimeType,
         screenBlob: null, // Using composite instead
         microphoneBlob: null,
         facecamBlob: null,

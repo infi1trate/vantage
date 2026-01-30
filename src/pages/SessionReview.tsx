@@ -131,10 +131,17 @@ export default function SessionReview() {
         
         try {
           // Load the blob
-          const blob = await getLocalSessionBlob(sessionId);
+          let blob = await getLocalSessionBlob(sessionId);
           
           if (blob) {
-            console.log("[SessionReview] Blob loaded, size:", blob.size);
+            console.log("[SessionReview] Blob loaded, size:", blob.size, "type:", blob.type);
+            
+            // If blob.type is empty, reconstruct with stored mimeType
+            if (!blob.type || blob.type === "") {
+              const storedMimeType = localData.mimeType || "video/webm";
+              console.log("[SessionReview] Reconstructing blob with mimeType:", storedMimeType);
+              blob = new Blob([blob], { type: storedMimeType });
+            }
             
             // Revoke previous URL if exists (for session changes)
             if (videoUrlRef.current) {

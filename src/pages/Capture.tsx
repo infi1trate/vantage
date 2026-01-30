@@ -170,19 +170,23 @@ export default function CapturePage() {
         visibility: "private",
         thumbnailDataUrl,
         blobSize: recordedData.compositeBlob.size,
+        mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
+        durationMs: recordedData.duration * 1000,
       };
 
       await saveLocalSession(localSession, recordedData.compositeBlob);
-      console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes`);
+      console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes, mimeType: ${localSession.mimeType}`);
 
       // Also upload to Supabase if user is logged in
+      // Use the actual mimeType for proper content-type header
+      const uploadMimeType = recordedData.compositeMimeType || "video/webm";
       if (user) {
         try {
           const compositePath = `${user.id}/${session.id}/gameplay.webm`;
           
           const { error: uploadError } = await supabase.storage
             .from("video-assets")
-            .upload(compositePath, recordedData.compositeBlob, { contentType: "video/webm" });
+            .upload(compositePath, recordedData.compositeBlob, { contentType: uploadMimeType });
           
           if (uploadError) {
             console.warn("[Capture] Supabase upload failed, but local save succeeded:", uploadError);
