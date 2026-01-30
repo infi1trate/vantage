@@ -320,6 +320,15 @@ export function CinematicPlayer({
               onLoadedMetadata={handleVideoLoadedMetadata}
               onError={handleVideoError}
               onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
+              onCanPlay={() => {
+                // Record first frame ready timing
+                if (videoUrl) {
+                  recordMetric("playback:first-frame", 0, { 
+                    videoUrl: videoUrl.slice(-30),
+                    readyState: videoRef.current?.readyState,
+                  });
+                }
+              }}
             />
             
             {/* Frame pins overlay */}

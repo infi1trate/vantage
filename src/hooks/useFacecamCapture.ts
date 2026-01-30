@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
-
+import { mark, measure, recordMetric } from "@/lib/performanceMetrics";
 export interface FacecamOptions {
   deviceId?: string;
   width?: number;
@@ -66,6 +66,9 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
   }, [selectedDeviceId]);
 
   const startCapture = useCallback(async (options?: FacecamOptions): Promise<MediaStream | null> => {
+    // Mark permission request start
+    mark("facecam:permission-request");
+    
     try {
       setError(null);
       setCaptureError(null);
@@ -83,6 +86,34 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
 
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       
+      // Measure time from permission request to stream acquired
+      const permissionTime = measure(
+        "facecam:permission-to-stream",
+        "facecam:permission-request",
+        undefined,
+        "capture:facecam"
+      );
+      
+      // Mark stream acquired, waiting for first frame
+      mark("facecam:stream-acquired");
+      
+      // Set up first frame detection
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack) {
+        // Use track settings to confirm first frame capability
+        const settings = videoTrack.getSettings();
+        if (settings.width && settings.height) {
+          const firstFrameTime = measure(
+            "facecam:first-frame",
+            "facecam:stream-acquired",
+            undefined,
+            "capture:facecam:first-frame"
+          );
+          
+          console.log(`[Perf] Facecam ready: permission=${permissionTime.toFixed(0)}ms, first-frame=${firstFrameTime.toFixed(0)}ms`);
+        }
+      }
+      
       streamRef.current = mediaStream;
       setStream(mediaStream);
       setIsCapturing(true);
@@ -90,6 +121,9 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
       return mediaStream;
     } catch (err: any) {
       console.error("Facecam capture error:", err);
+      
+      // Clear marks on error
+      measure("facecam:error", "facecam:permission-request");
       
       const parsedError = parseMediaError(err, "camera");
       setError(parsedError.message);
