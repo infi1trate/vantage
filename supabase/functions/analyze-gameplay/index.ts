@@ -31,6 +31,25 @@ interface TimelineEventData {
   duration_ms?: number | null;
 }
 
+// Evidence signal types for clip windows
+type MovementState = "stationary" | "slow" | "fast" | "unknown";
+type CoverState = "high" | "medium" | "low" | "unknown";
+type HealthState = "healthy" | "low" | "critical" | "unknown";
+type AimBehavior = "ADS_heavy" | "hipfire" | "erratic" | "unknown";
+type BooleanSignal = true | false | "unknown";
+type EnvironmentState = "indoor" | "outdoor" | "mixed" | "unknown";
+type ActivityLevel = "low" | "medium" | "high" | "unknown";
+
+interface ClipEvidence {
+  player_movement: MovementState;
+  player_in_cover: CoverState;
+  player_health_state: HealthState;
+  aim_behavior: AimBehavior;
+  repeat_peek_detected: BooleanSignal;
+  indoor_outdoor: EnvironmentState;
+  build_or_edit_activity: ActivityLevel;
+}
+
 interface ClipWindow {
   start_time: number;
   end_time: number;
@@ -39,6 +58,13 @@ interface ClipWindow {
   session_id: string;
   clip_purpose: "pre" | "during" | "post";
   event_timestamp: number;
+  evidence?: ClipEvidence;
+}
+
+interface ClipWindowWithEvidence {
+  event_id: string;
+  clip_purpose: "pre" | "during" | "post";
+  evidence: ClipEvidence;
 }
 
 interface EventWithClipWindows {
@@ -89,6 +115,7 @@ interface AnalysisResult {
     category: string;
   }[];
   clip_windows?: ClipWindow[];
+  clip_evidence?: ClipWindowWithEvidence[];
 }
 
 // Configuration for clip window extraction
@@ -99,9 +126,170 @@ const CLIP_CONFIG = {
 };
 
 /**
- * Extracts clip windows (PRE/DURING/POST) for a gameplay event.
- * These windows provide temporal context for AI Coach analysis.
+ * Creates a default evidence object with all signals set to "unknown".
+ * Used when we cannot determine signals from available data.
  */
+function createDefaultEvidence(): ClipEvidence {
+  return {
+    player_movement: "unknown",
+    player_in_cover: "unknown",
+    player_health_state: "unknown",
+    aim_behavior: "unknown",
+    repeat_peek_detected: "unknown",
+    indoor_outdoor: "unknown",
+    build_or_edit_activity: "unknown",
+  };
+}
+
+/**
+ * Extracts evidence signals from available event/annotation data.
+ * This is a heuristic-based approach using metadata from timeline events.
+ * When video frame analysis becomes available, this can be extended.
+ */
+function extractEvidenceFromContext(
+  clipWindow: ClipWindow,
+  allEvents: TimelineEventData[],
+  annotations: AnnotationData[],
+  voiceNotes: VoiceNoteData[]
+): ClipEvidence {
+  const evidence = createDefaultEvidence();
+  const startTime = clipWindow.start_time;
+  const endTime = clipWindow.end_time;
+
+  // Find events within this clip window
+  const eventsInWindow = allEvents.filter(e => {
+    const eventTime = e.timestamp_ms / 1000;
+    return eventTime >= startTime && eventTime <= endTime;
+  });
+
+  // Find annotations within this clip window
+  const annotationsInWindow = annotations.filter(a => 
+    a.timestamp_seconds >= startTime && a.timestamp_seconds <= endTime
+  );
+
+  // Find voice notes within this clip window
+  const voiceNotesInWindow = voiceNotes.filter(v =>
+    v.timestamp_seconds >= startTime && v.timestamp_seconds <= endTime
+  );
+
+  // Infer movement from event types and descriptions
+  const hasMovementEvents = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('sprint') || type.includes('slide') || type.includes('jump') ||
+           desc.includes('rushing') || desc.includes('pushing') || desc.includes('rotating');
+  });
+
+  const hasStationaryIndicators = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('camp') || type.includes('hold') || type.includes('scope') ||
+           desc.includes('holding') || desc.includes('waiting') || desc.includes('camping');
+  });
+
+  if (hasMovementEvents) {
+    evidence.player_movement = "fast";
+  } else if (hasStationaryIndicators) {
+    evidence.player_movement = "stationary";
+  }
+
+  // Infer health state from event types
+  const hasLowHealthIndicator = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('heal') || type.includes('medkit') || type.includes('shield') ||
+           desc.includes('low health') || desc.includes('one-shot') || desc.includes('cracked');
+  });
+
+  const hasCriticalIndicator = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    return type.includes('death') || type.includes('knocked') || type.includes('eliminated');
+  });
+
+  if (hasCriticalIndicator && clipWindow.clip_purpose === "during") {
+    evidence.player_health_state = "critical";
+  } else if (hasLowHealthIndicator) {
+    evidence.player_health_state = "low";
+  }
+
+  // Infer cover state from annotations/voice notes
+  const coverKeywords = ['cover', 'peek', 'exposed', 'open', 'protected', 'safe'];
+  const combinedText = [
+    ...annotationsInWindow.map(a => (a.content || '') + (a.title || '')),
+    ...voiceNotesInWindow.map(v => v.transcription || '')
+  ].join(' ').toLowerCase();
+
+  if (combinedText.includes('exposed') || combinedText.includes('open') || combinedText.includes('no cover')) {
+    evidence.player_in_cover = "low";
+  } else if (combinedText.includes('cover') || combinedText.includes('safe') || combinedText.includes('protected')) {
+    evidence.player_in_cover = "high";
+  }
+
+  // Infer aim behavior from event types
+  const hasADSEvents = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('snipe') || type.includes('scope') || type.includes('ads') ||
+           desc.includes('scoped') || desc.includes('aimed');
+  });
+
+  const hasHipfireEvents = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('spray') || type.includes('hipfire') ||
+           desc.includes('hip fire') || desc.includes('spray');
+  });
+
+  if (hasADSEvents) {
+    evidence.aim_behavior = "ADS_heavy";
+  } else if (hasHipfireEvents) {
+    evidence.aim_behavior = "hipfire";
+  }
+
+  // Infer repeat peek from pattern analysis
+  const peekEvents = eventsInWindow.filter(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('peek') || desc.includes('peek') || desc.includes('re-peek');
+  });
+
+  if (peekEvents.length >= 2) {
+    evidence.repeat_peek_detected = true;
+  } else if (combinedText.includes('re-peek') || combinedText.includes('same angle') || combinedText.includes('repeat peek')) {
+    evidence.repeat_peek_detected = true;
+  }
+
+  // Infer environment from event descriptions
+  if (combinedText.includes('indoor') || combinedText.includes('building') || combinedText.includes('inside')) {
+    evidence.indoor_outdoor = "indoor";
+  } else if (combinedText.includes('outdoor') || combinedText.includes('open area') || combinedText.includes('outside') || combinedText.includes('field')) {
+    evidence.indoor_outdoor = "outdoor";
+  }
+
+  // Infer build/edit activity (for games like Fortnite)
+  const hasBuildEvents = eventsInWindow.some(e => {
+    const type = e.event_type.toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    return type.includes('build') || type.includes('edit') || type.includes('wall') || type.includes('ramp') ||
+           desc.includes('building') || desc.includes('editing');
+  });
+
+  if (hasBuildEvents) {
+    // Check density of build events
+    const buildEventCount = eventsInWindow.filter(e => {
+      const type = e.event_type.toLowerCase();
+      return type.includes('build') || type.includes('edit');
+    }).length;
+
+    if (buildEventCount >= 3) {
+      evidence.build_or_edit_activity = "high";
+    } else if (buildEventCount >= 1) {
+      evidence.build_or_edit_activity = "medium";
+    }
+  }
+
+  return evidence;
+}
 function extractClipWindows(
   event: TimelineEventData,
   sessionId: string,
@@ -166,16 +354,19 @@ function extractClipWindows(
 }
 
 /**
- * Processes all timeline events and extracts clip windows for each.
- * Returns events enriched with their associated clip windows.
+ * Processes all timeline events and extracts clip windows with evidence for each.
+ * Returns events enriched with their associated clip windows and evidence signals.
  */
 function processEventsWithClipWindows(
   events: TimelineEventData[],
   sessionId: string,
-  sessionDurationSeconds: number
-): { eventsWithWindows: EventWithClipWindows[]; allClipWindows: ClipWindow[] } {
+  sessionDurationSeconds: number,
+  annotations: AnnotationData[],
+  voiceNotes: VoiceNoteData[]
+): { eventsWithWindows: EventWithClipWindows[]; allClipWindows: ClipWindow[]; clipEvidence: ClipWindowWithEvidence[] } {
   const eventsWithWindows: EventWithClipWindows[] = [];
   const allClipWindows: ClipWindow[] = [];
+  const clipEvidence: ClipWindowWithEvidence[] = [];
 
   // Filter for key gameplay events that warrant clip extraction
   const keyEventTypes = ['kill', 'death', 'fight', 'engagement', 'highlight', 'clutch', 'assist'];
@@ -186,11 +377,26 @@ function processEventsWithClipWindows(
 
   for (const event of keyEvents) {
     const clipWindows = extractClipWindows(event, sessionId, sessionDurationSeconds);
-    eventsWithWindows.push({ event, clip_windows: clipWindows });
-    allClipWindows.push(...clipWindows);
+    
+    // Extract evidence for each clip window
+    const windowsWithEvidence = clipWindows.map(cw => {
+      const evidence = extractEvidenceFromContext(cw, events, annotations, voiceNotes);
+      cw.evidence = evidence;
+      
+      clipEvidence.push({
+        event_id: cw.event_id,
+        clip_purpose: cw.clip_purpose,
+        evidence,
+      });
+      
+      return cw;
+    });
+    
+    eventsWithWindows.push({ event, clip_windows: windowsWithEvidence });
+    allClipWindows.push(...windowsWithEvidence);
   }
 
-  return { eventsWithWindows, allClipWindows };
+  return { eventsWithWindows, allClipWindows, clipEvidence };
 }
 
 serve(async (req) => {
@@ -247,16 +453,24 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Extract clip windows for key gameplay events
+    // Extract clip windows for key gameplay events with evidence
     const sessionDuration = session.duration_seconds || 0;
     const sessionId = session.session_id || 'unknown';
-    const { eventsWithWindows, allClipWindows } = processEventsWithClipWindows(
+    const { eventsWithWindows, allClipWindows, clipEvidence } = processEventsWithClipWindows(
       session.events,
       sessionId,
-      sessionDuration
+      sessionDuration,
+      session.annotations,
+      session.voice_notes
     );
 
-    console.log(`Extracted ${allClipWindows.length} clip windows from ${eventsWithWindows.length} key events`);
+    console.log(`Extracted ${allClipWindows.length} clip windows with evidence from ${eventsWithWindows.length} key events`);
+    
+    // Log evidence summary for debugging
+    const evidenceWithSignals = clipEvidence.filter(ce => 
+      Object.values(ce.evidence).some(v => v !== "unknown")
+    );
+    console.log(`${evidenceWithSignals.length}/${clipEvidence.length} clip windows have at least one known evidence signal`);
 
     // Build context from session data
     const annotationsContext = session.annotations.map(a => 
@@ -271,16 +485,30 @@ serve(async (req) => {
       `[${formatTime(e.timestamp_ms / 1000)}] ${e.event_type}${e.title ? `: ${e.title}` : ''}${e.description ? ` - ${e.description}` : ''}`
     ).join('\n');
 
-    // Build clip windows context for AI analysis
+    // Build clip windows context with evidence for AI analysis
     const clipWindowsContext = eventsWithWindows.map(ew => {
       const pre = ew.clip_windows.find(c => c.clip_purpose === 'pre');
       const during = ew.clip_windows.find(c => c.clip_purpose === 'during');
       const post = ew.clip_windows.find(c => c.clip_purpose === 'post');
       
+      const formatEvidence = (cw: ClipWindow | undefined): string => {
+        if (!cw?.evidence) return 'No evidence';
+        const e = cw.evidence;
+        const signals = [];
+        if (e.player_movement !== 'unknown') signals.push(`movement: ${e.player_movement}`);
+        if (e.player_in_cover !== 'unknown') signals.push(`cover: ${e.player_in_cover}`);
+        if (e.player_health_state !== 'unknown') signals.push(`health: ${e.player_health_state}`);
+        if (e.aim_behavior !== 'unknown') signals.push(`aim: ${e.aim_behavior}`);
+        if (e.repeat_peek_detected !== 'unknown') signals.push(`repeat_peek: ${e.repeat_peek_detected}`);
+        if (e.indoor_outdoor !== 'unknown') signals.push(`environment: ${e.indoor_outdoor}`);
+        if (e.build_or_edit_activity !== 'unknown') signals.push(`building: ${e.build_or_edit_activity}`);
+        return signals.length > 0 ? signals.join(', ') : 'signals: unknown';
+      };
+      
       return `EVENT: ${ew.event.event_type} at ${formatTime(ew.event.timestamp_ms / 1000)}
-  - PRE context: ${pre ? `${formatTime(pre.start_time)} - ${formatTime(pre.end_time)}` : 'N/A'}
-  - DURING: ${during ? `${formatTime(during.start_time)} - ${formatTime(during.end_time)}` : 'N/A'}
-  - POST context: ${post ? `${formatTime(post.start_time)} - ${formatTime(post.end_time)}` : 'N/A'}`;
+  - PRE (${pre ? `${formatTime(pre.start_time)}-${formatTime(pre.end_time)}` : 'N/A'}): ${formatEvidence(pre)}
+  - DURING (${during ? `${formatTime(during.start_time)}-${formatTime(during.end_time)}` : 'N/A'}): ${formatEvidence(during)}
+  - POST (${post ? `${formatTime(post.start_time)}-${formatTime(post.end_time)}` : 'N/A'}): ${formatEvidence(post)}`;
     }).join('\n\n');
 
     const systemPrompt = `You are an expert gameplay coach providing post-game review. Your role is to provide actionable, supportive feedback on recorded gaming sessions.
@@ -423,10 +651,11 @@ Provide comprehensive feedback with moment-level cards, pattern analysis, and ac
       throw new Error("Failed to parse analysis result");
     }
 
-    // Attach extracted clip windows to the result for downstream processing
+    // Attach extracted clip windows and evidence to the result for downstream processing
     analysisResult.clip_windows = allClipWindows;
+    analysisResult.clip_evidence = clipEvidence;
 
-    console.log(`Analysis complete with ${analysisResult.feedback_cards?.length || 0} feedback cards and ${allClipWindows.length} clip windows`);
+    console.log(`Analysis complete with ${analysisResult.feedback_cards?.length || 0} feedback cards, ${allClipWindows.length} clip windows, and ${clipEvidence.length} evidence records`);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
