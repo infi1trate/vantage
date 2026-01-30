@@ -29,7 +29,7 @@ export default function Auth() {
   // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && user) {
-      navigate("/", { replace: true });
+      navigate("/dashboard", { replace: true });
     }
   }, [user, authLoading, navigate]);
 
@@ -51,7 +51,7 @@ export default function Auth() {
     try {
       await signIn(email, password);
       toast.success("Welcome back!");
-      navigate("/");
+      navigate("/dashboard");
     } catch (error: any) {
       console.error("Sign in error:", error);
       if (error.message?.includes("Invalid login credentials")) {

@@ -6,6 +6,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
 import { RouteErrorFallback } from "@/components/ErrorBoundary";
+import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Capture from "./pages/Capture";
@@ -18,9 +19,12 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Public routes (no auth required)
+// App routes (auth required - handled by individual pages)
 const router = createBrowserRouter([
-  { path: "/", element: <Dashboard />, errorElement: <RouteErrorFallback /> },
+  { path: "/", element: <Index />, errorElement: <RouteErrorFallback /> },
   { path: "/auth", element: <Auth />, errorElement: <RouteErrorFallback /> },
+  { path: "/dashboard", element: <Dashboard />, errorElement: <RouteErrorFallback /> },
   { path: "/library", element: <SessionLibrary />, errorElement: <RouteErrorFallback /> },
   { path: "/insights", element: <Insights />, errorElement: <RouteErrorFallback /> },
   { path: "/community", element: <Community />, errorElement: <RouteErrorFallback /> },
