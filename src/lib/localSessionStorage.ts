@@ -8,6 +8,9 @@ const DB_VERSION = 1;
 const SESSIONS_STORE = "sessions";
 const BLOBS_STORE = "blobs";
 
+/** Debug indicator of what stream was actually recorded */
+export type RecordedSourceType = "composed" | "screenOnly" | "unknown";
+
 export interface LocalSession {
   id: string;
   title: string;
@@ -24,6 +27,8 @@ export interface LocalSession {
   mimeType: string;
   /** Duration in milliseconds for more precision */
   durationMs?: number;
+  /** Debug: What stream source was used for the recording */
+  recordedSource?: RecordedSourceType;
 }
 
 // Initialize the IndexedDB database

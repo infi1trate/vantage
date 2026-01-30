@@ -20,6 +20,7 @@ import {
   HardDrive
 } from "lucide-react";
 import type { CaptureState } from "@/hooks/useCaptureManager";
+import type { RecordedSourceType } from "@/lib/localSessionStorage";
 
 interface CaptureDiagnosticsProps {
   captureState: CaptureState;
@@ -32,6 +33,8 @@ interface CaptureDiagnosticsProps {
   recorderState?: RecordingState;
   chunksCount?: number;
   totalBytes?: number;
+  /** Debug: What stream source will be/was recorded */
+  recordedSource?: RecordedSourceType;
 }
 
 // Browser capability detection
@@ -114,6 +117,7 @@ export function CaptureDiagnostics({
   recorderState,
   chunksCount = 0,
   totalBytes = 0,
+  recordedSource,
 }: CaptureDiagnosticsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<ReturnType<typeof detectBrowserCapabilities> | null>(null);
@@ -279,14 +283,36 @@ export function CaptureDiagnostics({
               <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
                 Recording Stats
               </h4>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-mono">{chunksCount} chunks</span>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-mono">{chunksCount} chunks</span>
+                  </div>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {formatBytes(totalBytes)}
+                  </span>
                 </div>
-                <span className="text-xs font-mono text-muted-foreground">
-                  {formatBytes(totalBytes)}
-                </span>
+                
+                {/* Recorded Source indicator */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Source:</span>
+                  <Badge 
+                    variant="outline" 
+                    className={
+                      recordedSource === "composed" 
+                        ? "bg-vantage-success/20 text-vantage-success border-vantage-success/30 text-xs" 
+                        : recordedSource === "screenOnly"
+                        ? "bg-warning/20 text-warning border-warning/30 text-xs"
+                        : "bg-muted text-muted-foreground text-xs"
+                    }
+                  >
+                    {recordedSource === "composed" && "✓ Composed (Canvas + Mixed Audio)"}
+                    {recordedSource === "screenOnly" && "⚠ Screen Only"}
+                    {!recordedSource && captureState === "recording" && "composed (active)"}
+                    {!recordedSource && captureState !== "recording" && "–"}
+                  </Badge>
+                </div>
               </div>
             </div>
 
