@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Loader2, Square, X, Circle, Pause, Play } from "lucide-react";
 import type { CaptureState } from "@/hooks/useCaptureManager";
+import { type PreflightCheck } from "@/hooks/usePreflightChecks";
+import { PreflightChecklist } from "./PreflightChecklist";
 
 interface CaptureControlsProps {
   captureState: CaptureState;
@@ -10,6 +12,10 @@ interface CaptureControlsProps {
   onStopRecording: () => void;
   onStopPreview: () => void;
   onCancel: () => void;
+  // Preflight props
+  preflightChecks?: PreflightCheck[];
+  preflightPassed?: boolean;
+  preflightRunning?: boolean;
 }
 
 export function CaptureControls({
@@ -20,15 +26,29 @@ export function CaptureControls({
   onStopRecording,
   onStopPreview,
   onCancel,
+  preflightChecks,
+  preflightPassed = true,
+  preflightRunning = false,
 }: CaptureControlsProps) {
   const isPreviewReady = captureState === "preview_ready";
   const isRecording = captureState === "recording";
   const isPaused = captureState === "paused";
   const isFinalizing = captureState === "finalizing";
   const isActiveRecording = isRecording || isPaused;
+  
+  const canStartRecording = preflightPassed && !preflightRunning;
 
   return (
     <div className="flex flex-col items-center gap-4">
+      {/* Preflight checklist - only show in preview_ready state */}
+      {isPreviewReady && preflightChecks && preflightChecks.length > 0 && (
+        <PreflightChecklist 
+          checks={preflightChecks} 
+          allPassed={preflightPassed} 
+          isRunning={preflightRunning}
+        />
+      )}
+      
       {/* Main controls row */}
       <div className="flex items-center justify-center gap-4">
         {/* Cancel - always available except when finalizing */}
@@ -56,7 +76,8 @@ export function CaptureControls({
             <Button
               size="lg"
               onClick={onStartRecording}
-              className="min-w-44 bg-destructive hover:bg-destructive/90 text-destructive-foreground uppercase tracking-wider font-bold"
+              disabled={!canStartRecording}
+              className="min-w-44 bg-destructive hover:bg-destructive/90 text-destructive-foreground uppercase tracking-wider font-bold disabled:opacity-50"
             >
               <Circle className="mr-2 h-4 w-4" fill="currentColor" />
               Start Recording
