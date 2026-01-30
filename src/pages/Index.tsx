@@ -2,6 +2,7 @@ import { LandingNav } from "@/components/landing/LandingNav";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { PerspectiveSection } from "@/components/landing/PerspectiveSection";
 import { TimelineSection } from "@/components/landing/TimelineSection";
+import { ValueSection } from "@/components/landing/ValueSection";
 import { LivePreviewSection } from "@/components/landing/LivePreviewSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
 import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
@@ -16,6 +17,7 @@ const Index = () => {
       <HeroSection />
       <PerspectiveSection />
       <TimelineSection />
+      <ValueSection />
       <LivePreviewSection />
       <FeaturesSection />
       <StatsSection />
