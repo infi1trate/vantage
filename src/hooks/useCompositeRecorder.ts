@@ -73,7 +73,24 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     return video;
   }, []);
 
-  // Draw a single frame to canvas
+  // Cache computed layout values to avoid recalculating every frame
+  const layoutCacheRef = useRef<{
+    screenDrawParams: { x: number; y: number; w: number; h: number } | null;
+    pipDrawParams: { x: number; y: number; w: number; h: number; borderRadius: number } | null;
+    lastScreenWidth: number;
+    lastScreenHeight: number;
+    lastFacecamWidth: number;
+    lastFacecamHeight: number;
+  }>({
+    screenDrawParams: null,
+    pipDrawParams: null,
+    lastScreenWidth: 0,
+    lastScreenHeight: 0,
+    lastFacecamWidth: 0,
+    lastFacecamHeight: 0,
+  });
+
+  // Draw a single frame to canvas - optimized for minimal per-frame computation
   const drawFrame = useCallback(() => {
     if (!isCompositingRef.current || !ctxRef.current || !canvasRef.current) {
       return;
@@ -82,80 +99,89 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
     const config = configRef.current;
+    const cache = layoutCacheRef.current;
 
     // Clear canvas
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw screen video as base layer (full canvas)
-    if (screenVideoRef.current && screenVideoRef.current.readyState >= 2) {
-      const video = screenVideoRef.current;
+    const screenVideo = screenVideoRef.current;
+    if (screenVideo && screenVideo.readyState >= 2) {
+      const vw = screenVideo.videoWidth;
+      const vh = screenVideo.videoHeight;
       
-      // Calculate aspect-fit dimensions
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const canvasAspect = canvas.width / canvas.height;
-      
-      let drawWidth, drawHeight, drawX, drawY;
-      
-      if (videoAspect > canvasAspect) {
-        // Video is wider - fit to width
-        drawWidth = canvas.width;
-        drawHeight = canvas.width / videoAspect;
-        drawX = 0;
-        drawY = (canvas.height - drawHeight) / 2;
-      } else {
-        // Video is taller - fit to height
-        drawHeight = canvas.height;
-        drawWidth = canvas.height * videoAspect;
-        drawX = (canvas.width - drawWidth) / 2;
-        drawY = 0;
+      // Only recalculate layout if dimensions changed
+      if (!cache.screenDrawParams || cache.lastScreenWidth !== vw || cache.lastScreenHeight !== vh) {
+        const videoAspect = vw / vh;
+        const canvasAspect = canvas.width / canvas.height;
+        
+        let drawWidth: number, drawHeight: number, drawX: number, drawY: number;
+        
+        if (videoAspect > canvasAspect) {
+          drawWidth = canvas.width;
+          drawHeight = canvas.width / videoAspect;
+          drawX = 0;
+          drawY = (canvas.height - drawHeight) / 2;
+        } else {
+          drawHeight = canvas.height;
+          drawWidth = canvas.height * videoAspect;
+          drawX = (canvas.width - drawWidth) / 2;
+          drawY = 0;
+        }
+        
+        cache.screenDrawParams = { x: drawX, y: drawY, w: drawWidth, h: drawHeight };
+        cache.lastScreenWidth = vw;
+        cache.lastScreenHeight = vh;
       }
       
-      ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+      const { x, y, w, h } = cache.screenDrawParams;
+      ctx.drawImage(screenVideo, x, y, w, h);
     }
 
     // Draw facecam as PiP overlay (bottom-right with rounded corners)
-    if (facecamVideoRef.current && facecamVideoRef.current.readyState >= 2 && config?.facecamStream) {
-      const video = facecamVideoRef.current;
+    const facecamVideo = facecamVideoRef.current;
+    if (facecamVideo && facecamVideo.readyState >= 2 && config?.facecamStream) {
+      const vw = facecamVideo.videoWidth || 1;
+      const vh = facecamVideo.videoHeight || 1;
       const position = config.facecamPosition || { x: 0.85, y: 0.75, scale: 0.2 };
       
-      // Calculate PiP dimensions
-      const pipWidth = canvas.width * position.scale;
-      const pipHeight = pipWidth * (video.videoHeight / video.videoWidth) || pipWidth * 0.75;
-      const pipX = canvas.width * position.x - pipWidth / 2;
-      const pipY = canvas.height * position.y - pipHeight / 2;
+      // Only recalculate PiP layout if dimensions changed
+      if (!cache.pipDrawParams || cache.lastFacecamWidth !== vw || cache.lastFacecamHeight !== vh) {
+        const pipWidth = canvas.width * position.scale;
+        const pipHeight = pipWidth * (vh / vw);
+        const pipX = canvas.width * position.x - pipWidth / 2;
+        const pipY = canvas.height * position.y - pipHeight / 2;
+        
+        const clampedX = Math.max(8, Math.min(canvas.width - pipWidth - 8, pipX));
+        const clampedY = Math.max(8, Math.min(canvas.height - pipHeight - 8, pipY));
+        
+        cache.pipDrawParams = { x: clampedX, y: clampedY, w: pipWidth, h: pipHeight, borderRadius: 12 };
+        cache.lastFacecamWidth = vw;
+        cache.lastFacecamHeight = vh;
+      }
       
-      // Ensure PiP stays within bounds
-      const clampedX = Math.max(8, Math.min(canvas.width - pipWidth - 8, pipX));
-      const clampedY = Math.max(8, Math.min(canvas.height - pipHeight - 8, pipY));
-      
-      const borderRadius = 12;
+      const { x: px, y: py, w: pw, h: ph, borderRadius } = cache.pipDrawParams;
       const borderWidth = 3;
       
       // Draw border
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(
-        clampedX - borderWidth,
-        clampedY - borderWidth,
-        pipWidth + borderWidth * 2,
-        pipHeight + borderWidth * 2,
-        borderRadius + borderWidth
-      );
-      ctx.fillStyle = "rgba(200, 255, 0, 0.6)"; // Lime border matching brand
+      ctx.roundRect(px - borderWidth, py - borderWidth, pw + borderWidth * 2, ph + borderWidth * 2, borderRadius + borderWidth);
+      ctx.fillStyle = "rgba(200, 255, 0, 0.6)";
       ctx.fill();
       ctx.restore();
       
       // Draw facecam with rounded corners (clipping)
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(clampedX, clampedY, pipWidth, pipHeight, borderRadius);
+      ctx.roundRect(px, py, pw, ph, borderRadius);
       ctx.clip();
       
       // Mirror the facecam horizontally for natural feel
-      ctx.translate(clampedX + pipWidth, clampedY);
+      ctx.translate(px + pw, py);
       ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0, pipWidth, pipHeight);
+      ctx.drawImage(facecamVideo, 0, 0, pw, ph);
       
       ctx.restore();
     }

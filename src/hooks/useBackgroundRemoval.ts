@@ -121,7 +121,15 @@ export function useBackgroundRemoval({
     };
   }, [enabled]);
 
+  // Ref to track processing state without causing re-renders
+  const isProcessingRef = useRef(false);
+  
+  // Throttled state update for processing indicator (avoid per-frame setState)
+  const lastProcessingUpdateRef = useRef(0);
+  const PROCESSING_UPDATE_INTERVAL = 500; // Only update UI every 500ms
+  
   // Process video frames - optimized with reusable buffers
+  // CRITICAL: No setState calls in this hot path to avoid React re-renders
   const processFrame = useCallback(() => {
     const video = videoElement;
     const canvas = canvasRef.current;
@@ -132,7 +140,11 @@ export function useBackgroundRemoval({
       return;
     }
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    // Get or create context once (cache it)
+    let ctx = canvas.getContext("2d", { 
+      willReadFrequently: true,
+      alpha: false, // Opaque canvas is faster
+    });
     if (!ctx) {
       animationRef.current = requestAnimationFrame(processFrame);
       return;
@@ -158,13 +170,15 @@ export function useBackgroundRemoval({
       offscreenCanvasRef.current = document.createElement("canvas");
       offscreenCanvasRef.current.width = canvas.width;
       offscreenCanvasRef.current.height = canvas.height;
-      offscreenCtxRef.current = offscreenCanvasRef.current.getContext("2d");
+      offscreenCtxRef.current = offscreenCanvasRef.current.getContext("2d", {
+        willReadFrequently: true,
+      });
     }
 
     const startTimeMs = performance.now();
 
     try {
-      setIsProcessing(true);
+      isProcessingRef.current = true;
       
       // Run segmentation
       const result = segmenter.segmentForVideo(video, startTimeMs);
@@ -238,7 +252,7 @@ export function useBackgroundRemoval({
 
         mask.close();
         
-        // Record frame processing time
+        // Record frame processing time (non-blocking)
         const frameDuration = performance.now() - startTimeMs;
         recordMetric("capture:background-removal", frameDuration, {
           width: canvas.width,
@@ -251,7 +265,15 @@ export function useBackgroundRemoval({
     } catch (err) {
       // Silently continue - occasional frame drops are acceptable
     } finally {
-      setIsProcessing(false);
+      isProcessingRef.current = false;
+      
+      // Throttled UI update - only update React state periodically
+      const now = performance.now();
+      if (now - lastProcessingUpdateRef.current > PROCESSING_UPDATE_INTERVAL) {
+        lastProcessingUpdateRef.current = now;
+        // Batch this update with other state if needed
+        setIsProcessing(true);
+      }
     }
 
     animationRef.current = requestAnimationFrame(processFrame);

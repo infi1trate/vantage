@@ -479,12 +479,34 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         }
       }, TIMEOUT_MS);
       
+      // Batch debug state updates to reduce re-renders during recording
+      let pendingChunksCount = 0;
+      let pendingTotalBytes = 0;
+      let debugUpdateScheduled = false;
+      
+      const scheduleDebugUpdate = () => {
+        if (!debugUpdateScheduled) {
+          debugUpdateScheduled = true;
+          // Use requestIdleCallback if available, otherwise setTimeout
+          const scheduleUpdate = window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 100));
+          scheduleUpdate(() => {
+            setDebugChunksCount(compositeChunksRef.current.length);
+            setDebugTotalBytes(prev => prev + pendingTotalBytes);
+            pendingTotalBytes = 0;
+            debugUpdateScheduled = false;
+          });
+        }
+      };
+      
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
+          // Non-blocking chunk storage
           compositeChunksRef.current.push(event.data);
-          setDebugChunksCount(compositeChunksRef.current.length);
-          setDebugTotalBytes(prev => prev + event.data.size);
-          console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
+          pendingChunksCount++;
+          pendingTotalBytes += event.data.size;
+          
+          // Schedule batched debug update (non-blocking)
+          scheduleDebugUpdate();
           
           // First valid chunk received - resolve promise
           if (!firstChunkReceived) {
@@ -563,11 +585,14 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     setDuration(0);
     isRecordingRef.current = true;
     
+    // Debounced duration update - only update every 1 second instead of 100ms
+    // This reduces React re-renders during recording
     durationIntervalRef.current = setInterval(() => {
       if (isRecordingRef.current) {
-        setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        const newDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setDuration(prev => prev !== newDuration ? newDuration : prev);
       }
-    }, 100);
+    }, 1000);
 
     setCaptureState("recording");
     console.log("[Capture] Recording confirmed - MediaRecorder is producing data");

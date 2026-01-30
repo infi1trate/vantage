@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
 import { mark, measure, recordMetric } from "@/lib/performanceMetrics";
+
 export interface FacecamOptions {
   deviceId?: string;
   width?: number;
@@ -74,12 +75,18 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
       setCaptureError(null);
       setPermissionDenied(false);
 
+      // Use IDEAL constraints to avoid renegotiation loops
+      // Never use exact values which can cause failures and restarts
       const constraints: MediaStreamConstraints = {
         video: {
-          deviceId: options?.deviceId || selectedDeviceId || undefined,
-          width: { ideal: options?.width || 1280 },
-          height: { ideal: options?.height || 720 },
-          frameRate: { ideal: options?.frameRate || 30 },
+          deviceId: options?.deviceId || selectedDeviceId 
+            ? { ideal: options?.deviceId || selectedDeviceId }
+            : undefined,
+          width: { ideal: options?.width || 1280, max: 1920 },
+          height: { ideal: options?.height || 720, max: 1080 },
+          frameRate: { ideal: options?.frameRate || 30, max: 30 },
+          // Prefer smoother video over higher resolution
+          aspectRatio: { ideal: 16 / 9 },
         },
         audio: false, // Facecam doesn't need audio - microphone is separate
       };
@@ -97,11 +104,13 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
       // Mark stream acquired, waiting for first frame
       mark("facecam:stream-acquired");
       
-      // Set up first frame detection
+      // Set up first frame detection and track monitoring
       const videoTrack = mediaStream.getVideoTracks()[0];
       if (videoTrack) {
-        // Use track settings to confirm first frame capability
+        // Log actual negotiated settings
         const settings = videoTrack.getSettings();
+        console.log(`[Facecam] Acquired: ${settings.width}x${settings.height}@${settings.frameRate}fps`);
+        
         if (settings.width && settings.height) {
           const firstFrameTime = measure(
             "facecam:first-frame",
@@ -112,6 +121,17 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
           
           console.log(`[Perf] Facecam ready: permission=${permissionTime.toFixed(0)}ms, first-frame=${firstFrameTime.toFixed(0)}ms`);
         }
+        
+        // Monitor track state to detect unexpected stops (but don't auto-restart)
+        videoTrack.addEventListener("ended", () => {
+          console.warn("[Facecam] Video track ended unexpectedly");
+          recordMetric("capture:facecam" as any, 0, { event: "track-ended" });
+        });
+        
+        videoTrack.addEventListener("mute", () => {
+          console.warn("[Facecam] Video track muted");
+          recordMetric("capture:facecam" as any, 0, { event: "track-muted" });
+        });
       }
       
       streamRef.current = mediaStream;
