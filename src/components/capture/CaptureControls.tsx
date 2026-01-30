@@ -31,12 +31,13 @@ export function CaptureControls({
   preflightRunning = false,
 }: CaptureControlsProps) {
   const isPreviewReady = captureState === "preview_ready";
+  const isStarting = captureState === "starting";
   const isRecording = captureState === "recording";
   const isPaused = captureState === "paused";
   const isFinalizing = captureState === "finalizing";
   const isActiveRecording = isRecording || isPaused;
   
-  const canStartRecording = preflightPassed && !preflightRunning;
+  const canStartRecording = preflightPassed && !preflightRunning && !isStarting;
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -83,6 +84,19 @@ export function CaptureControls({
               Start Recording
             </Button>
           </>
+        )}
+
+        {/* Starting: Waiting for first data chunk */}
+        {isStarting && (
+          <Button
+            size="lg"
+            variant="secondary"
+            disabled
+            className="min-w-44 uppercase tracking-wider"
+          >
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            Starting...
+          </Button>
         )}
 
         {/* Recording/Paused: Show Pause/Resume and End Recording buttons */}

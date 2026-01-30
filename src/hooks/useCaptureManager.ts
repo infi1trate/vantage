@@ -14,8 +14,10 @@ import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoData
  * idle → selecting_sources (user initiates capture)
  * selecting_sources → preview_ready (all required streams acquired)
  * selecting_sources → error (permission denied or failure)
- * preview_ready → recording (user clicks start recording)
+ * preview_ready → starting (user clicks start recording, waiting for data)
  * preview_ready → idle (user cancels)
+ * starting → recording (first data chunk received from MediaRecorder)
+ * starting → error (timeout waiting for data, or recorder error)
  * recording → finalizing (user clicks end capture)
  * finalizing → saved (blobs created successfully)
  * finalizing → error (blob creation failed)
@@ -27,7 +29,8 @@ export type CaptureState =
   | "idle"                  // No streams, no recording
   | "selecting_sources"     // Requesting permissions, acquiring streams
   | "preview_ready"         // Streams active, preview visible, NOT recording
-  | "recording"             // MediaRecorder actively recording, timer running
+  | "starting"              // MediaRecorder started, waiting for first data chunk
+  | "recording"             // MediaRecorder actively producing data, timer running
   | "paused"                // Recording paused, timer stopped
   | "finalizing"            // Stop requested, waiting for recorder.onstop, building blobs
   | "saved"                 // Session persisted successfully
@@ -376,27 +379,79 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       setDebugChunksCount(0);
       setDebugTotalBytes(0);
       
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          compositeChunksRef.current.push(event.data);
-          setDebugChunksCount(compositeChunksRef.current.length);
-          setDebugTotalBytes(prev => prev + event.data.size);
-          console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
-        }
-      };
+      // Set to "starting" state - waiting for first chunk
+      setCaptureState("starting");
+      console.log("[Capture] Recorder created, waiting for first data chunk...");
       
-      recorder.onerror = (event: Event) => {
-        console.error("[Composite] Recorder error:", event);
-      };
-      
-      recorder.onstart = () => {
-        console.log(`[Composite] Recording started, mimeType: ${recorder.mimeType}`);
-      };
+      // Promise that resolves when we get the first valid chunk
+      const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
+        let firstChunkReceived = false;
+        const startTime = Date.now();
+        const TIMEOUT_MS = 2500; // 2.5 second timeout
+        
+        // Check for timeout
+        const timeoutId = setTimeout(() => {
+          if (!firstChunkReceived) {
+            console.error("[Capture] Timeout: No data received within 2.5 seconds");
+            reject({
+              code: "NO_DATA_CAPTURED" as const,
+              message: "Recording failed to produce data. Your browser may not support this recording format.",
+              recoverable: true,
+              details: `Timeout after ${TIMEOUT_MS}ms. Recorder state: ${recorder.state}, MIME: ${selectedMimeType.mimeType}`,
+            });
+          }
+        }, TIMEOUT_MS);
+        
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            compositeChunksRef.current.push(event.data);
+            setDebugChunksCount(compositeChunksRef.current.length);
+            setDebugTotalBytes(prev => prev + event.data.size);
+            console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
+            
+            // First valid chunk received - resolve promise
+            if (!firstChunkReceived) {
+              firstChunkReceived = true;
+              clearTimeout(timeoutId);
+              console.log(`[Capture] First chunk received after ${Date.now() - startTime}ms`);
+              resolve(true);
+            }
+          }
+        };
+        
+        recorder.onerror = (event: Event) => {
+          console.error("[Composite] Recorder error:", event);
+          clearTimeout(timeoutId);
+          reject({
+            code: "RECORDER_ERROR" as const,
+            message: "MediaRecorder encountered an error.",
+            recoverable: false,
+            details: `Error event: ${JSON.stringify(event)}`,
+          });
+        };
+        
+        recorder.onstart = () => {
+          console.log(`[Composite] Recorder started, state: ${recorder.state}, mimeType: ${recorder.mimeType}`);
+        };
+      });
       
       compositeRecorderRef.current = recorder;
       recorder.start(1000); // 1 second timeslice chunks
+      
+      // Wait for first chunk before transitioning to "recording" state
+      await waitForFirstChunk;
+      
+      // Verify recorder is still in recording state
+      if (recorder.state !== "recording") {
+        throw {
+          code: "RECORDER_ERROR" as const,
+          message: "Recorder stopped unexpectedly before data was captured.",
+          recoverable: true,
+          details: `Recorder state: ${recorder.state}`,
+        };
+      }
 
-      // Start duration timer - ONLY runs in recording state
+      // NOW we can safely say we're recording
       startTimeRef.current = Date.now();
       setDuration(0);
       isRecordingRef.current = true;
@@ -408,7 +463,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       }, 100);
 
       setCaptureState("recording");
-      console.log("[Capture] Recording started successfully (composite mode)");
+      console.log("[Capture] Recording confirmed - MediaRecorder is producing data");
       return true;
     } catch (err: any) {
       console.error("Failed to start recording:", err);
@@ -592,13 +647,30 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         chunks: compositeChunksRef.current.length,
       });
 
-      // Validate we got the composite recording
+      // Validate we got enough data - require chunks >= 2 OR totalBytes > 50KB
+      const totalBytes = compositeChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0);
+      const chunksCount = compositeChunksRef.current.length;
+      const MIN_CHUNKS = 2;
+      const MIN_BYTES = 50 * 1024; // 50KB
+      
+      console.log(`[Capture] Validation: chunks=${chunksCount}, totalBytes=${totalBytes}, duration=${finalDuration}s`);
+      
       if (!compositeBlob || compositeBlob.size === 0) {
         throw {
           code: "NO_DATA_CAPTURED" as const,
           message: "No recording data was captured. The recording may have been too short or failed.",
           recoverable: false,
-          details: `Chunks: ${compositeChunksRef.current.length}, Duration: ${finalDuration}s`,
+          details: `Chunks: ${chunksCount}, Bytes: ${totalBytes}, Duration: ${finalDuration}s`,
+        };
+      }
+      
+      // Require at least 2 chunks OR 50KB of data
+      if (chunksCount < MIN_CHUNKS && totalBytes < MIN_BYTES) {
+        throw {
+          code: "NO_DATA_CAPTURED" as const,
+          message: "Recording is too short or incomplete. Please record for at least a few seconds.",
+          recoverable: false,
+          details: `Chunks: ${chunksCount} (need ${MIN_CHUNKS}+), Bytes: ${totalBytes} (need ${MIN_BYTES}+), Duration: ${finalDuration}s`,
         };
       }
 

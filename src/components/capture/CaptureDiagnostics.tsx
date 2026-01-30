@@ -90,6 +90,7 @@ const stateColors: Record<CaptureState, string> = {
   idle: "bg-muted text-muted-foreground",
   selecting_sources: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   preview_ready: "bg-vantage-success/20 text-vantage-success border-vantage-success/30",
+  starting: "bg-warning/20 text-warning border-warning/30",
   recording: "bg-destructive/20 text-destructive border-destructive/30",
   paused: "bg-warning/20 text-warning border-warning/30",
   finalizing: "bg-primary/20 text-primary border-primary/30",
