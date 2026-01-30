@@ -15,7 +15,10 @@ export interface CompositeRecorderReturn {
   compositeStream: MediaStream | null;
   isCompositing: boolean;
   startCompositing: (config: CompositeRecorderConfig) => MediaStream | null;
+  /** Capture thumbnail as dataURL (for quick previews) */
   captureThumbnail: (maxWidth?: number, quality?: number) => string | null;
+  /** Capture thumbnail as Blob (for IndexedDB storage) */
+  captureThumbnailBlob: (maxWidth?: number, quality?: number) => Promise<Blob | null>;
   stopCompositing: () => void;
 }
 
@@ -315,8 +318,8 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     };
   }, [stopCompositing]);
 
-  // Capture thumbnail from current canvas state
-  const captureThumbnail = useCallback((maxWidth = 320, quality = 0.8): string | null => {
+  // Capture thumbnail from current canvas state as dataURL
+  const captureThumbnail = useCallback((maxWidth = 320, quality = 0.85): string | null => {
     const canvas = canvasRef.current;
     if (!canvas) {
       console.warn("[Composite] No canvas available for thumbnail");
@@ -347,6 +350,54 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     }
   }, []);
 
+  // Capture thumbnail from current canvas state as Blob (for IndexedDB storage)
+  const captureThumbnailBlob = useCallback((maxWidth = 320, quality = 0.85): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        console.warn("[Composite] No canvas available for thumbnail blob");
+        resolve(null);
+        return;
+      }
+
+      try {
+        // Create a smaller canvas for the thumbnail
+        const thumbCanvas = document.createElement("canvas");
+        const aspectRatio = canvas.height / canvas.width;
+        thumbCanvas.width = maxWidth;
+        thumbCanvas.height = Math.round(maxWidth * aspectRatio);
+
+        const ctx = thumbCanvas.getContext("2d");
+        if (!ctx) {
+          console.warn("[Composite] Failed to get thumbnail canvas context");
+          resolve(null);
+          return;
+        }
+
+        // Draw scaled version
+        ctx.drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+
+        // Convert to blob
+        thumbCanvas.toBlob(
+          (blob) => {
+            if (blob) {
+              console.log(`[Composite] Thumbnail blob captured: ${blob.size} bytes`);
+              resolve(blob);
+            } else {
+              console.warn("[Composite] Failed to create thumbnail blob");
+              resolve(null);
+            }
+          },
+          "image/jpeg",
+          quality
+        );
+      } catch (err) {
+        console.error("[Composite] Failed to capture thumbnail blob:", err);
+        resolve(null);
+      }
+    });
+  }, []);
+
   return {
     getCanvas: () => canvasRef.current,
     compositeStream: compositeStreamRef.current,
@@ -354,5 +405,6 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     startCompositing,
     stopCompositing,
     captureThumbnail,
+    captureThumbnailBlob,
   };
 }

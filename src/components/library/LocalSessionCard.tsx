@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { LocalSession, deleteLocalSession, getLocalSessionBlob, formatBytes } from "@/lib/localSessionStorage";
+import { useState, useEffect, useRef } from "react";
+import { LocalSession, deleteLocalSession, getLocalSessionBlob, getLocalSessionThumbnail, formatBytes } from "@/lib/localSessionStorage";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,20 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
+/**
+ * Generate a deterministic placeholder color based on session id
+ */
+function getPlaceholderColor(id: string): string {
+  // Simple hash from id to pick a color
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 40%, 25%)`;
+}
+
 interface LocalSessionCardProps {
   session: LocalSession;
   onDeleted: () => void;
@@ -55,6 +69,39 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  
+  // Track thumbnail URL for cleanup
+  const thumbnailUrlRef = useRef<string | null>(null);
+
+  // Load thumbnail from IndexedDB on mount
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function loadThumbnail() {
+      try {
+        const thumbBlob = await getLocalSessionThumbnail(session.id);
+        if (thumbBlob && !cancelled) {
+          const url = URL.createObjectURL(thumbBlob);
+          thumbnailUrlRef.current = url;
+          setThumbnailUrl(url);
+        }
+      } catch (err) {
+        console.warn("[LocalSessionCard] Failed to load thumbnail blob:", err);
+      }
+    }
+    
+    loadThumbnail();
+    
+    return () => {
+      cancelled = true;
+      // Revoke object URL on unmount
+      if (thumbnailUrlRef.current) {
+        URL.revokeObjectURL(thumbnailUrlRef.current);
+        thumbnailUrlRef.current = null;
+      }
+    };
+  }, [session.id]);
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -152,11 +199,17 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
           {/* Thumbnail */}
           <button onClick={handlePlay} className="shrink-0 cursor-pointer">
             <div className="w-40 aspect-video relative bg-muted/50 rounded-lg overflow-hidden">
-              {session.thumbnailDataUrl ? (
+              {/* Priority: thumbnailUrl (blob) > thumbnailDataUrl > placeholder */}
+              {thumbnailUrl ? (
+                <img src={thumbnailUrl} alt={session.title} className="w-full h-full object-cover" />
+              ) : session.thumbnailDataUrl ? (
                 <img src={session.thumbnailDataUrl} alt={session.title} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-card">
-                  <Gamepad2 className="h-8 w-8 text-muted-foreground/30" />
+                <div 
+                  className="w-full h-full flex items-center justify-center"
+                  style={{ backgroundColor: getPlaceholderColor(session.id) }}
+                >
+                  <Gamepad2 className="h-8 w-8 text-white/30" />
                 </div>
               )}
               <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm">
@@ -322,11 +375,17 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
         <button onClick={handlePlay} className="w-full text-left">
           {/* Thumbnail */}
           <div className="aspect-video relative bg-muted/50 overflow-hidden">
-            {session.thumbnailDataUrl ? (
+            {/* Priority: thumbnailUrl (blob) > thumbnailDataUrl > placeholder */}
+            {thumbnailUrl ? (
+              <img src={thumbnailUrl} alt={session.title} className="w-full h-full object-cover" />
+            ) : session.thumbnailDataUrl ? (
               <img src={session.thumbnailDataUrl} alt={session.title} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-card">
-                <Gamepad2 className="h-12 w-12 text-muted-foreground/30" />
+              <div 
+                className="w-full h-full flex items-center justify-center"
+                style={{ backgroundColor: getPlaceholderColor(session.id) }}
+              >
+                <Gamepad2 className="h-12 w-12 text-white/30" />
               </div>
             )}
             

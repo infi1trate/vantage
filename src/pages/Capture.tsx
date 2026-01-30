@@ -143,8 +143,12 @@ export default function CapturePage() {
 
     try {
       // Capture thumbnail BEFORE stopping (while canvas is still active)
-      const thumbnailDataUrl = capture.captureThumbnail();
-      console.log("[Capture] Thumbnail captured:", thumbnailDataUrl ? "yes" : "no");
+      // Capture both dataURL (for quick render) and blob (for IndexedDB storage)
+      const [thumbnailDataUrl, thumbnailBlob] = await Promise.all([
+        Promise.resolve(capture.captureThumbnail()),
+        capture.captureThumbnailBlob(),
+      ]);
+      console.log("[Capture] Thumbnail captured:", thumbnailDataUrl ? "dataURL yes" : "dataURL no", thumbnailBlob ? `blob ${thumbnailBlob.size} bytes` : "blob no");
 
       // Stop recording and get data
       const recordedData = await capture.stopRecording();
@@ -168,7 +172,7 @@ export default function CapturePage() {
         hasMic: capture.captureConfig.hasMic,
         hasSystemAudio: capture.captureConfig.hasSystemAudio,
         visibility: "private",
-        thumbnailDataUrl,
+        thumbnailDataUrl, // Keep dataURL for quick fallback render
         blobSize: recordedData.compositeBlob.size,
         mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
         fileExt: recordedData.fileExt,
@@ -178,7 +182,8 @@ export default function CapturePage() {
         recordedSource: recordedData.recordedSource,
       };
 
-      await saveLocalSession(localSession, recordedData.compositeBlob);
+      // Save session with thumbnail blob
+      await saveLocalSession(localSession, recordedData.compositeBlob, thumbnailBlob);
       console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes, mimeType: ${localSession.mimeType}`);
 
       // Also upload to Supabase if user is logged in
