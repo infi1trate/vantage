@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -31,10 +33,17 @@ import {
   Globe,
   Copy,
   Check,
-  ExternalLink,
+  Mic,
+  Camera,
+  Monitor,
+  Settings2,
+  Gamepad2,
+  FileText,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -67,6 +76,11 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [copied, setCopied] = useState(false);
   const [previewOnlyMode, setPreviewOnlyMode] = useState(false);
 
+  // Capture settings
+  const [includeMicrophone, setIncludeMicrophone] = useState(true);
+  const [includeFacecam, setIncludeFacecam] = useState(false);
+  const [includeGameAudio, setIncludeGameAudio] = useState(true);
+
   // Run preflight check when dialog opens
   useEffect(() => {
     if (open) {
@@ -86,6 +100,9 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setTitle("");
       setGameName("");
       setPreviewOnlyMode(false);
+      setIncludeMicrophone(true);
+      setIncludeFacecam(false);
+      setIncludeGameAudio(true);
     }
   }, [open]);
 
@@ -113,9 +130,14 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       toast.success("Capture session created!");
       onOpenChange(false);
       // Navigate with preview mode flag if applicable
-      const url = previewOnlyMode 
-        ? `/capture/${session.id}?mode=preview`
-        : `/capture/${session.id}`;
+      // Pass capture settings as URL params
+      const params = new URLSearchParams();
+      if (previewOnlyMode) params.set("mode", "preview");
+      if (includeMicrophone) params.set("mic", "1");
+      if (includeFacecam) params.set("facecam", "1");
+      if (includeGameAudio) params.set("audio", "1");
+      
+      const url = `/capture/${session.id}${params.toString() ? `?${params.toString()}` : ""}`;
       navigate(url);
     } catch (error: any) {
       console.error("Error creating session:", error);
@@ -300,84 +322,264 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
     );
   }
 
-  // Normal form view
+  // Capture Setup form view - Premium two-column layout
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md glass-strong">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Video className="h-5 w-5 text-primary" />
-            New Capture Session
-          </DialogTitle>
-          <DialogDescription>
-            Start a new gameplay recording session. You can add annotations and voice notes during or after capture.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-2xl glass-strong p-0 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-border/30">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="font-display text-xl tracking-wide">
+              New Capture Session
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              Configure your recording setup before starting capture.
+            </DialogDescription>
+          </DialogHeader>
 
-        {/* Show warning if there are any issues but we're proceeding anyway */}
-        {preflightResult && preflightResult.issues.length > 0 && (
-          <div className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/20 rounded text-sm">
-            <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-            <div>
-              <span className="text-xs font-medium text-warning">Limited Support</span>
-              <p className="text-xs text-muted-foreground">
-                Some features may not work as expected in your browser.
-              </p>
+          {/* Show warning if there are any issues but we're proceeding anyway */}
+          {preflightResult && preflightResult.issues.length > 0 && (
+            <div className="flex items-start gap-2 p-2 mt-4 bg-warning/10 border border-warning/20 rounded text-sm">
+              <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <div>
+                <span className="text-xs font-medium text-warning">Limited Support</span>
+                <p className="text-xs text-muted-foreground">
+                  Some features may not work as expected in your browser.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Preview mode badge */}
+          {previewOnlyMode && (
+            <Badge variant="outline" className="mt-3 bg-warning/10 text-warning border-warning/30">
+              Preview Mode — Recording disabled
+            </Badge>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Two-column layout */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/30">
+            {/* Left Column: Session Basics */}
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="h-4 w-4 text-primary" />
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Session Details
+                </h3>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="title" className="text-sm">
+                  Session Title
+                </Label>
+                <Input
+                  id="title"
+                  placeholder="e.g., Ranked Valorant — Bind"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="bg-muted/30 border-border/50 focus:border-primary/50"
+                  disabled={loading}
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  A descriptive name helps you find this session later.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="game" className="text-sm">
+                  Game
+                </Label>
+                <Select value={gameName} onValueChange={setGameName} disabled={loading}>
+                  <SelectTrigger className="bg-muted/30 border-border/50">
+                    <div className="flex items-center gap-2">
+                      <Gamepad2 className="h-4 w-4 text-muted-foreground" />
+                      <SelectValue placeholder="Select a game" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {POPULAR_GAMES.map((game) => (
+                      <SelectItem key={game} value={game}>
+                        {game}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Helps organize your library and enables game-specific insights.
+                </p>
+              </div>
+            </div>
+
+            {/* Right Column: Capture Settings */}
+            <div className="p-6 space-y-5 bg-muted/5">
+              <div className="flex items-center gap-2 mb-4">
+                <Settings2 className="h-4 w-4 text-primary" />
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Capture Settings
+                </h3>
+              </div>
+
+              {/* Audio Sources */}
+              <div className="space-y-3">
+                <CaptureToggle
+                  id="game-audio"
+                  icon={Volume2}
+                  label="Game Audio"
+                  description="Capture in-game sound"
+                  checked={includeGameAudio}
+                  onCheckedChange={setIncludeGameAudio}
+                  disabled={loading}
+                />
+
+                <CaptureToggle
+                  id="microphone"
+                  icon={Mic}
+                  label="Microphone"
+                  description="Voice commentary and callouts"
+                  checked={includeMicrophone}
+                  onCheckedChange={setIncludeMicrophone}
+                  disabled={loading}
+                />
+
+                <Separator className="bg-border/30" />
+
+                <CaptureToggle
+                  id="facecam"
+                  icon={Camera}
+                  label="Facecam"
+                  description="Picture-in-picture webcam overlay"
+                  checked={includeFacecam}
+                  onCheckedChange={setIncludeFacecam}
+                  disabled={loading}
+                  badge="Optional"
+                />
+              </div>
+
+              {/* Capture source hint */}
+              <div className="flex items-start gap-2 p-3 bg-muted/30 rounded-lg border border-border/30">
+                <Monitor className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium">Screen Selection</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    You'll choose which screen or window to capture after clicking Start.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Session Title</Label>
-            <Input
-              id="title"
-              placeholder="e.g., Ranked Valorant - Bind"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="bg-muted/50"
-              disabled={loading}
-            />
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-border/30 bg-muted/10">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                {preflightResult?.selectedFormat && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-vantage-success" />
+                    {preflightResult.selectedFormat.mimeType.split(";")[0]}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onOpenChange(false)}
+                  disabled={loading}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={loading || !title.trim()}
+                  className="min-w-[140px]"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="mr-2 h-4 w-4" />
+                      Start Capture
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="game">Game (optional)</Label>
-            <Select value={gameName} onValueChange={setGameName} disabled={loading}>
-              <SelectTrigger className="bg-muted/50">
-                <SelectValue placeholder="Select a game" />
-              </SelectTrigger>
-              <SelectContent>
-                {POPULAR_GAMES.map((game) => (
-                  <SelectItem key={game} value={game}>
-                    {game}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Start Capture"
-              )}
-            </Button>
-          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Toggle component for capture settings
+interface CaptureToggleProps {
+  id: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  badge?: string;
+}
+
+function CaptureToggle({
+  id,
+  icon: Icon,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+  badge,
+}: CaptureToggleProps) {
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+        checked 
+          ? "bg-primary/5 border-primary/30" 
+          : "bg-muted/20 border-border/30 hover:border-border/50"
+      )}
+    >
+      <div className={cn(
+        "p-2 rounded-md transition-colors",
+        checked ? "bg-primary/10" : "bg-muted/30"
+      )}>
+        <Icon className={cn(
+          "h-4 w-4 transition-colors",
+          checked ? "text-primary" : "text-muted-foreground"
+        )} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-sm font-medium transition-colors",
+            checked ? "text-foreground" : "text-muted-foreground"
+          )}>
+            {label}
+          </span>
+          {badge && (
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+              {badge}
+            </Badge>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground">{description}</p>
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+      />
+    </label>
   );
 }
