@@ -394,3 +394,10 @@
     z-index: 10;
   }
 }
+
+/* Touch device visibility - show elements that are hidden on hover for desktop */
+@media (hover: none), (pointer: coarse) {
+  .touch-device-visible {
+    opacity: 1 !important;
+  }
+}
