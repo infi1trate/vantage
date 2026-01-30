@@ -37,8 +37,6 @@ import {
   Camera,
   Monitor,
   Settings2,
-  Gamepad2,
-  FileText,
   Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -114,16 +112,14 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       return;
     }
 
-    if (!title.trim()) {
-      toast.error("Please enter a session title");
-      return;
-    }
+    // Generate default title if not provided
+    const sessionTitle = title.trim() || `Session ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 
     setLoading(true);
     try {
       const session = await createCaptureSession(
         user.id,
-        title.trim(),
+        sessionTitle,
         gameName || undefined
       );
       
@@ -361,45 +357,43 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
         <form onSubmit={handleSubmit}>
           {/* Two-column layout */}
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/30">
-            {/* Left Column: Session Basics */}
+            {/* Left Column: Session Basics - lower visual priority */}
             <div className="p-6 space-y-5">
-              <div className="flex items-center gap-2 mb-4">
-                <FileText className="h-4 w-4 text-primary" />
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Session Details
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Session Basics
                 </h3>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="title" className="text-sm">
+                <Label htmlFor="title" className="text-sm text-muted-foreground">
                   Session Title
+                  <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
                 </Label>
                 <Input
                   id="title"
-                  placeholder="e.g., Ranked Valorant — Bind"
+                  placeholder="Ranked Valorant – Bind"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="bg-muted/30 border-border/50 focus:border-primary/50"
+                  className="bg-transparent border-border/40 focus:border-primary/50 placeholder:text-muted-foreground/40"
                   disabled={loading}
                   autoFocus
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  A descriptive name helps you find this session later.
+                <p className="text-[11px] text-muted-foreground/60">
+                  Used for highlights, insights, and sharing.
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="game" className="text-sm">
+                <Label htmlFor="game" className="text-sm text-muted-foreground">
                   Game
+                  <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
                 </Label>
                 <Select value={gameName} onValueChange={setGameName} disabled={loading}>
-                  <SelectTrigger className="bg-muted/30 border-border/50">
-                    <div className="flex items-center gap-2">
-                      <Gamepad2 className="h-4 w-4 text-muted-foreground" />
-                      <SelectValue placeholder="Select a game" />
-                    </div>
+                  <SelectTrigger className="bg-transparent border-border/40">
+                    <SelectValue placeholder="Select game" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-card border-border">
                     {POPULAR_GAMES.map((game) => (
                       <SelectItem key={game} value={game}>
                         {game}
@@ -407,8 +401,8 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  Helps organize your library and enables game-specific insights.
+                <p className="text-[11px] text-muted-foreground/60">
+                  Auto-detection coming soon.
                 </p>
               </div>
             </div>
@@ -493,7 +487,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={loading || !title.trim()}
+                  disabled={loading}
                   className="min-w-[140px]"
                 >
                   {loading ? (
