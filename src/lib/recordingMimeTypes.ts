@@ -27,6 +27,14 @@ export const MIME_TYPE_CANDIDATES: Array<{ mime: string; ext: "mp4" | "webm"; co
 ];
 
 /**
+ * Detect if the current browser is Safari
+ */
+export function isSafariBrowser(): boolean {
+  const ua = navigator.userAgent;
+  return ua.includes("Safari/") && !ua.includes("Chrome/") && !ua.includes("Chromium/");
+}
+
+/**
  * Simplify the user agent string for display
  */
 function getBrowserLabel(): string {
@@ -119,6 +127,8 @@ export type RobustRecorderResult =
       success: false;
       error: string;
       triedFormats: string[];
+      /** True if this is Safari and no formats worked */
+      isSafariCodecFailure: boolean;
     };
 
 /**
@@ -220,11 +230,24 @@ export async function tryRecordWithFallback(
   }
   
   // None succeeded
+  const isSafari = isSafariBrowser();
   console.error("[MimeType] All MIME type candidates failed!");
+  
+  if (isSafari) {
+    console.error("[MimeType] Safari detected - recording not supported");
+    return {
+      success: false,
+      error: "Recording is not supported in Safari for this build. Use Chrome, Edge, or Brave.",
+      triedFormats,
+      isSafariCodecFailure: true,
+    };
+  }
+  
   return {
     success: false,
     error: `Recording not supported on this browser/device. Tried: ${triedFormats.join(", ") || "none (no formats passed isTypeSupported)"}`,
     triedFormats,
+    isSafariCodecFailure: false,
   };
 }
 

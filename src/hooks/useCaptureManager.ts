@@ -397,6 +397,22 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     if (robustResult.success === false) {
       console.error("[Capture] All MIME type candidates failed:", robustResult.error);
       composite.stopCompositing();
+      
+      // Use Safari-specific error code if this is a Safari codec failure
+      if (robustResult.isSafariCodecFailure) {
+        throw {
+          code: "SAFARI_NOT_SUPPORTED" as const,
+          message: "Recording is not supported in Safari for this build. Use Chrome, Edge, or Brave.",
+          recoverable: false,
+          details: "Safari's MediaRecorder has limited codec support. Preview mode is still available.",
+          recorderDiagnostics: {
+            ...baseDiagnostics,
+            exceptionName: "NotSupportedError",
+            exceptionMessage: "Safari MediaRecorder codec not supported",
+          },
+        };
+      }
+      
       throw {
         code: "NO_COMPATIBLE_FORMAT" as const,
         message: "Recording not supported on this browser/device configuration.",

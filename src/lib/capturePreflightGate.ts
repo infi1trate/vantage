@@ -133,7 +133,15 @@ export function runCapturePreflightGate(): PreflightGateResult {
   if (typeof MediaRecorder !== "undefined") {
     selectedFormat = chooseRecordingMimeType();
     
-    if (!selectedFormat) {
+    // Safari-specific handling - check BEFORE generic "no format" error
+    if (browserInfo.isSafari && !selectedFormat) {
+      issues.push({
+        id: "safari_no_recording",
+        severity: "critical",
+        title: "Recording Not Supported in Safari",
+        description: "Recording is not supported in Safari for this build. Use Chrome, Edge, or Brave for full recording capability.",
+      });
+    } else if (!selectedFormat) {
       issues.push({
         id: "no_supported_mime_type",
         severity: "critical",
@@ -143,19 +151,15 @@ export function runCapturePreflightGate(): PreflightGateResult {
     }
   }
   
-  // Check 6: Safari-specific warning
-  if (browserInfo.isSafari) {
-    // Check if Safari has MP4/H264 support (Safari 14.1+ on macOS 11.3+)
-    const hasMp4Support = selectedFormat?.mimeType.startsWith("video/mp4");
-    
-    if (!hasMp4Support) {
-      issues.push({
-        id: "safari_limited_support",
-        severity: "warning",
-        title: "Safari Has Limited Recording Support",
-        description: "Safari may have compatibility issues with screen recording. For best results, use Chrome or Edge.",
-      });
-    }
+  // Check 6: Safari-specific warning (even if format found, Safari may still have issues)
+  if (browserInfo.isSafari && selectedFormat) {
+    // Safari has MP4/H264 support but may still have quirks
+    issues.push({
+      id: "safari_limited_support",
+      severity: "warning",
+      title: "Safari Has Limited Recording Support",
+      description: "Safari may have compatibility issues with screen recording. For best results, use Chrome or Edge.",
+    });
   }
   
   // Determine overall support level

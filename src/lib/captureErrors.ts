@@ -12,6 +12,7 @@ export type CaptureErrorCode =
   | "NO_DATA_CAPTURED"
   | "STREAM_ENDED"
   | "NO_COMPATIBLE_FORMAT"
+  | "SAFARI_NOT_SUPPORTED"
   | "COMPOSITING_FAILED"
   | "DEVICE_NOT_FOUND"
   | "STREAM_NOT_READY"
@@ -215,6 +216,23 @@ export function getCaptureErrorInfo(error: CaptureError): CaptureErrorInfo {
           "Microsoft Edge and Brave also support all required codecs",
           "Safari only supports MP4/H.264 on newer versions",
           "Firefox supports WebM/VP9 recording",
+        ],
+        showBrowserSettings: false,
+        primaryAction: "none",
+        showPreviewMode: true,
+        showOpenInChrome: true,
+      };
+
+    case "SAFARI_NOT_SUPPORTED":
+      return {
+        title: "Recording Not Supported in Safari",
+        description: "Recording is not supported in Safari for this build. Safari's MediaRecorder has limited codec support.",
+        icon: "error",
+        steps: [
+          "Use Google Chrome for full recording capability",
+          "Microsoft Edge and Brave also work great",
+          "Safari supports screen preview but cannot record reliably",
+          "You can still preview your capture setup below",
         ],
         showBrowserSettings: false,
         primaryAction: "none",
