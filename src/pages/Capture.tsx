@@ -9,6 +9,7 @@ import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
 import { PermissionError } from "@/components/capture/PermissionError";
+import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ArrowLeft, Pause } from "lucide-react";
@@ -127,7 +128,7 @@ export default function CapturePage() {
 
   // User clicks "End Capture" - stops recording and saves
   const handleEndCapture = async () => {
-    if (!session || !user) return;
+    if (!session) return;
     
     // Only proceed if we're recording or paused
     if (capture.captureState !== "recording" && capture.captureState !== "paused") {
@@ -136,6 +137,10 @@ export default function CapturePage() {
     }
 
     try {
+      // Capture thumbnail BEFORE stopping (while canvas is still active)
+      const thumbnailDataUrl = capture.captureThumbnail();
+      console.log("[Capture] Thumbnail captured:", thumbnailDataUrl ? "yes" : "no");
+
       // Stop recording and get data
       const recordedData = await capture.stopRecording();
       
@@ -143,49 +148,76 @@ export default function CapturePage() {
         throw new Error("No recorded data");
       }
 
-      // Upload the single composite recording
-      if (recordedData.compositeBlob) {
-        const compositePath = `${user.id}/${session.id}/gameplay.webm`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("video-assets")
-          .upload(compositePath, recordedData.compositeBlob, { contentType: "video/webm" });
-        
-        if (uploadError) throw uploadError;
-        
-        const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(compositePath);
-        
-        await createVideoAsset({
-          session_id: session.id,
-          user_id: user.id,
-          asset_type: "gameplay",
-          storage_url: urlData.publicUrl,
-          storage_path: compositePath,
-          duration_ms: recordedData.duration * 1000,
-          status: "ready",
-          processing_progress: 100,
-          mime_type: "video/webm",
-          file_size_bytes: recordedData.compositeBlob.size,
-          width: null,
-          height: null,
-          framerate: 60,
-          bitrate: null,
-          codec: null,
-          thumbnail_url: null,
-          thumbnail_sprite_url: null,
-          error_message: null,
-        });
-        
-        console.log(`[Capture] Uploaded composite video: ${recordedData.compositeBlob.size} bytes`);
-      } else {
+      if (!recordedData.compositeBlob) {
         throw new Error("No composite recording data");
       }
 
-      // Update session status
-      await updateCaptureSession(session.id, {
-        status: "ready",
-        duration_seconds: recordedData.duration,
-      });
+      // Save to IndexedDB for local persistence
+      const localSession: LocalSession = {
+        id: session.id,
+        title: session.title,
+        gameName: session.game_name,
+        createdAt: new Date().toISOString(),
+        duration: recordedData.duration,
+        hasCam: capture.captureConfig.hasCam,
+        hasMic: capture.captureConfig.hasMic,
+        hasSystemAudio: capture.captureConfig.hasSystemAudio,
+        visibility: "private",
+        thumbnailDataUrl,
+        blobSize: recordedData.compositeBlob.size,
+      };
+
+      await saveLocalSession(localSession, recordedData.compositeBlob);
+      console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes`);
+
+      // Also upload to Supabase if user is logged in
+      if (user) {
+        try {
+          const compositePath = `${user.id}/${session.id}/gameplay.webm`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from("video-assets")
+            .upload(compositePath, recordedData.compositeBlob, { contentType: "video/webm" });
+          
+          if (uploadError) {
+            console.warn("[Capture] Supabase upload failed, but local save succeeded:", uploadError);
+          } else {
+            const { data: urlData } = supabase.storage.from("video-assets").getPublicUrl(compositePath);
+            
+            await createVideoAsset({
+              session_id: session.id,
+              user_id: user.id,
+              asset_type: "gameplay",
+              storage_url: urlData.publicUrl,
+              storage_path: compositePath,
+              duration_ms: recordedData.duration * 1000,
+              status: "ready",
+              processing_progress: 100,
+              mime_type: "video/webm",
+              file_size_bytes: recordedData.compositeBlob.size,
+              width: null,
+              height: null,
+              framerate: 60,
+              bitrate: null,
+              codec: null,
+              thumbnail_url: thumbnailDataUrl,
+              thumbnail_sprite_url: null,
+              error_message: null,
+            });
+            
+            // Update session status in Supabase
+            await updateCaptureSession(session.id, {
+              status: "ready",
+              duration_seconds: recordedData.duration,
+              thumbnail_url: thumbnailDataUrl,
+            });
+            
+            console.log(`[Capture] Uploaded to Supabase: ${recordedData.compositeBlob.size} bytes`);
+          }
+        } catch (supabaseError) {
+          console.warn("[Capture] Supabase sync failed, but local save succeeded:", supabaseError);
+        }
+      }
 
       toast.success("Capture saved successfully!");
       

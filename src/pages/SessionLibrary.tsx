@@ -3,12 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { SessionLibraryCard } from "@/components/library/SessionLibraryCard";
+import { LocalSessionCard } from "@/components/library/LocalSessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { getSessionsWithAssets, SessionWithAssets } from "@/lib/sessionLibrary";
+import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -30,21 +33,26 @@ import {
   Filter,
   SortDesc,
   Clock,
-  Calendar,
-  Gamepad2
+  HardDrive,
+  Gamepad2,
+  Cloud
 } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "longest" | "shortest" | "name";
 type FilterStatus = "all" | "ready" | "recording" | "processing" | "failed";
 type FilterVisibility = "all" | "private" | "unlisted" | "public";
+type TabValue = "local" | "cloud";
 
 export default function SessionLibrary() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   
-  const [sessions, setSessions] = useState<SessionWithAssets[]>([]);
+  const [cloudSessions, setCloudSessions] = useState<SessionWithAssets[]>([]);
+  const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
+  const [storageUsage, setStorageUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
   const [loading, setLoading] = useState(true);
   const [showNewCapture, setShowNewCapture] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabValue>("local");
   
   // Filters and view state
   const [searchQuery, setSearchQuery] = useState("");
@@ -54,24 +62,25 @@ export default function SessionLibrary() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      navigate("/auth", { replace: true });
-    }
-  }, [user, authLoading, navigate]);
-
-  useEffect(() => {
-    if (user) {
-      loadSessions();
-    }
+    loadAllSessions();
   }, [user]);
 
-  const loadSessions = async () => {
-    if (!user) return;
-    
+  const loadAllSessions = async () => {
     setLoading(true);
     try {
-      const data = await getSessionsWithAssets(user.id);
-      setSessions(data);
+      // Always load local sessions
+      const [localData, usage] = await Promise.all([
+        getAllLocalSessions(),
+        getStorageUsage(),
+      ]);
+      setLocalSessions(localData);
+      setStorageUsage(usage);
+      
+      // Load cloud sessions if user is logged in
+      if (user) {
+        const cloudData = await getSessionsWithAssets(user.id);
+        setCloudSessions(cloudData);
+      }
     } catch (error) {
       console.error("Error loading sessions:", error);
     } finally {
@@ -79,9 +88,67 @@ export default function SessionLibrary() {
     }
   };
 
-  // Filter and sort sessions
-  const filteredSessions = useMemo(() => {
-    let result = [...sessions];
+  const loadLocalSessions = async () => {
+    try {
+      const [localData, usage] = await Promise.all([
+        getAllLocalSessions(),
+        getStorageUsage(),
+      ]);
+      setLocalSessions(localData);
+      setStorageUsage(usage);
+    } catch (error) {
+      console.error("Error loading local sessions:", error);
+    }
+  };
+
+  const loadCloudSessions = async () => {
+    if (!user) return;
+    try {
+      const cloudData = await getSessionsWithAssets(user.id);
+      setCloudSessions(cloudData);
+    } catch (error) {
+      console.error("Error loading cloud sessions:", error);
+    }
+  };
+
+  // Filter and sort local sessions
+  const filteredLocalSessions = useMemo(() => {
+    let result = [...localSessions];
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        s => s.title.toLowerCase().includes(query) || 
+             s.gameName?.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort
+    switch (sortBy) {
+      case "newest":
+        result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+      case "oldest":
+        result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        break;
+      case "longest":
+        result.sort((a, b) => b.duration - a.duration);
+        break;
+      case "shortest":
+        result.sort((a, b) => a.duration - b.duration);
+        break;
+      case "name":
+        result.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+    }
+
+    return result;
+  }, [localSessions, searchQuery, sortBy]);
+
+  // Filter and sort cloud sessions
+  const filteredCloudSessions = useMemo(() => {
+    let result = [...cloudSessions];
 
     // Search filter
     if (searchQuery) {
@@ -122,20 +189,32 @@ export default function SessionLibrary() {
     }
 
     return result;
-  }, [sessions, searchQuery, sortBy, filterStatus, filterVisibility]);
+  }, [cloudSessions, searchQuery, sortBy, filterStatus, filterVisibility]);
 
   // Stats
-  const stats = useMemo(() => {
-    const totalDuration = sessions.reduce((acc, s) => acc + s.duration_seconds, 0);
-    const uniqueGames = new Set(sessions.filter(s => s.game_name).map(s => s.game_name)).size;
+  const localStats = useMemo(() => {
+    const totalDuration = localSessions.reduce((acc, s) => acc + s.duration, 0);
+    const uniqueGames = new Set(localSessions.filter(s => s.gameName).map(s => s.gameName)).size;
     
     return {
-      total: sessions.length,
-      ready: sessions.filter(s => s.status === "ready").length,
+      total: localSessions.length,
+      totalDuration,
+      uniqueGames,
+      storageUsed: storageUsage.totalBytes,
+    };
+  }, [localSessions, storageUsage]);
+
+  const cloudStats = useMemo(() => {
+    const totalDuration = cloudSessions.reduce((acc, s) => acc + s.duration_seconds, 0);
+    const uniqueGames = new Set(cloudSessions.filter(s => s.game_name).map(s => s.game_name)).size;
+    
+    return {
+      total: cloudSessions.length,
+      ready: cloudSessions.filter(s => s.status === "ready").length,
       totalDuration,
       uniqueGames,
     };
-  }, [sessions]);
+  }, [cloudSessions]);
 
   const formatTotalDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -143,7 +222,7 @@ export default function SessionLibrary() {
     return `${hrs}h ${mins}m`;
   };
 
-  if (authLoading || !user) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -161,7 +240,7 @@ export default function SessionLibrary() {
           <div>
             <h1 className="text-3xl font-bold">Session Library</h1>
             <p className="text-muted-foreground mt-1">
-              {stats.total} sessions • {formatTotalDuration(stats.totalDuration)} total
+              {localStats.total + cloudStats.total} sessions • {formatTotalDuration(localStats.totalDuration + cloudStats.totalDuration)} total
             </p>
           </div>
           
@@ -175,218 +254,417 @@ export default function SessionLibrary() {
           </Button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <Card className="p-4 bg-card border-border/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <Video className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold font-mono-data">{stats.total}</p>
-                <p className="text-xs text-muted-foreground">Total Sessions</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4 bg-card border-border/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-vantage-success/10">
-                <Video className="h-5 w-5 text-vantage-success" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold font-mono-data">{stats.ready}</p>
-                <p className="text-xs text-muted-foreground">Ready</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4 bg-card border-border/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-accent/10">
-                <Clock className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold font-mono-data">{formatTotalDuration(stats.totalDuration)}</p>
-                <p className="text-xs text-muted-foreground">Total Duration</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4 bg-card border-border/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-vantage-warning/10">
-                <Gamepad2 className="h-5 w-5 text-vantage-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold font-mono-data">{stats.uniqueGames}</p>
-                <p className="text-xs text-muted-foreground">Games</p>
-              </div>
-            </div>
-          </Card>
-        </div>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="mb-6">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="local" className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4" />
+              Local ({localStats.total})
+            </TabsTrigger>
+            <TabsTrigger value="cloud" className="flex items-center gap-2" disabled={!user}>
+              <Cloud className="h-4 w-4" />
+              Cloud ({cloudStats.total})
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Filters */}
-        <Card className="p-4 bg-card border-border/50 mb-6">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search sessions..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-muted/50"
-              />
+          {/* Local Tab Content */}
+          <TabsContent value="local" className="mt-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <Card className="p-4 bg-card border-border/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Video className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold font-mono-data">{localStats.total}</p>
+                    <p className="text-xs text-muted-foreground">Recordings</p>
+                  </div>
+                </div>
+              </Card>
+              
+              <Card className="p-4 bg-card border-border/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-accent/10">
+                    <Clock className="h-5 w-5 text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold font-mono-data">{formatTotalDuration(localStats.totalDuration)}</p>
+                    <p className="text-xs text-muted-foreground">Total Duration</p>
+                  </div>
+                </div>
+              </Card>
+              
+              <Card className="p-4 bg-card border-border/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-vantage-warning/10">
+                    <Gamepad2 className="h-5 w-5 text-vantage-warning" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold font-mono-data">{localStats.uniqueGames}</p>
+                    <p className="text-xs text-muted-foreground">Games</p>
+                  </div>
+                </div>
+              </Card>
+              
+              <Card className="p-4 bg-card border-border/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-vantage-success/10">
+                    <HardDrive className="h-5 w-5 text-vantage-success" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold font-mono-data">{formatBytes(localStats.storageUsed)}</p>
+                    <p className="text-xs text-muted-foreground">Storage Used</p>
+                  </div>
+                </div>
+              </Card>
             </div>
 
             {/* Filters */}
-            <div className="flex items-center gap-3">
-              <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as FilterStatus)}>
-                <SelectTrigger className="w-[140px] bg-muted/50">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="ready">Ready</SelectItem>
-                  <SelectItem value="recording">Recording</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                </SelectContent>
-              </Select>
+            <Card className="p-4 bg-card border-border/50 mb-6">
+              <div className="flex flex-col lg:flex-row gap-4">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search recordings..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 bg-muted/50"
+                  />
+                </div>
 
-              <Select value={filterVisibility} onValueChange={(v) => setFilterVisibility(v as FilterVisibility)}>
-                <SelectTrigger className="w-[140px] bg-muted/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Privacy</SelectItem>
-                  <SelectItem value="private">Private</SelectItem>
-                  <SelectItem value="unlisted">Unlisted</SelectItem>
-                  <SelectItem value="public">Public</SelectItem>
-                </SelectContent>
-              </Select>
+                {/* Filters */}
+                <div className="flex items-center gap-3">
+                  <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                    <SelectTrigger className="w-[150px] bg-muted/50">
+                      <SortDesc className="h-4 w-4 mr-2" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest First</SelectItem>
+                      <SelectItem value="oldest">Oldest First</SelectItem>
+                      <SelectItem value="longest">Longest</SelectItem>
+                      <SelectItem value="shortest">Shortest</SelectItem>
+                      <SelectItem value="name">Name A-Z</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-                <SelectTrigger className="w-[150px] bg-muted/50">
-                  <SortDesc className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">Newest First</SelectItem>
-                  <SelectItem value="oldest">Oldest First</SelectItem>
-                  <SelectItem value="longest">Longest</SelectItem>
-                  <SelectItem value="shortest">Shortest</SelectItem>
-                  <SelectItem value="name">Name A-Z</SelectItem>
-                </SelectContent>
-              </Select>
+                  {/* View Toggle */}
+                  <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as "grid" | "list")}>
+                    <ToggleGroupItem value="grid" aria-label="Grid view">
+                      <Grid3X3 className="h-4 w-4" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="list" aria-label="List view">
+                      <List className="h-4 w-4" />
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </div>
 
-              {/* View Toggle */}
-              <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as "grid" | "list")}>
-                <ToggleGroupItem value="grid" aria-label="Grid view">
-                  <Grid3X3 className="h-4 w-4" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" aria-label="List view">
-                  <List className="h-4 w-4" />
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          </div>
-
-          {/* Active filters */}
-          {(searchQuery || filterStatus !== "all" || filterVisibility !== "all") && (
-            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
-              <span className="text-sm text-muted-foreground">Showing {filteredSessions.length} of {sessions.length}:</span>
+              {/* Active filters */}
               {searchQuery && (
-                <Badge variant="secondary" className="gap-1">
-                  "{searchQuery}"
-                  <button onClick={() => setSearchQuery("")} className="ml-1 hover:text-foreground">×</button>
-                </Badge>
+                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
+                  <span className="text-sm text-muted-foreground">Showing {filteredLocalSessions.length} of {localSessions.length}:</span>
+                  <Badge variant="secondary" className="gap-1">
+                    "{searchQuery}"
+                    <button onClick={() => setSearchQuery("")} className="ml-1 hover:text-foreground">×</button>
+                  </Badge>
+                </div>
               )}
-              {filterStatus !== "all" && (
-                <Badge variant="secondary" className="gap-1">
-                  Status: {filterStatus}
-                  <button onClick={() => setFilterStatus("all")} className="ml-1 hover:text-foreground">×</button>
-                </Badge>
-              )}
-              {filterVisibility !== "all" && (
-                <Badge variant="secondary" className="gap-1">
-                  {filterVisibility}
-                  <button onClick={() => setFilterVisibility("all")} className="ml-1 hover:text-foreground">×</button>
-                </Badge>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => {
-                setSearchQuery("");
-                setFilterStatus("all");
-                setFilterVisibility("all");
-              }}>
-                Clear all
-              </Button>
-            </div>
-          )}
-        </Card>
+            </Card>
 
-        {/* Sessions */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : filteredSessions.length === 0 ? (
-          <Card className="p-12 bg-card border-border/50 border-dashed">
-            <div className="text-center">
-              <Video className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              {sessions.length === 0 ? (
-                <>
-                  <h3 className="text-lg font-semibold mb-2">No captures yet</h3>
+            {/* Sessions */}
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : filteredLocalSessions.length === 0 ? (
+              <Card className="p-12 bg-card border-border/50 border-dashed">
+                <div className="text-center">
+                  <Video className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                  {localSessions.length === 0 ? (
+                    <>
+                      <h3 className="text-lg font-semibold mb-2">No recordings yet</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Start your first capture to begin recording gameplay
+                      </p>
+                      <Button onClick={() => setShowNewCapture(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create First Capture
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-lg font-semibold mb-2">No matching recordings</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Try adjusting your search
+                      </p>
+                      <Button variant="outline" onClick={() => setSearchQuery("")}>
+                        Clear Search
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </Card>
+            ) : viewMode === "grid" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredLocalSessions.map((session) => (
+                  <LocalSessionCard 
+                    key={session.id} 
+                    session={session} 
+                    onDeleted={loadLocalSessions}
+                    viewMode="grid"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLocalSessions.map((session) => (
+                  <LocalSessionCard 
+                    key={session.id} 
+                    session={session} 
+                    onDeleted={loadLocalSessions}
+                    viewMode="list"
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Cloud Tab Content */}
+          <TabsContent value="cloud" className="mt-6">
+            {!user ? (
+              <Card className="p-12 bg-card border-border/50 border-dashed">
+                <div className="text-center">
+                  <Cloud className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Sign in to access cloud sessions</h3>
                   <p className="text-muted-foreground mb-6">
-                    Start your first capture session to begin analyzing your gameplay
+                    Cloud sync allows you to access your recordings from any device
                   </p>
-                  <Button onClick={() => setShowNewCapture(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create First Capture
+                  <Button onClick={() => navigate("/auth")}>
+                    Sign In
                   </Button>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-semibold mb-2">No matching sessions</h3>
-                  <p className="text-muted-foreground mb-6">
-                    Try adjusting your search or filters
-                  </p>
-                  <Button variant="outline" onClick={() => {
-                    setSearchQuery("");
-                    setFilterStatus("all");
-                    setFilterVisibility("all");
-                  }}>
-                    Clear Filters
-                  </Button>
-                </>
-              )}
-            </div>
-          </Card>
-        ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredSessions.map((session) => (
-              <SessionLibraryCard 
-                key={session.id} 
-                session={session} 
-                onDeleted={loadSessions}
-                viewMode="grid"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredSessions.map((session) => (
-              <SessionLibraryCard 
-                key={session.id} 
-                session={session} 
-                onDeleted={loadSessions}
-                viewMode="list"
-              />
-            ))}
-          </div>
-        )}
+                </div>
+              </Card>
+            ) : (
+              <>
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  <Card className="p-4 bg-card border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Video className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold font-mono-data">{cloudStats.total}</p>
+                        <p className="text-xs text-muted-foreground">Total Sessions</p>
+                      </div>
+                    </div>
+                  </Card>
+                  
+                  <Card className="p-4 bg-card border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-vantage-success/10">
+                        <Video className="h-5 w-5 text-vantage-success" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold font-mono-data">{cloudStats.ready}</p>
+                        <p className="text-xs text-muted-foreground">Ready</p>
+                      </div>
+                    </div>
+                  </Card>
+                  
+                  <Card className="p-4 bg-card border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-accent/10">
+                        <Clock className="h-5 w-5 text-accent" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold font-mono-data">{formatTotalDuration(cloudStats.totalDuration)}</p>
+                        <p className="text-xs text-muted-foreground">Total Duration</p>
+                      </div>
+                    </div>
+                  </Card>
+                  
+                  <Card className="p-4 bg-card border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-vantage-warning/10">
+                        <Gamepad2 className="h-5 w-5 text-vantage-warning" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold font-mono-data">{cloudStats.uniqueGames}</p>
+                        <p className="text-xs text-muted-foreground">Games</p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Filters */}
+                <Card className="p-4 bg-card border-border/50 mb-6">
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    {/* Search */}
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search sessions..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 bg-muted/50"
+                      />
+                    </div>
+
+                    {/* Filters */}
+                    <div className="flex items-center gap-3">
+                      <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as FilterStatus)}>
+                        <SelectTrigger className="w-[140px] bg-muted/50">
+                          <Filter className="h-4 w-4 mr-2" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="recording">Recording</SelectItem>
+                          <SelectItem value="processing">Processing</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select value={filterVisibility} onValueChange={(v) => setFilterVisibility(v as FilterVisibility)}>
+                        <SelectTrigger className="w-[140px] bg-muted/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Privacy</SelectItem>
+                          <SelectItem value="private">Private</SelectItem>
+                          <SelectItem value="unlisted">Unlisted</SelectItem>
+                          <SelectItem value="public">Public</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                        <SelectTrigger className="w-[150px] bg-muted/50">
+                          <SortDesc className="h-4 w-4 mr-2" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="newest">Newest First</SelectItem>
+                          <SelectItem value="oldest">Oldest First</SelectItem>
+                          <SelectItem value="longest">Longest</SelectItem>
+                          <SelectItem value="shortest">Shortest</SelectItem>
+                          <SelectItem value="name">Name A-Z</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* View Toggle */}
+                      <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as "grid" | "list")}>
+                        <ToggleGroupItem value="grid" aria-label="Grid view">
+                          <Grid3X3 className="h-4 w-4" />
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="list" aria-label="List view">
+                          <List className="h-4 w-4" />
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+                  </div>
+
+                  {/* Active filters */}
+                  {(searchQuery || filterStatus !== "all" || filterVisibility !== "all") && (
+                    <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
+                      <span className="text-sm text-muted-foreground">Showing {filteredCloudSessions.length} of {cloudSessions.length}:</span>
+                      {searchQuery && (
+                        <Badge variant="secondary" className="gap-1">
+                          "{searchQuery}"
+                          <button onClick={() => setSearchQuery("")} className="ml-1 hover:text-foreground">×</button>
+                        </Badge>
+                      )}
+                      {filterStatus !== "all" && (
+                        <Badge variant="secondary" className="gap-1">
+                          Status: {filterStatus}
+                          <button onClick={() => setFilterStatus("all")} className="ml-1 hover:text-foreground">×</button>
+                        </Badge>
+                      )}
+                      {filterVisibility !== "all" && (
+                        <Badge variant="secondary" className="gap-1">
+                          {filterVisibility}
+                          <button onClick={() => setFilterVisibility("all")} className="ml-1 hover:text-foreground">×</button>
+                        </Badge>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setSearchQuery("");
+                        setFilterStatus("all");
+                        setFilterVisibility("all");
+                      }}>
+                        Clear all
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+
+                {/* Sessions */}
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredCloudSessions.length === 0 ? (
+                  <Card className="p-12 bg-card border-border/50 border-dashed">
+                    <div className="text-center">
+                      <Video className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                      {cloudSessions.length === 0 ? (
+                        <>
+                          <h3 className="text-lg font-semibold mb-2">No cloud sessions yet</h3>
+                          <p className="text-muted-foreground mb-6">
+                            Your recordings will be synced to the cloud when you're online
+                          </p>
+                          <Button onClick={() => setShowNewCapture(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create First Capture
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <h3 className="text-lg font-semibold mb-2">No matching sessions</h3>
+                          <p className="text-muted-foreground mb-6">
+                            Try adjusting your search or filters
+                          </p>
+                          <Button variant="outline" onClick={() => {
+                            setSearchQuery("");
+                            setFilterStatus("all");
+                            setFilterVisibility("all");
+                          }}>
+                            Clear Filters
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </Card>
+                ) : viewMode === "grid" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredCloudSessions.map((session) => (
+                      <SessionLibraryCard 
+                        key={session.id} 
+                        session={session} 
+                        onDeleted={loadCloudSessions}
+                        viewMode="grid"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredCloudSessions.map((session) => (
+                      <SessionLibraryCard 
+                        key={session.id} 
+                        session={session} 
+                        onDeleted={loadCloudSessions}
+                        viewMode="list"
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
       </main>
 
       <NewCaptureDialog open={showNewCapture} onOpenChange={setShowNewCapture} />

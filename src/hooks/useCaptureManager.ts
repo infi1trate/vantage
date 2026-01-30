@@ -92,6 +92,12 @@ export interface UseCaptureManagerReturn {
   selectMicrophone: (deviceId: string) => void;
   selectCamera: (deviceId: string) => void;
   refreshDevices: () => Promise<void>;
+  
+  // Thumbnail capture (only valid during recording/paused states)
+  captureThumbnail: () => string | null;
+  
+  // Config info for saving
+  captureConfig: { hasCam: boolean; hasMic: boolean; hasSystemAudio: boolean };
 }
 
 // Determine best supported video mime type with fallbacks
@@ -683,5 +689,15 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     selectMicrophone: microphone.selectDevice,
     selectCamera: facecam.selectDevice,
     refreshDevices,
+    
+    // Thumbnail capture
+    captureThumbnail: composite.captureThumbnail,
+    
+    // Config info
+    captureConfig: {
+      hasCam: config.enableFacecam && facecam.stream !== null,
+      hasMic: microphone.stream !== null,
+      hasSystemAudio: config.enableSystemAudio,
+    },
   };
 }
