@@ -311,6 +311,39 @@ export default function SessionReview() {
     }
   }, [localBlob, localSession]);
 
+  // Download handler for cloud sessions
+  const handleDownloadCloudRecording = useCallback(async () => {
+    const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
+    const sessionTitle = session?.title || "recording";
+    
+    if (!gameplayAsset?.storage_url) {
+      toast.error("No recording available to download");
+      return;
+    }
+    
+    try {
+      // Fetch the video file
+      const response = await fetch(gameplayAsset.storage_url);
+      if (!response.ok) throw new Error("Failed to fetch video");
+      
+      const blob = await response.blob();
+      const extension = gameplayAsset.mime_type?.includes("mp4") ? "mp4" : "webm";
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sessionTitle.replace(/[^a-z0-9]/gi, "_")}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Download started");
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download recording");
+    }
+  }, [videoAssets, session?.title]);
+
   const handleRequestAnalysis = useCallback(async () => {
     if (!session || !user) return;
 
@@ -498,10 +531,21 @@ export default function SessionReview() {
   const displayCreatedAt = isLocal ? localSession.createdAt : session?.created_at;
   const displaySessionId = isLocal ? localSession.id : session?.id;
   
+  const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
   const videoUrl = isLocal 
     ? localVideoUrl 
-    : (videoAssets.find(v => v.asset_type === "gameplay")?.storage_url || session?.video_url);
+    : (gameplayAsset?.storage_url || session?.video_url);
   const microphoneTrack = audioTracks.find(t => t.track_type === "microphone");
+
+  // Build videoMeta for cloud sessions from video asset data
+  const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
+    blobType: gameplayAsset.mime_type || null,
+    blobSize: gameplayAsset.file_size_bytes || null,
+    storedMimeType: gameplayAsset.mime_type || null,
+    videoDuration: gameplayAsset.duration_ms ? gameplayAsset.duration_ms / 1000 : null,
+    videoWidth: gameplayAsset.width || null,
+    videoHeight: gameplayAsset.height || null,
+  } : null;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -614,10 +658,10 @@ export default function SessionReview() {
                 events={events}
                 onAnnotationClick={handleAnnotationClick}
                 onDrawingCreated={handleDrawingCreated}
-                videoMeta={isLocal ? videoMeta : null}
+                videoMeta={isLocal ? videoMeta : cloudVideoMeta}
                 onVideoLoaded={handleVideoLoaded}
                 onVideoError={handleVideoError}
-                onDownloadRequest={isLocal ? handleDownloadRecording : undefined}
+                onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
               />
             </div>
           </div>
