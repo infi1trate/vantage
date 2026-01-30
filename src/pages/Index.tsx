@@ -5,6 +5,7 @@ import { TimelineSection } from "@/components/landing/TimelineSection";
 import { ValueSection } from "@/components/landing/ValueSection";
 import { SignalSection } from "@/components/landing/SignalSection";
 import { AudienceSection } from "@/components/landing/AudienceSection";
+import { QuoteSection } from "@/components/landing/QuoteSection";
 import { LivePreviewSection } from "@/components/landing/LivePreviewSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
 import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
@@ -22,6 +23,7 @@ const Index = () => {
       <ValueSection />
       <SignalSection />
       <AudienceSection />
+      <QuoteSection />
       <LivePreviewSection />
       <FeaturesSection />
       <StatsSection />
