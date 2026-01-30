@@ -4,9 +4,10 @@
  */
 
 const DB_NAME = "vantage_sessions";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped for thumbnail store
 const SESSIONS_STORE = "sessions";
 const BLOBS_STORE = "blobs";
+const THUMBNAILS_STORE = "thumbnails";
 
 /** Debug indicator of what stream was actually recorded */
 export type RecordedSourceType = "composed" | "screenOnly" | "unknown";
@@ -66,21 +67,36 @@ function openDatabase(): Promise<IDBDatabase> {
         db.createObjectStore(BLOBS_STORE, { keyPath: "id" });
         console.log("[LocalStorage] Created blobs store");
       }
+
+      // Create thumbnails store for thumbnail blobs (v2)
+      if (!db.objectStoreNames.contains(THUMBNAILS_STORE)) {
+        db.createObjectStore(THUMBNAILS_STORE, { keyPath: "id" });
+        console.log("[LocalStorage] Created thumbnails store");
+      }
     };
   });
 }
 
 /**
  * Save a recording session to IndexedDB
+ * @param session Session metadata
+ * @param blob Video blob
+ * @param thumbnailBlob Optional thumbnail blob (JPEG)
  */
 export async function saveLocalSession(
   session: LocalSession,
-  blob: Blob
+  blob: Blob,
+  thumbnailBlob?: Blob | null
 ): Promise<void> {
   const db = await openDatabase();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([SESSIONS_STORE, BLOBS_STORE], "readwrite");
+    const storeNames = [SESSIONS_STORE, BLOBS_STORE];
+    if (thumbnailBlob) {
+      storeNames.push(THUMBNAILS_STORE);
+    }
+    
+    const transaction = db.transaction(storeNames, "readwrite");
 
     transaction.onerror = () => {
       console.error("[LocalStorage] Transaction error:", transaction.error);
@@ -96,9 +112,16 @@ export async function saveLocalSession(
     const sessionsStore = transaction.objectStore(SESSIONS_STORE);
     sessionsStore.put({ ...session, blobSize: blob.size });
 
-    // Save blob
+    // Save video blob
     const blobsStore = transaction.objectStore(BLOBS_STORE);
     blobsStore.put({ id: session.id, blob });
+
+    // Save thumbnail blob if provided
+    if (thumbnailBlob) {
+      const thumbnailsStore = transaction.objectStore(THUMBNAILS_STORE);
+      thumbnailsStore.put({ id: session.id, blob: thumbnailBlob });
+      console.log(`[LocalStorage] Thumbnail saved: ${thumbnailBlob.size} bytes`);
+    }
   });
 }
 
@@ -174,13 +197,35 @@ export async function getLocalSessionBlob(sessionId: string): Promise<Blob | nul
 }
 
 /**
- * Delete a session and its blob from IndexedDB
+ * Get the thumbnail blob for a session
+ */
+export async function getLocalSessionThumbnail(sessionId: string): Promise<Blob | null> {
+  const db = await openDatabase();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(THUMBNAILS_STORE, "readonly");
+    const store = transaction.objectStore(THUMBNAILS_STORE);
+    const request = store.get(sessionId);
+
+    request.onerror = () => {
+      console.error("[LocalStorage] Failed to get thumbnail:", request.error);
+      reject(request.error);
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result?.blob || null);
+    };
+  });
+}
+
+/**
+ * Delete a session, its blob, and thumbnail from IndexedDB
  */
 export async function deleteLocalSession(sessionId: string): Promise<void> {
   const db = await openDatabase();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([SESSIONS_STORE, BLOBS_STORE], "readwrite");
+    const transaction = db.transaction([SESSIONS_STORE, BLOBS_STORE, THUMBNAILS_STORE], "readwrite");
 
     transaction.onerror = () => {
       console.error("[LocalStorage] Delete transaction error:", transaction.error);
@@ -192,9 +237,10 @@ export async function deleteLocalSession(sessionId: string): Promise<void> {
       resolve();
     };
 
-    // Delete from both stores
+    // Delete from all stores
     transaction.objectStore(SESSIONS_STORE).delete(sessionId);
     transaction.objectStore(BLOBS_STORE).delete(sessionId);
+    transaction.objectStore(THUMBNAILS_STORE).delete(sessionId);
   });
 }
 

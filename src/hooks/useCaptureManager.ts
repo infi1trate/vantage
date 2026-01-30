@@ -109,6 +109,7 @@ export interface UseCaptureManagerReturn {
   
   // Thumbnail capture (only valid during recording/paused states)
   captureThumbnail: () => string | null;
+  captureThumbnailBlob: () => Promise<Blob | null>;
   
   // Config info for saving
   captureConfig: { hasCam: boolean; hasMic: boolean; hasSystemAudio: boolean };
@@ -739,6 +740,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     
     // Thumbnail capture
     captureThumbnail: composite.captureThumbnail,
+    captureThumbnailBlob: composite.captureThumbnailBlob,
     
     // Config info
     captureConfig: {
