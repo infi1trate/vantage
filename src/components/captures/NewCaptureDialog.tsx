@@ -38,11 +38,13 @@ import {
   Monitor,
   Settings2,
   Volume2,
+  Circle,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { FacecamPreview } from "@/components/capture/FacecamPreview";
+import { FacecamPreview, type FrameShape } from "@/components/capture/FacecamPreview";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -79,6 +81,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [includeMicrophone, setIncludeMicrophone] = useState(true);
   const [includeFacecam, setIncludeFacecam] = useState(false);
   const [includeGameAudio, setIncludeGameAudio] = useState(true);
+  const [frameShape, setFrameShape] = useState<FrameShape>("circle");
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -102,6 +105,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setIncludeMicrophone(true);
       setIncludeFacecam(false);
       setIncludeGameAudio(true);
+      setFrameShape("circle");
     }
   }, [open]);
 
@@ -466,8 +470,55 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   disabled={loading}
                 />
 
+                {/* Frame Shape Selector */}
+                {includeFacecam && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground/80">Frame Shape</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFrameShape("circle")}
+                        className={cn(
+                          "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
+                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
+                          frameShape === "circle"
+                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
+                            : "border-border/40 bg-muted/20"
+                        )}
+                        disabled={loading}
+                      >
+                        <Circle 
+                          className={cn(
+                            "h-6 w-6 transition-colors",
+                            frameShape === "circle" ? "text-primary" : "text-muted-foreground/60"
+                          )} 
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFrameShape("rounded-square")}
+                        className={cn(
+                          "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
+                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
+                          frameShape === "rounded-square"
+                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
+                            : "border-border/40 bg-muted/20"
+                        )}
+                        disabled={loading}
+                      >
+                        <Square 
+                          className={cn(
+                            "h-5 w-5 rounded transition-colors",
+                            frameShape === "rounded-square" ? "text-primary" : "text-muted-foreground/60"
+                          )} 
+                        />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Live Camera Preview */}
-                <FacecamPreview enabled={includeFacecam} />
+                <FacecamPreview enabled={includeFacecam} frameShape={frameShape} />
               </div>
 
               {/* Screen Selection hint */}

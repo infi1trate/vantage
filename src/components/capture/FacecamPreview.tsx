@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export type FrameShape = "circle" | "rounded-square";
+
 interface FacecamPreviewProps {
   enabled: boolean;
+  frameShape?: FrameShape;
   className?: string;
 }
 
-export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
+export function FacecamPreview({ enabled, frameShape = "circle", className }: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,10 +75,26 @@ export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
     }
   }, [stream]);
 
+  const getFrameClasses = () => {
+    if (frameShape === "circle") {
+      return "rounded-full aspect-square";
+    }
+    return "rounded-2xl aspect-video";
+  };
+
+  const getContainerClasses = () => {
+    if (frameShape === "circle") {
+      return "aspect-square max-w-[180px] mx-auto";
+    }
+    return "aspect-video";
+  };
+
   if (!enabled) {
     return (
       <div className={cn(
-        "aspect-video bg-muted/20 rounded-lg border border-border/30 flex items-center justify-center",
+        "bg-muted/20 border border-border/30 flex items-center justify-center",
+        getContainerClasses(),
+        getFrameClasses(),
         className
       )}>
         <div className="text-center space-y-2">
@@ -89,7 +108,9 @@ export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
   if (loading) {
     return (
       <div className={cn(
-        "aspect-video bg-muted/20 rounded-lg border border-border/30 flex items-center justify-center",
+        "bg-muted/20 border border-border/30 flex items-center justify-center",
+        getContainerClasses(),
+        getFrameClasses(),
         className
       )}>
         <div className="text-center space-y-2">
@@ -103,7 +124,9 @@ export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
   if (error) {
     return (
       <div className={cn(
-        "aspect-video bg-muted/20 rounded-lg border border-destructive/30 flex items-center justify-center",
+        "bg-muted/20 border border-destructive/30 flex items-center justify-center",
+        getContainerClasses(),
+        getFrameClasses(),
         className
       )}>
         <div className="text-center space-y-2">
@@ -116,7 +139,9 @@ export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
 
   return (
     <div className={cn(
-      "aspect-video bg-black rounded-lg border border-border/30 overflow-hidden relative",
+      "bg-black border border-border/30 overflow-hidden relative",
+      getContainerClasses(),
+      getFrameClasses(),
       className
     )}>
       <video
@@ -124,9 +149,15 @@ export function FacecamPreview({ enabled, className }: FacecamPreviewProps) {
         autoPlay
         playsInline
         muted
-        className="w-full h-full object-cover scale-x-[-1]"
+        className={cn(
+          "w-full h-full object-cover scale-x-[-1]",
+          frameShape === "circle" && "rounded-full"
+        )}
       />
-      <div className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 rounded text-[10px] text-white/80">
+      <div className={cn(
+        "absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 rounded text-[10px] text-white/80",
+        frameShape === "circle" && "bottom-3 right-3"
+      )}>
         <Camera className="h-3 w-3" />
         <span>Live</span>
       </div>
