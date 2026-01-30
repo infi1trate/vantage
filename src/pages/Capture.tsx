@@ -8,7 +8,7 @@ import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { usePreflightChecks } from "@/hooks/usePreflightChecks";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
-import { CaptureSetup } from "@/components/capture/CaptureSetup";
+import { CaptureWizard } from "@/components/capture/CaptureWizard";
 import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
@@ -360,7 +360,7 @@ export default function CapturePage() {
               Cancel
             </Button>
             
-            <CaptureSetup
+            <CaptureWizard
               session={session}
               onStart={handleSetupComplete}
               isLoading={capture.captureState === "selecting_sources"}
