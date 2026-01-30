@@ -63,6 +63,8 @@ export interface VideoDecodeError {
 export interface VideoMetaInfo {
   blobType: string | null;
   blobSize: number | null;
+  /** Stored mimeType from the session record (mimeTypeUsed) */
+  storedMimeType: string | null;
   videoDuration: number | null;
   videoWidth: number | null;
   videoHeight: number | null;
@@ -207,23 +209,34 @@ export function FilmRoomPlayer({
     onVideoError?.(error);
   }, [onVideoError]);
 
-  // Get supported mime types for diagnostics
-  const getSupportedMimeTypes = useCallback(() => {
+  // Get supported mime types for diagnostics - check both recording and playback
+  const getMimeTypeSupportInfo = useCallback(() => {
     const types = [
+      "video/mp4;codecs=h264,aac",
+      "video/mp4",
       "video/webm;codecs=vp9,opus",
       "video/webm;codecs=vp8,opus",
       "video/webm;codecs=vp9",
       "video/webm;codecs=vp8",
       "video/webm",
-      "video/mp4;codecs=h264,aac",
-      "video/mp4",
     ];
-    return types.filter((type) => {
+    
+    const video = document.createElement("video");
+    
+    return types.map((type) => {
+      let canRecord = false;
+      let canPlayback = false;
+      
       try {
-        return MediaRecorder.isTypeSupported(type);
-      } catch {
-        return false;
-      }
+        canRecord = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type);
+      } catch { /* ignore */ }
+      
+      try {
+        const result = video.canPlayType(type);
+        canPlayback = result === "probably" || result === "maybe";
+      } catch { /* ignore */ }
+      
+      return { type, canRecord, canPlayback };
     });
   }, []);
 
@@ -567,7 +580,7 @@ export function FilmRoomPlayer({
               {/* Diagnostics panel */}
               <Collapsible open={showDiagnostics} onOpenChange={setShowDiagnostics}>
                 <CollapsibleContent>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-xs space-y-2 mt-2">
+                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-xs space-y-3 mt-2">
                     <div className="text-sm font-semibold text-foreground mb-2">Diagnostic Information</div>
                     
                     <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
@@ -585,28 +598,45 @@ export function FilmRoomPlayer({
                       
                       {videoMeta && (
                         <>
+                          <span className="text-muted-foreground">Stored mimeType:</span>
+                          <span className={videoMeta.storedMimeType ? "text-foreground" : "text-destructive"}>
+                            {videoMeta.storedMimeType || "none (legacy recording)"}
+                          </span>
                           <span className="text-muted-foreground">Blob Type:</span>
-                          <span>{videoMeta.blobType || "empty/unknown"}</span>
+                          <span className={videoMeta.blobType ? "text-foreground" : "text-warning"}>
+                            {videoMeta.blobType || "empty/unknown"}
+                          </span>
                           <span className="text-muted-foreground">Blob Size:</span>
                           <span>{videoMeta.blobSize ? `${(videoMeta.blobSize / 1024 / 1024).toFixed(2)} MB` : "N/A"}</span>
                         </>
                       )}
                       
-                      <span className="text-muted-foreground">Browser:</span>
-                      <span className="break-all">{navigator.userAgent}</span>
+                      <span className="text-muted-foreground">User Agent:</span>
+                      <span className="break-all text-[10px]">{navigator.userAgent}</span>
                     </div>
 
-                    <div className="pt-2 border-t border-border/50 mt-2">
-                      <span className="text-muted-foreground block mb-1">Supported Recording Formats:</span>
-                      <div className="flex flex-wrap gap-1">
-                        {getSupportedMimeTypes().map((type) => (
-                          <Badge key={type} variant="secondary" className="text-xs">
-                            {type}
-                          </Badge>
+                    <div className="pt-2 border-t border-border/50">
+                      <span className="text-muted-foreground block mb-2">MIME Type Support (Record / Playback):</span>
+                      <div className="space-y-1">
+                        {getMimeTypeSupportInfo().map(({ type, canRecord, canPlayback }) => (
+                          <div key={type} className="flex items-center justify-between">
+                            <span className="text-[10px]">{type.replace("video/", "")}</span>
+                            <div className="flex items-center gap-1">
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[9px] ${canRecord ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
+                              >
+                                rec {canRecord ? "✓" : "✗"}
+                              </Badge>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[9px] ${canPlayback ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
+                              >
+                                play {canPlayback ? "✓" : "✗"}
+                              </Badge>
+                            </div>
+                          </div>
                         ))}
-                        {getSupportedMimeTypes().length === 0 && (
-                          <span className="text-destructive">No supported formats detected</span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -622,7 +652,9 @@ export function FilmRoomPlayer({
             ref={videoRef}
             src={videoUrl}
             className="w-full h-full object-contain"
+            controls={false}
             playsInline
+            preload="metadata"
             onLoadedMetadata={handleVideoLoadedMetadata}
             onError={handleVideoError}
             onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}

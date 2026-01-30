@@ -161,6 +161,7 @@ export default function SessionReview() {
             setVideoMeta({
               blobType: blob.type || null,
               blobSize: blob.size,
+              storedMimeType: localData.mimeType || null,
               videoDuration: null, // Will be set by onLoadedMetadata
               videoWidth: null,
               videoHeight: null,
@@ -291,9 +292,9 @@ export default function SessionReview() {
     }
     
     try {
-      // Determine file extension from mimeType
-      const mimeType = localBlob.type || localSession.mimeType || "video/webm";
-      const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+      // Use stored fileExt if available, otherwise determine from mimeType
+      const extension = localSession.fileExt || 
+        (localBlob.type?.includes("mp4") || localSession.mimeType?.includes("mp4") ? "mp4" : "webm");
       
       const url = URL.createObjectURL(localBlob);
       const a = document.createElement("a");
