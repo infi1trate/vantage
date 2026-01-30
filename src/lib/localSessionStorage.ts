@@ -20,6 +20,10 @@ export interface LocalSession {
   visibility: "private" | "unlisted" | "public";
   thumbnailDataUrl: string | null;
   blobSize: number; // bytes
+  /** MIME type of the recording (e.g., "video/webm;codecs=vp9,opus") */
+  mimeType: string;
+  /** Duration in milliseconds for more precision */
+  durationMs?: number;
 }
 
 // Initialize the IndexedDB database

@@ -69,8 +69,13 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
 
   const handlePlay = async () => {
     try {
-      const blob = await getLocalSessionBlob(session.id);
+      let blob = await getLocalSessionBlob(session.id);
       if (blob) {
+        // Reconstruct blob with correct mimeType if needed
+        if (!blob.type || blob.type === "") {
+          const storedMimeType = session.mimeType || "video/webm";
+          blob = new Blob([blob], { type: storedMimeType });
+        }
         const url = URL.createObjectURL(blob);
         setVideoUrl(url);
         setShowPlayerDialog(true);
@@ -94,12 +99,22 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      const blob = await getLocalSessionBlob(session.id);
+      let blob = await getLocalSessionBlob(session.id);
       if (blob) {
+        // Reconstruct blob with correct mimeType if needed
+        if (!blob.type || blob.type === "") {
+          const storedMimeType = session.mimeType || "video/webm";
+          blob = new Blob([blob], { type: storedMimeType });
+        }
+        
+        // Determine file extension from mimeType
+        const mimeType = blob.type || session.mimeType || "video/webm";
+        const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+        
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${session.title.replace(/[^a-z0-9]/gi, "_")}_${format(new Date(session.createdAt), "yyyy-MM-dd")}.webm`;
+        a.download = `${session.title.replace(/[^a-z0-9]/gi, "_")}_${format(new Date(session.createdAt), "yyyy-MM-dd")}.${extension}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
