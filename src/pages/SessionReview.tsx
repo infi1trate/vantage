@@ -9,6 +9,8 @@ import { FramePin } from "@/components/player/FramePins";
 import { AnnotationSuggestion } from "@/components/player/SuggestionMarkers";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
+import { KeyboardShortcutsOverlay, useKeyboardShortcuts } from "@/components/player/KeyboardShortcutsOverlay";
+import { TimelineEmptyState } from "@/components/player/OnboardingHint";
 import {
   getCaptureSession,
   getAnnotations,
@@ -42,6 +44,7 @@ import {
   Trash2,
   Maximize2,
   Minimize2,
+  Keyboard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -90,6 +93,9 @@ export default function SessionReview() {
   // AI Suggestions state
   const [suggestions, setSuggestions] = useState<AnnotationSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  
+  // Keyboard shortcuts overlay
+  const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts();
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -601,8 +607,18 @@ export default function SessionReview() {
               size="icon"
               className="h-8 w-8"
               onClick={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
+              aria-label="Download recording"
             >
               <Download className="h-4 w-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setShowShortcuts(true)}
+              aria-label="Show keyboard shortcuts"
+            >
+              <Keyboard className="h-4 w-4" />
             </Button>
             {!focusMode && (
               <Button 
@@ -610,6 +626,7 @@ export default function SessionReview() {
                 size="icon"
                 className="h-8 w-8 text-destructive hover:text-destructive"
                 onClick={() => setDeleteDialogOpen(true)}
+                aria-label="Delete session"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -710,6 +727,12 @@ export default function SessionReview() {
           )}
         </div>
       </div>
+
+      {/* Keyboard shortcuts overlay */}
+      <KeyboardShortcutsOverlay 
+        open={showShortcuts} 
+        onOpenChange={setShowShortcuts} 
+      />
     </div>
   );
 }

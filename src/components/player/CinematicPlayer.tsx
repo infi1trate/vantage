@@ -6,6 +6,7 @@ import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
 import { FrameClickHandler } from "./FrameClickHandler";
 import { FramePins, FramePin } from "./FramePins";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
+import { TimelineEmptyState } from "./OnboardingHint";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -414,6 +415,11 @@ export function CinematicPlayer({
             onSuggestionAccept={onSuggestionAccept}
             onSuggestionDismiss={onSuggestionDismiss}
           />
+          
+          {/* Onboarding hint when no selection */}
+          {activeSelection.type === null && annotations.length === 0 && (
+            <TimelineEmptyState className="mt-2" />
+          )}
         </div>
       </div>
     </div>
