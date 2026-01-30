@@ -44,7 +44,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { FacecamPreview, type FrameShape } from "@/components/capture/FacecamPreview";
+import { FacecamPreview, type FrameShape, type CameraSize } from "@/components/capture/FacecamPreview";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -82,6 +82,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [includeFacecam, setIncludeFacecam] = useState(false);
   const [includeGameAudio, setIncludeGameAudio] = useState(true);
   const [frameShape, setFrameShape] = useState<FrameShape>("circle");
+  const [cameraSize, setCameraSize] = useState<CameraSize>("small");
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -106,6 +107,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setIncludeFacecam(false);
       setIncludeGameAudio(true);
       setFrameShape("circle");
+      setCameraSize("small");
     }
   }, [open]);
 
@@ -470,55 +472,91 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   disabled={loading}
                 />
 
-                {/* Frame Shape Selector */}
+                {/* Facecam Settings (only shown when enabled) */}
                 {includeFacecam && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground/80">Frame Shape</p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setFrameShape("circle")}
-                        className={cn(
-                          "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
-                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
-                          frameShape === "circle"
-                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                            : "border-border/40 bg-muted/20"
-                        )}
-                        disabled={loading}
-                      >
-                        <Circle 
+                  <>
+                    {/* Frame Shape Selector */}
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground/80">Frame Shape</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFrameShape("circle")}
                           className={cn(
-                            "h-6 w-6 transition-colors",
-                            frameShape === "circle" ? "text-primary" : "text-muted-foreground/60"
-                          )} 
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFrameShape("rounded-square")}
-                        className={cn(
-                          "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
-                          "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
-                          frameShape === "rounded-square"
-                            ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
-                            : "border-border/40 bg-muted/20"
-                        )}
-                        disabled={loading}
-                      >
-                        <Square 
+                            "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
+                            "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
+                            frameShape === "circle"
+                              ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
+                              : "border-border/40 bg-muted/20"
+                          )}
+                          disabled={loading}
+                        >
+                          <Circle 
+                            className={cn(
+                              "h-6 w-6 transition-colors",
+                              frameShape === "circle" ? "text-primary" : "text-muted-foreground/60"
+                            )} 
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFrameShape("rounded-square")}
                           className={cn(
-                            "h-5 w-5 rounded transition-colors",
-                            frameShape === "rounded-square" ? "text-primary" : "text-muted-foreground/60"
-                          )} 
-                        />
-                      </button>
+                            "flex items-center justify-center w-12 h-12 rounded-lg border-2 transition-all duration-200",
+                            "hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md",
+                            frameShape === "rounded-square"
+                              ? "border-primary bg-primary/10 shadow-[0_0_12px_-3px_hsl(var(--primary)/0.4)]"
+                              : "border-border/40 bg-muted/20"
+                          )}
+                          disabled={loading}
+                        >
+                          <Square 
+                            className={cn(
+                              "h-5 w-5 rounded transition-colors",
+                              frameShape === "rounded-square" ? "text-primary" : "text-muted-foreground/60"
+                            )} 
+                          />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Camera Size Selector */}
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground/80">Size</p>
+                      <div className="inline-flex rounded-lg border border-border/40 p-0.5 bg-muted/10">
+                        <button
+                          type="button"
+                          onClick={() => setCameraSize("small")}
+                          className={cn(
+                            "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                            cameraSize === "small"
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                          )}
+                          disabled={loading}
+                        >
+                          Small
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCameraSize("large")}
+                          className={cn(
+                            "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                            cameraSize === "large"
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                          )}
+                          disabled={loading}
+                        >
+                          Large
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {/* Live Camera Preview */}
-                <FacecamPreview enabled={includeFacecam} frameShape={frameShape} />
+                <FacecamPreview enabled={includeFacecam} frameShape={frameShape} cameraSize={cameraSize} />
               </div>
 
               {/* Screen Selection hint */}

@@ -3,14 +3,21 @@ import { Camera, CameraOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type FrameShape = "circle" | "rounded-square";
+export type CameraSize = "small" | "large";
 
 interface FacecamPreviewProps {
   enabled: boolean;
   frameShape?: FrameShape;
+  cameraSize?: CameraSize;
   className?: string;
 }
 
-export function FacecamPreview({ enabled, frameShape = "circle", className }: FacecamPreviewProps) {
+export function FacecamPreview({ 
+  enabled, 
+  frameShape = "circle", 
+  cameraSize = "small",
+  className 
+}: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,10 +90,16 @@ export function FacecamPreview({ enabled, frameShape = "circle", className }: Fa
   };
 
   const getContainerClasses = () => {
+    const sizeClasses = cameraSize === "large" 
+      ? "max-w-none" 
+      : frameShape === "circle" 
+        ? "max-w-[140px]" 
+        : "max-w-[200px]";
+    
     if (frameShape === "circle") {
-      return "aspect-square max-w-[180px] mx-auto";
+      return cn("aspect-square mx-auto", sizeClasses);
     }
-    return "aspect-video";
+    return cn("aspect-video mx-auto", sizeClasses);
   };
 
   if (!enabled) {
