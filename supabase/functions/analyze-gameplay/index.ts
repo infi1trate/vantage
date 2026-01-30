@@ -131,6 +131,18 @@ interface CoachingCard {
   evidence_summary: string[];
 }
 
+interface SessionSummary {
+  recurring_patterns: {
+    pattern: string;
+    event_count: number;
+    lens: CoachingLens;
+    evidence: string[];
+  }[];
+  focus_goal: string;
+  kpi: string;
+  checklist_item: string;
+}
+
 interface AnalysisResult {
   summary: string;
   overall_score: number;
@@ -138,7 +150,8 @@ interface AnalysisResult {
   event_analyses: EventAnalysis[];
   // Coach-generated coaching cards (actionable advice)
   coaching_cards: CoachingCard[];
-  // Legacy feedback cards (for backward compatibility, may be empty)
+  // Session-level summary (patterns, focus goal, KPI, checklist)
+  session_summary?: SessionSummary;
   feedback_cards: FeedbackCard[];
   patterns: {
     name: string;
@@ -847,7 +860,138 @@ For each event_analysis:
 
     analysisResult.coaching_cards = coachingCards;
 
-    console.log(`Analysis complete: ${analysisResult.event_analyses?.length || 0} analyses, ${coachingCards.length} coaching cards, ${allClipWindows.length} clip windows`);
+    // ========== PHASE 3: SESSION SUMMARIZER ==========
+    // Aggregate coaching cards into recurring patterns, focus goal, KPI, and checklist
+    let sessionSummary: SessionSummary | undefined;
+
+    if (coachingCards.length >= 2) {
+      console.log(`Starting Summarizer phase with ${coachingCards.length} coaching cards...`);
+
+      const summarizerSystemPrompt = `You are the AI Coach SUMMARIZER for Vantage post-session review.
+
+ROLE: Aggregate coaching cards into an encouraging, actionable session summary.
+
+CRITICAL RULES:
+- The session should feel COACHED, not critiqued
+- Focus on growth opportunities, not failures
+- Patterns must be supported by MULTIPLE events (≥2)
+- Focus goal must be achievable in ONE session
+
+TASK:
+1. Identify Top 2-3 RECURRING PATTERNS (only if multiple coaching cards share similar themes)
+   - Look for repeated lenses, similar coaching_tips, or related behaviors
+   - Each pattern must reference at least 2 events
+
+2. Generate ONE FOCUS GOAL for next session
+   - Specific, achievable in a single session
+   - Addresses the most impactful pattern
+
+3. Define ONE KPI to self-track
+   - Simple, observable metric player can count themselves
+   - Examples: "Deaths from overextending", "Times I checked minimap before pushing"
+
+4. Create ONE CHECKLIST ITEM
+   - Pre-game reminder that addresses the focus goal
+   - Actionable and easy to remember
+
+OUTPUT FORMAT:
+{
+  "recurring_patterns": [
+    {
+      "pattern": "Clear description of the recurring behavior",
+      "event_count": 3,
+      "lens": "Positioning",
+      "evidence": ["event_id_1", "event_id_2", "event_id_3"]
+    }
+  ],
+  "focus_goal": "One specific, achievable goal for next session",
+  "kpi": "Simple metric to self-track (e.g., 'Count how many times I info-check before engaging')",
+  "checklist_item": "Pre-game reminder (e.g., 'Before each round: call out one enemy position')"
+}
+
+TONE:
+- Supportive and growth-oriented
+- "You showed X tendency" not "You failed at X"
+- Frame patterns as opportunities, not problems`;
+
+      const summarizerUserPrompt = `Summarize this session's coaching cards:
+
+GAME: ${session.game_name || 'Unknown'}
+
+COACHING CARDS:
+${JSON.stringify(coachingCards.map(c => ({
+  event_id: c.event_id,
+  title: c.title,
+  lens: c.lens,
+  coaching_tip: c.coaching_tip,
+  confidence: c.confidence
+})), null, 2)}
+
+Generate:
+1. Only patterns supported by 2+ events (or return empty array if no clear patterns)
+2. One achievable focus goal for next session
+3. One simple KPI the player can track themselves
+4. One pre-game checklist reminder`;
+
+      try {
+        const summarizerResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${Deno.env.get("LOVABLE_API_KEY")}`,
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: summarizerSystemPrompt },
+              { role: "user", content: summarizerUserPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 1000,
+          }),
+        });
+
+        if (summarizerResponse.ok) {
+          const summarizerData = await summarizerResponse.json();
+          const summarizerContent = summarizerData.choices?.[0]?.message?.content;
+
+          if (summarizerContent) {
+            try {
+              // Extract JSON from response
+              const jsonMatch = summarizerContent.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsedSummary = JSON.parse(jsonMatch[0]);
+                
+                // Validate required fields
+                if (parsedSummary.focus_goal && parsedSummary.kpi && parsedSummary.checklist_item) {
+                  sessionSummary = {
+                    recurring_patterns: Array.isArray(parsedSummary.recurring_patterns) 
+                      ? parsedSummary.recurring_patterns.filter((p: any) => p.event_count >= 2)
+                      : [],
+                    focus_goal: parsedSummary.focus_goal,
+                    kpi: parsedSummary.kpi,
+                    checklist_item: parsedSummary.checklist_item,
+                  };
+                  
+                  console.log(`Summarizer phase complete: ${sessionSummary.recurring_patterns.length} patterns, goal="${sessionSummary.focus_goal.substring(0, 50)}..."`);
+                }
+              }
+            } catch (parseError) {
+              console.error("Failed to parse summarizer response:", summarizerContent);
+            }
+          }
+        } else {
+          console.error("Summarizer API error:", summarizerResponse.status);
+        }
+      } catch (summarizerError) {
+        console.error("Summarizer phase error:", summarizerError);
+        // Continue without summary - coaching cards are still valuable
+      }
+    }
+
+    analysisResult.session_summary = sessionSummary;
+
+    console.log(`Analysis complete: ${analysisResult.event_analyses?.length || 0} analyses, ${coachingCards.length} coaching cards, ${sessionSummary ? '1 summary' : 'no summary'}, ${allClipWindows.length} clip windows`);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
