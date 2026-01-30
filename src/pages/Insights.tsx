@@ -316,65 +316,62 @@ export default function Insights() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
-      <main className="flex-1 container py-6">
+      <main className="flex-1 container py-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-10">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Brain className="h-6 w-6 text-primary" />
-              Behavioral Insights
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Analysis</p>
+            <h1 className="font-display text-4xl lg:text-5xl tracking-wide text-foreground">
+              BEHAVIORAL INSIGHTS
             </h1>
-            <p className="text-muted-foreground">
-              Decision patterns and reasoning trends across your sessions
-            </p>
           </div>
 
           <Select value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-36 uppercase text-xs tracking-wider">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
+              <SelectItem value="7d" className="uppercase text-xs">Last 7 days</SelectItem>
+              <SelectItem value="30d" className="uppercase text-xs">Last 30 days</SelectItem>
+              <SelectItem value="90d" className="uppercase text-xs">Last 90 days</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {/* Overview cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+          <Card className="p-6 border-border/30 hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Sessions Reviewed</p>
+                <p className="font-display text-5xl text-foreground">{totalSessions}</p>
+              </div>
+              <div className="p-2 rounded bg-primary/10">
                 <Activity className="h-5 w-5 text-primary" />
               </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 border-border/30 hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold">{totalSessions}</p>
-                <p className="text-xs text-muted-foreground">Sessions reviewed</p>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Review Time</p>
+                <p className="font-display text-5xl text-foreground">{formatDuration(totalReviewTime).toUpperCase()}</p>
+              </div>
+              <div className="p-2 rounded bg-vantage-teal/10">
+                <Clock className="h-5 w-5 text-vantage-teal" />
               </div>
             </div>
           </Card>
 
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-accent/10">
-                <Clock className="h-5 w-5 text-accent" />
-              </div>
+          <Card className="p-6 border-border/30 hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatDuration(totalReviewTime)}</p>
-                <p className="text-xs text-muted-foreground">Total review time</p>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Patterns Found</p>
+                <p className="font-display text-5xl text-foreground">{patterns.length}</p>
               </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-vantage-success/10">
+              <div className="p-2 rounded bg-vantage-success/10">
                 <Target className="h-5 w-5 text-vantage-success" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{patterns.length}</p>
-                <p className="text-xs text-muted-foreground">Patterns identified</p>
               </div>
             </div>
           </Card>
@@ -382,10 +379,10 @@ export default function Insights() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Session Activity Heatmap */}
-          <Card className="p-4">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
+          <Card className="p-5 border-border/30">
+            <h3 className="font-display text-xl tracking-wide mb-4 flex items-center gap-2">
               <Calendar className="h-4 w-4 text-primary" />
-              Review Activity
+              REVIEW ACTIVITY
             </h3>
             
             <div className="space-y-2">
@@ -418,10 +415,10 @@ export default function Insights() {
           </Card>
 
           {/* Common Tags */}
-          <Card className="p-4">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
+          <Card className="p-5 border-border/30">
+            <h3 className="font-display text-xl tracking-wide mb-4 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-vantage-warning" />
-              Behavioral Tags
+              BEHAVIORAL TAGS
             </h3>
             
             <ScrollArea className="h-48">
@@ -472,10 +469,10 @@ export default function Insights() {
           </Card>
 
           {/* AI-Detected Patterns */}
-          <Card className="p-4 lg:col-span-2">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
+          <Card className="p-5 lg:col-span-2 border-border/30">
+            <h3 className="font-display text-xl tracking-wide mb-4 flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary" />
-              Recurring Patterns
+              RECURRING PATTERNS
             </h3>
             
             {patterns.length === 0 ? (
@@ -524,13 +521,13 @@ export default function Insights() {
           </Card>
 
           {/* Reasoning Language */}
-          <Card className="p-4 lg:col-span-2">
-            <h3 className="font-semibold flex items-center gap-2 mb-4">
-              <MessageSquare className="h-4 w-4 text-accent" />
-              Decision Language Patterns
+          <Card className="p-5 lg:col-span-2 border-border/30">
+            <h3 className="font-display text-xl tracking-wide mb-2 flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-vantage-teal" />
+              DECISION LANGUAGE
             </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Common phrases from your voice notes that reveal decision-making tendencies
+            <p className="text-xs text-muted-foreground mb-4 uppercase tracking-wider">
+              Common phrases from voice notes revealing decision-making tendencies
             </p>
             
             {reasoningPhrases.length === 0 ? (
@@ -589,13 +586,13 @@ export default function Insights() {
         </div>
 
         {/* Insight summary */}
-        <Card className="mt-6 p-4 bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10">
+        <Card className="mt-10 p-6 border-primary/20 bg-primary/5">
           <div className="flex items-start gap-4">
-            <div className="p-3 rounded-lg bg-primary/20">
+            <div className="p-3 rounded bg-primary/20">
               <Lightbulb className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <h4 className="font-semibold mb-1">Insight Summary</h4>
+              <h4 className="font-display text-xl tracking-wide mb-2">INSIGHT SUMMARY</h4>
               <p className="text-sm text-muted-foreground">
                 {totalSessions === 0 ? (
                   "Start reviewing sessions to build your behavioral profile. The more you annotate and analyze, the more patterns we can identify."

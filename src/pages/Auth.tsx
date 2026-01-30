@@ -5,10 +5,10 @@ import { signIn, signUp } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Crosshair, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 
 const authSchema = z.object({
@@ -96,34 +96,35 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-dark p-4">
-      {/* Background grid effect */}
-      <div className="fixed inset-0 bg-[linear-gradient(hsl(var(--border)/0.3)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.3)_1px,transparent_1px)] bg-[size:60px_60px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      {/* Subtle grid background */}
+      <div className="fixed inset-0 bg-[linear-gradient(hsl(var(--border)/0.15)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.15)_1px,transparent_1px)] bg-[size:80px_80px] [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_60%)]" />
       
       <div className="relative w-full max-w-md animate-fade-in">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-primary/10 border border-primary/30 glow-primary">
-              <Crosshair className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight">
-              <span className="text-gradient-primary">VANTAGE</span>
-            </h1>
-          </div>
-          <p className="text-muted-foreground">
-            Gameplay capture, review, and analysis
+        {/* Logo - Bold text only */}
+        <div className="text-center mb-10">
+          <h1 className="font-display text-6xl tracking-wide text-primary glow-text mb-3">
+            VANTAGE
+          </h1>
+          <p className="text-muted-foreground text-sm uppercase tracking-widest">
+            Gameplay Review & Analysis
           </p>
         </div>
 
-        <Card className="glass-strong border-border/50">
+        <Card className="glass-strong border-border/30">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "signin" | "signup")}>
             <CardHeader className="pb-4">
-              <TabsList className="grid w-full grid-cols-2 bg-muted/50">
-                <TabsTrigger value="signin" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <TabsList className="grid w-full grid-cols-2 bg-muted/30 p-1">
+                <TabsTrigger 
+                  value="signin" 
+                  className="font-medium uppercase text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
                   Sign In
                 </TabsTrigger>
-                <TabsTrigger value="signup" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger 
+                  value="signup" 
+                  className="font-medium uppercase text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
                   Sign Up
                 </TabsTrigger>
               </TabsList>
@@ -133,7 +134,7 @@ export default function Auth() {
               <TabsContent value="signin" className="mt-0">
                 <form onSubmit={handleSignIn} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signin-email">Email</Label>
+                    <Label htmlFor="signin-email" className="text-xs uppercase tracking-wider text-muted-foreground">Email</Label>
                     <Input
                       id="signin-email"
                       type="email"
@@ -142,11 +143,11 @@ export default function Auth() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       disabled={loading}
-                      className="bg-muted/50 border-border/50 focus:border-primary"
+                      className="bg-muted/30 border-border/50 focus:border-primary h-11"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="signin-password">Password</Label>
+                    <Label htmlFor="signin-password" className="text-xs uppercase tracking-wider text-muted-foreground">Password</Label>
                     <div className="relative">
                       <Input
                         id="signin-password"
@@ -156,7 +157,7 @@ export default function Auth() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         disabled={loading}
-                        className="bg-muted/50 border-border/50 focus:border-primary pr-10"
+                        className="bg-muted/30 border-border/50 focus:border-primary pr-10 h-11"
                       />
                       <button
                         type="button"
@@ -169,7 +170,7 @@ export default function Auth() {
                   </div>
                   <Button 
                     type="submit" 
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider h-11"
                     disabled={loading}
                   >
                     {loading ? (
@@ -187,7 +188,7 @@ export default function Auth() {
               <TabsContent value="signup" className="mt-0">
                 <form onSubmit={handleSignUp} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
+                    <Label htmlFor="signup-email" className="text-xs uppercase tracking-wider text-muted-foreground">Email</Label>
                     <Input
                       id="signup-email"
                       type="email"
@@ -196,11 +197,11 @@ export default function Auth() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       disabled={loading}
-                      className="bg-muted/50 border-border/50 focus:border-primary"
+                      className="bg-muted/30 border-border/50 focus:border-primary h-11"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
+                    <Label htmlFor="signup-password" className="text-xs uppercase tracking-wider text-muted-foreground">Password</Label>
                     <div className="relative">
                       <Input
                         id="signup-password"
@@ -210,7 +211,7 @@ export default function Auth() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         disabled={loading}
-                        className="bg-muted/50 border-border/50 focus:border-primary pr-10"
+                        className="bg-muted/30 border-border/50 focus:border-primary pr-10 h-11"
                       />
                       <button
                         type="button"
@@ -226,7 +227,7 @@ export default function Auth() {
                   </div>
                   <Button 
                     type="submit" 
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider h-11"
                     disabled={loading}
                   >
                     {loading ? (
@@ -244,8 +245,8 @@ export default function Auth() {
           </Tabs>
         </Card>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          By continuing, you agree to our Terms of Service and Privacy Policy.
+        <p className="text-center text-xs text-muted-foreground mt-6 uppercase tracking-wider">
+          By continuing, you agree to our Terms & Privacy Policy.
         </p>
       </div>
     </div>

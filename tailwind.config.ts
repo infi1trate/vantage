@@ -14,6 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
+        display: ['League Gothic', 'sans-serif'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
@@ -63,11 +64,11 @@ export default {
         },
         // VANTAGE custom colors
         vantage: {
-          glow: "hsl(var(--vantage-glow))",
+          lime: "hsl(var(--vantage-lime))",
           success: "hsl(var(--vantage-success))",
           warning: "hsl(var(--vantage-warning))",
           danger: "hsl(var(--vantage-danger))",
-          purple: "hsl(var(--vantage-purple))",
+          teal: "hsl(var(--vantage-teal))",
         },
       },
       borderRadius: {
@@ -129,11 +130,10 @@ export default {
         "shimmer": "linear-gradient(90deg, transparent, hsl(var(--primary) / 0.1), transparent)",
       },
       boxShadow: {
-        "glow": "0 0 20px hsl(var(--primary) / 0.3)",
-        "glow-lg": "0 0 40px hsl(var(--primary) / 0.4)",
-        "glow-accent": "0 0 20px hsl(var(--accent) / 0.3)",
-        "card": "0 4px 24px hsl(220 20% 0% / 0.5)",
-        "elevated": "0 8px 32px hsl(220 20% 0% / 0.6)",
+        "glow": "0 0 30px hsl(var(--primary) / 0.25)",
+        "glow-lg": "0 0 60px hsl(var(--primary) / 0.35)",
+        "card": "0 4px 24px hsl(0 0% 0% / 0.6)",
+        "elevated": "0 8px 40px hsl(0 0% 0% / 0.7)",
       },
     },
   },

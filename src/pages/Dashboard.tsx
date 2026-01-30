@@ -7,7 +7,7 @@ import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { getCaptureSessions, CaptureSession } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Plus, Video, Target, BarChart3, Users } from "lucide-react";
+import { Loader2, Plus, Video, BarChart3, Clock } from "lucide-react";
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -61,23 +61,21 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="container py-8">
+      <main className="container py-10">
         {/* Hero Section */}
-        <section className="mb-12">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <section className="mb-14">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
             <div>
-              <h1 className="text-3xl font-bold mb-2">
-                Welcome back, <span className="text-gradient-primary">{user.email?.split("@")[0]}</span>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Welcome back</p>
+              <h1 className="font-display text-5xl lg:text-6xl tracking-wide text-foreground">
+                {user.email?.split("@")[0].toUpperCase()}
               </h1>
-              <p className="text-muted-foreground">
-                Capture, analyze, and improve your gameplay
-              </p>
             </div>
             
             <Button 
               size="lg" 
               onClick={() => setShowNewCapture(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider glow-primary"
             >
               <Plus className="mr-2 h-5 w-5" />
               New Capture
@@ -85,42 +83,42 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* Stats */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-          <Card className="p-6 bg-card border-border/50">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Video className="h-6 w-6 text-primary" />
-              </div>
+        {/* Stats Grid */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14">
+          <Card className="p-6 bg-card border-border/30 group hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold font-mono-data">{stats.totalSessions}</p>
-                <p className="text-sm text-muted-foreground">Total Captures</p>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Total Captures</p>
+                <p className="font-display text-5xl text-foreground">{stats.totalSessions}</p>
+              </div>
+              <div className="p-2 rounded bg-primary/10">
+                <Video className="h-5 w-5 text-primary" />
               </div>
             </div>
           </Card>
           
-          <Card className="p-6 bg-card border-border/50">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-accent/10">
-                <Target className="h-6 w-6 text-accent" />
-              </div>
+          <Card className="p-6 bg-card border-border/30 group hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold font-mono-data">{stats.readySessions}</p>
-                <p className="text-sm text-muted-foreground">Ready for Review</p>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Ready for Review</p>
+                <p className="font-display text-5xl text-foreground">{stats.readySessions}</p>
+              </div>
+              <div className="p-2 rounded bg-vantage-success/10">
+                <BarChart3 className="h-5 w-5 text-vantage-success" />
               </div>
             </div>
           </Card>
           
-          <Card className="p-6 bg-card border-border/50">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-vantage-success/10">
-                <BarChart3 className="h-6 w-6 text-vantage-success" />
-              </div>
+          <Card className="p-6 bg-card border-border/30 group hover:border-primary/30 transition-colors">
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold font-mono-data">
-                  {Math.floor(stats.totalDuration / 3600)}h {Math.floor((stats.totalDuration % 3600) / 60)}m
+                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Time Recorded</p>
+                <p className="font-display text-5xl text-foreground">
+                  {Math.floor(stats.totalDuration / 3600)}H {Math.floor((stats.totalDuration % 3600) / 60)}M
                 </p>
-                <p className="text-sm text-muted-foreground">Gameplay Recorded</p>
+              </div>
+              <div className="p-2 rounded bg-vantage-teal/10">
+                <Clock className="h-5 w-5 text-vantage-teal" />
               </div>
             </div>
           </Card>
@@ -129,9 +127,9 @@ export default function Dashboard() {
         {/* Recent Captures */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold">Recent Captures</h2>
+            <h2 className="font-display text-2xl tracking-wide">Recent Captures</h2>
             {sessions.length > 6 && (
-              <Button variant="ghost" onClick={() => navigate("/library")}>
+              <Button variant="ghost" onClick={() => navigate("/library")} className="uppercase text-xs tracking-wider">
                 View all
               </Button>
             )}
@@ -142,14 +140,14 @@ export default function Dashboard() {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : recentSessions.length === 0 ? (
-            <Card className="p-12 bg-card border-border/50 border-dashed">
+            <Card className="p-12 bg-card border-border/30 border-dashed">
               <div className="text-center">
-                <Video className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No captures yet</h3>
-                <p className="text-muted-foreground mb-6">
-                  Start your first capture session to begin analyzing your gameplay
+                <Video className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+                <h3 className="font-display text-2xl mb-2">No Captures Yet</h3>
+                <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">
+                  Start your first capture session to begin analyzing your gameplay decisions
                 </p>
-                <Button onClick={() => setShowNewCapture(true)}>
+                <Button onClick={() => setShowNewCapture(true)} className="uppercase tracking-wider font-bold">
                   <Plus className="mr-2 h-4 w-4" />
                   Create First Capture
                 </Button>
