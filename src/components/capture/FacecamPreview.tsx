@@ -193,7 +193,7 @@ export function FacecamPreview({
   return (
     <div 
       className={cn(
-        "border border-border/30 overflow-hidden relative",
+        "border border-border/30 overflow-hidden relative transition-all duration-150 ease-out",
         getContainerClasses(),
         getFrameClasses(),
         className
@@ -206,13 +206,13 @@ export function FacecamPreview({
         playsInline
         muted
         className={cn(
-          "w-full h-full object-cover",
+          "w-full h-full object-cover transition-transform duration-150 ease-out",
           flipCamera && "scale-x-[-1]",
           frameShape === "circle" && "rounded-full"
         )}
       />
       <div className={cn(
-        "absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 rounded text-[10px] text-white/80",
+        "absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] text-white/80 transition-all duration-150",
         frameShape === "circle" && "bottom-3 right-3"
       )}>
         <Camera className="h-3 w-3" />
