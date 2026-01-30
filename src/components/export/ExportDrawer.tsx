@@ -23,6 +23,11 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useJobs, useCurrentJob } from "@/contexts/JobsContext";
 import { ExportJob } from "@/lib/exportJobs";
@@ -54,8 +59,11 @@ import {
   AlertCircle,
   Minimize2,
   RefreshCw,
+  Zap,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { exportToDesktop, generateExportFilename } from "@/lib/fileExport";
 
 export type ExportTab = "download" | "platforms" | "community";
 
@@ -67,6 +75,10 @@ export interface ExportDrawerProps {
   sessionTitle: string;
   sessionThumbnail?: string;
   sessionDuration?: number;
+  // Video source for export
+  videoUrl?: string;
+  videoBlob?: Blob;
+  // Track availability
   hasMicTrack?: boolean;
   hasWebcamTrack?: boolean;
   hasCaptions?: boolean;
@@ -174,7 +186,9 @@ export function ExportDrawer({
   sessionTitle,
   sessionThumbnail,
   sessionDuration = 300,
-  hasMicTrack = true,
+  videoUrl,
+  videoBlob,
+  hasMicTrack = false,
   hasWebcamTrack = false,
   hasCaptions = false,
   onExport,
@@ -186,6 +200,7 @@ export function ExportDrawer({
   
   const [activeTab, setActiveTab] = useState<ExportTab>(defaultTab);
   const [showProgress, setShowProgress] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Download tab state
   const [preset, setPreset] = useState<"source" | "1080p" | "720p" | "audio">("1080p");
@@ -203,6 +218,9 @@ export function ExportDrawer({
   const [allowComments, setAllowComments] = useState(true);
   const [allowAnnotations, setAllowAnnotations] = useState(false);
   const [allowRemixes, setAllowRemixes] = useState(false);
+
+  // Fast export mode (no transcoding available)
+  const isFastExport = true; // TODO: Check for transcoding capability
 
   // Reset to default tab when opening
   useEffect(() => {
@@ -229,23 +247,52 @@ export function ExportDrawer({
     }
   }, [preset]);
 
-  const handleExport = () => {
-    // Start a job instead of just calling onExport
-    startJob("desktop_export", sessionId, sessionTitle, {
+  const handleExport = async () => {
+    if (!videoUrl && !videoBlob) {
+      console.error("[Export] No video source available");
+      return;
+    }
+    
+    setIsExporting(true);
+    
+    // Start a job for tracking
+    const job = startJob("desktop_export", sessionId, sessionTitle, {
       preset,
       format,
       includeMic,
       includeWebcam,
       burnCaptions,
+      isFastExport,
     });
     setShowProgress(true);
-    onExport?.({
-      preset,
-      format,
-      includeMic,
-      includeWebcam,
-      burnCaptions,
-    });
+    
+    try {
+      // Perform the actual file download
+      const result = await exportToDesktop({
+        videoUrl,
+        videoBlob,
+        title: sessionTitle,
+        format: preset === "audio" ? (format as "mp3" | "wav") : (format as "mp4" | "mov"),
+        onProgress: (stage, progress) => {
+          console.log(`[Export] ${stage}: ${Math.round(progress * 100)}%`);
+        },
+      });
+      
+      console.log("[Export] Download started:", result.filename);
+      
+      // Notify parent
+      onExport?.({
+        preset,
+        format,
+        includeMic,
+        includeWebcam,
+        burnCaptions,
+      });
+    } catch (error) {
+      console.error("[Export] Failed:", error);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleAddTag = (tag: string) => {
@@ -620,50 +667,80 @@ export function ExportDrawer({
 
             {/* Toggles */}
             <div className="space-y-3">
-              {hasMicTrack && preset !== "audio" && (
+              {/* Mic toggle - show disabled if no mic track */}
+              {preset !== "audio" && (
                 <div className="flex items-center justify-between py-1">
                   <div className="flex items-center gap-2">
-                    <Mic className="h-4 w-4 text-muted-foreground" />
-                    <Label htmlFor="mic" className="text-sm cursor-pointer">
-                      Include microphone audio
-                    </Label>
+                    <Mic className={cn("h-4 w-4", hasMicTrack ? "text-muted-foreground" : "text-muted-foreground/40")} />
+                    <div>
+                      <Label 
+                        htmlFor="mic" 
+                        className={cn("text-sm", !hasMicTrack && "text-muted-foreground/60 cursor-not-allowed")}
+                      >
+                        Include microphone audio
+                      </Label>
+                      {!hasMicTrack && (
+                        <p className="text-[10px] text-muted-foreground/50">No microphone recorded</p>
+                      )}
+                    </div>
                   </div>
                   <Switch
                     id="mic"
                     checked={includeMic}
                     onCheckedChange={setIncludeMic}
+                    disabled={!hasMicTrack}
                   />
                 </div>
               )}
 
-              {hasWebcamTrack && preset !== "audio" && (
+              {/* Webcam toggle - show disabled if no webcam track */}
+              {preset !== "audio" && (
                 <div className="flex items-center justify-between py-1">
                   <div className="flex items-center gap-2">
-                    <Camera className="h-4 w-4 text-muted-foreground" />
-                    <Label htmlFor="webcam" className="text-sm cursor-pointer">
-                      Include webcam overlay
-                    </Label>
+                    <Camera className={cn("h-4 w-4", hasWebcamTrack ? "text-muted-foreground" : "text-muted-foreground/40")} />
+                    <div>
+                      <Label 
+                        htmlFor="webcam" 
+                        className={cn("text-sm", !hasWebcamTrack && "text-muted-foreground/60 cursor-not-allowed")}
+                      >
+                        Include webcam overlay
+                      </Label>
+                      {!hasWebcamTrack && (
+                        <p className="text-[10px] text-muted-foreground/50">No webcam recorded</p>
+                      )}
+                    </div>
                   </div>
                   <Switch
                     id="webcam"
                     checked={includeWebcam}
                     onCheckedChange={setIncludeWebcam}
+                    disabled={!hasWebcamTrack}
                   />
                 </div>
               )}
 
-              {hasCaptions && preset !== "audio" && (
+              {/* Captions toggle - show disabled if no captions */}
+              {preset !== "audio" && (
                 <div className="flex items-center justify-between py-1">
                   <div className="flex items-center gap-2">
-                    <Captions className="h-4 w-4 text-muted-foreground" />
-                    <Label htmlFor="captions" className="text-sm cursor-pointer">
-                      Burn in captions
-                    </Label>
+                    <Captions className={cn("h-4 w-4", hasCaptions ? "text-muted-foreground" : "text-muted-foreground/40")} />
+                    <div>
+                      <Label 
+                        htmlFor="captions" 
+                        className={cn("text-sm", !hasCaptions && "text-muted-foreground/60 cursor-not-allowed")}
+                      >
+                        Burn in captions
+                      </Label>
+                      {!hasCaptions && (
+                        <p className="text-[10px] text-muted-foreground/50">No captions available</p>
+                      )}
+                    </div>
                   </div>
                   <Switch
                     id="captions"
                     checked={burnCaptions}
                     onCheckedChange={setBurnCaptions}
+                    disabled={!hasCaptions}
                   />
                 </div>
               )}
@@ -898,6 +975,23 @@ export function ExportDrawer({
       <div className="p-4 border-t border-border/30 bg-background/95 backdrop-blur-sm">
         {activeTab === "download" && (
           <div className="space-y-3">
+            {/* Fast export indicator */}
+            {isFastExport && (
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <Zap className="h-3.5 w-3.5 text-primary" />
+                <span>Fast export</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button className="p-0.5 hover:bg-muted rounded">
+                      <Info className="h-3 w-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[200px]">
+                    <p className="text-xs">Exports the existing file without re-encoding. Original quality preserved.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
             {/* File info */}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5">
@@ -909,10 +1003,29 @@ export function ExportDrawer({
                 <span>{formatDuration(sessionDuration)}</span>
               </div>
             </div>
-            <Button onClick={handleExport} className="w-full gap-2" size="lg">
-              <Download className="h-4 w-4" />
-              <span>Export to Desktop</span>
+            <Button 
+              onClick={handleExport} 
+              className="w-full gap-2" 
+              size="lg"
+              disabled={isExporting || (!videoUrl && !videoBlob)}
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Exporting...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  <span>Export to Desktop</span>
+                </>
+              )}
             </Button>
+            {!videoUrl && !videoBlob && (
+              <p className="text-xs text-muted-foreground text-center">
+                Video not available for export
+              </p>
+            )}
           </div>
         )}
         
