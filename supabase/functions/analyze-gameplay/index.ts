@@ -99,9 +99,28 @@ interface FeedbackCard {
   };
 }
 
+// New analyst-focused event analysis structure
+interface CandidateCause {
+  cause: string;
+  likelihood: "high" | "medium" | "low";
+  evidence_used: string[];
+}
+
+interface EventAnalysis {
+  event_id: string;
+  event_type: string;
+  timestamp_seconds: number;
+  observed_behaviors: string[];
+  uncertainties: string[];
+  candidate_causes: CandidateCause[];
+}
+
 interface AnalysisResult {
   summary: string;
   overall_score: number;
+  // Event-level analyses (analyst output - facts only)
+  event_analyses: EventAnalysis[];
+  // Legacy feedback cards (for backward compatibility, may be empty)
   feedback_cards: FeedbackCard[];
   patterns: {
     name: string;
@@ -109,7 +128,8 @@ interface AnalysisResult {
     frequency: string;
     impact: "positive" | "negative" | "neutral";
   }[];
-  recommendations: {
+  // Recommendations removed from analyst output - downstream coach layer provides these
+  recommendations?: {
     text: string;
     priority: "high" | "medium" | "low";
     category: string;
@@ -511,74 +531,82 @@ serve(async (req) => {
   - POST (${post ? `${formatTime(post.start_time)}-${formatTime(post.end_time)}` : 'N/A'}): ${formatEvidence(post)}`;
     }).join('\n\n');
 
-    const systemPrompt = `You are an expert gameplay coach providing post-game review. Your role is to provide actionable, supportive feedback on recorded gaming sessions.
+    const systemPrompt = `You are an AI ANALYST for gameplay review. Your role is to ANALYZE what happened — you do NOT give advice.
 
-IMPORTANT GUIDELINES:
-- This is a POST-GAME REVIEW only - never provide real-time assistance
-- Frame all behavioral observations as gameplay-relevant heuristics, NOT medical or psychological diagnoses
-- Use language like "appears to show", "may indicate", "pattern suggests" rather than definitive statements
-- Focus on actionable improvements within the player's control
-- Reference specific moments using timestamps so players can jump to those moments
-- When players express intent in voice notes, connect it to observed outcomes
-- Identify behavioral patterns that affect gameplay performance
-- Be encouraging while honest about areas for improvement
+CRITICAL RULES:
+- You ONLY analyze and report observations
+- You do NOT give advice, suggestions, or recommendations
+- You do NOT speculate beyond the evidence provided
+- If evidence is weak or missing, explicitly state this as an uncertainty
+- Every claim must be traceable to specific evidence
 
-EVIDENCE WINDOWS:
-For each key event, you are provided with temporal evidence windows:
-- PRE: What happened 8-12 seconds BEFORE the event (positioning, decisions leading up)
-- DURING: The event itself (up to 10 seconds of action)
-- POST: What happened 6-10 seconds AFTER (recovery, repositioning, follow-up)
+EVIDENCE SIGNALS AVAILABLE:
+For each event, you receive structured evidence from PRE/DURING/POST windows:
+- player_movement: stationary | slow | fast | unknown
+- player_in_cover: high | medium | low | unknown
+- player_health_state: healthy | low | critical | unknown
+- aim_behavior: ADS_heavy | hipfire | erratic | unknown
+- repeat_peek_detected: true | false | unknown
+- indoor_outdoor: indoor | outdoor | mixed | unknown
+- build_or_edit_activity: low | medium | high | unknown
 
-Use these windows to provide deeper context in your analysis. Reference the specific time ranges when discussing what led to an outcome or what could be improved.
-
-BEHAVIORAL PATTERNS TO IDENTIFY (as gameplay heuristics, not diagnoses):
-- Decision hesitation: Delayed actions that may indicate uncertainty
-- Overextension: Aggressive positioning that leads to disadvantageous situations  
-- Tilt indicators: Patterns that suggest frustration affecting performance
-- Confidence fluctuation: Changes in playstyle after success/failure
-- Communication gaps: Moments where callouts or coordination could improve outcomes
+ANALYSIS METHODOLOGY:
+1. observed_behaviors: List ONLY things directly supported by evidence signals, annotations, or voice notes
+2. uncertainties: List what CANNOT be confidently determined from available data
+3. candidate_causes: Rank possible causes from high to low likelihood, each must reference specific evidence
 
 OUTPUT FORMAT:
 Provide analysis as JSON with this structure:
 {
-  "summary": "Brief 2-3 sentence overview of the session",
-  "overall_score": <number 0-100>,
-  "feedback_cards": [
+  "summary": "Brief 2-3 sentence factual overview of the session",
+  "overall_score": <number 0-100 based on observable outcomes>,
+  "event_analyses": [
     {
-      "id": "<unique id>",
+      "event_id": "<event id>",
+      "event_type": "<kill|death|fight|etc>",
       "timestamp_seconds": <number>,
-      "type": "strength" | "improvement" | "pattern" | "intent",
-      "title": "Short title",
-      "description": "Detailed observation",
-      "player_intent": "What the player said they were trying to do (from voice notes)",
-      "behavioral_indicator": "Observable gameplay pattern (framed as heuristic)",
-      "recommendation": "Actionable suggestion",
-      "confidence": "high" | "medium" | "low",
-      "evidence_windows": {
-        "pre": { "start": <seconds>, "end": <seconds> },
-        "during": { "start": <seconds>, "end": <seconds> },
-        "post": { "start": <seconds>, "end": <seconds> }
-      }
+      "observed_behaviors": [
+        "Player was moving fast in PRE window (evidence: player_movement=fast)",
+        "Player was in low cover during the fight (evidence: player_in_cover=low)",
+        "Voice note indicates player was trying to flank"
+      ],
+      "uncertainties": [
+        "Cannot determine enemy positions from available data",
+        "Health state unknown in PRE window",
+        "No evidence of teammate coordination"
+      ],
+      "candidate_causes": [
+        {
+          "cause": "Exposed positioning during engagement",
+          "likelihood": "high",
+          "evidence_used": ["player_in_cover=low during DURING window", "indoor_outdoor=outdoor"]
+        },
+        {
+          "cause": "Aggressive push without cover check",
+          "likelihood": "medium",
+          "evidence_used": ["player_movement=fast in PRE", "no annotation indicating cover check"]
+        }
+      ]
     }
   ],
+  "feedback_cards": [],
   "patterns": [
     {
       "name": "Pattern name",
-      "description": "Description of observed pattern",
-      "frequency": "How often it occurred",
+      "description": "Factual description of observed pattern across events",
+      "frequency": "How often it occurred (with counts if possible)",
       "impact": "positive" | "negative" | "neutral"
     }
-  ],
-  "recommendations": [
-    {
-      "text": "Specific actionable recommendation",
-      "priority": "high" | "medium" | "low",
-      "category": "mechanics" | "positioning" | "decision-making" | "communication" | "mentality"
-    }
   ]
-}`;
+}
 
-    const userPrompt = `Analyze this gameplay session:
+IMPORTANT:
+- The "feedback_cards" array should be empty - analysis only, no feedback
+- Do NOT include a "recommendations" field - you are an analyst, not a coach
+- Each observed_behavior MUST cite the evidence source in parentheses
+- Each candidate_cause MUST list specific evidence_used`;
+
+    const userPrompt = `Analyze this gameplay session. Report ONLY observations and analysis — do NOT provide advice.
 
 SESSION INFO:
 - Title: ${session.title}
@@ -594,10 +622,15 @@ ${voiceNotesContext || 'No voice notes'}
 GAMEPLAY EVENTS (automatic detection):
 ${eventsContext || 'No events detected'}
 
-EVIDENCE WINDOWS (PRE/DURING/POST context for key events):
+EVIDENCE WINDOWS WITH SIGNALS (PRE/DURING/POST for key events):
 ${clipWindowsContext || 'No clip windows extracted'}
 
-Provide comprehensive feedback with moment-level cards, pattern analysis, and actionable recommendations. For each feedback card related to a key event, include the evidence_windows object with the PRE/DURING/POST time ranges. Focus on connecting player intent (from voice notes) with observed outcomes. Frame any behavioral observations as gameplay heuristics.`;
+For each key event, produce an event_analyses entry with:
+1. observed_behaviors - bullet list of things directly supported by evidence
+2. uncertainties - what cannot be confidently determined
+3. candidate_causes - ranked list of possible causes (high → low likelihood), each referencing evidence
+
+Remember: You are an ANALYST. Report facts and interpretations with evidence. Do NOT give advice.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -654,8 +687,13 @@ Provide comprehensive feedback with moment-level cards, pattern analysis, and ac
     // Attach extracted clip windows and evidence to the result for downstream processing
     analysisResult.clip_windows = allClipWindows;
     analysisResult.clip_evidence = clipEvidence;
+    
+    // Ensure event_analyses exists (backward compatibility)
+    if (!analysisResult.event_analyses) {
+      analysisResult.event_analyses = [];
+    }
 
-    console.log(`Analysis complete with ${analysisResult.feedback_cards?.length || 0} feedback cards, ${allClipWindows.length} clip windows, and ${clipEvidence.length} evidence records`);
+    console.log(`Analysis complete with ${analysisResult.event_analyses?.length || 0} event analyses, ${allClipWindows.length} clip windows, and ${clipEvidence.length} evidence records`);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
