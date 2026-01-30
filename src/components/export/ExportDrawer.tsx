@@ -22,7 +22,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useJobs, useCurrentJob } from "@/contexts/JobsContext";
+import { ExportJob } from "@/lib/exportJobs";
 import {
   Download,
   Share2,
@@ -46,6 +49,11 @@ import {
   Pencil,
   Shuffle,
   X,
+  Loader2,
+  Check,
+  AlertCircle,
+  Minimize2,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -173,7 +181,11 @@ export function ExportDrawer({
   onPublish,
 }: ExportDrawerProps) {
   const isMobile = useIsMobile();
+  const { startJob, cancelJob, retryJob, setCurrentJobId } = useJobs();
+  const currentJob = useCurrentJob();
+  
   const [activeTab, setActiveTab] = useState<ExportTab>(defaultTab);
+  const [showProgress, setShowProgress] = useState(false);
 
   // Download tab state
   const [preset, setPreset] = useState<"source" | "1080p" | "720p" | "audio">("1080p");
@@ -196,8 +208,17 @@ export function ExportDrawer({
   useEffect(() => {
     if (open) {
       setActiveTab(defaultTab);
+      setShowProgress(false);
+      setCurrentJobId(null);
     }
-  }, [open, defaultTab]);
+  }, [open, defaultTab, setCurrentJobId]);
+
+  // Show progress when job starts
+  useEffect(() => {
+    if (currentJob && (currentJob.status === "pending" || currentJob.status === "processing")) {
+      setShowProgress(true);
+    }
+  }, [currentJob]);
 
   // Update format when preset changes
   useEffect(() => {
@@ -209,6 +230,15 @@ export function ExportDrawer({
   }, [preset]);
 
   const handleExport = () => {
+    // Start a job instead of just calling onExport
+    startJob("desktop_export", sessionId, sessionTitle, {
+      preset,
+      format,
+      includeMic,
+      includeWebcam,
+      burnCaptions,
+    });
+    setShowProgress(true);
     onExport?.({
       preset,
       format,
@@ -216,7 +246,6 @@ export function ExportDrawer({
       includeWebcam,
       burnCaptions,
     });
-    onOpenChange(false);
   };
 
   const handleAddTag = (tag: string) => {
@@ -239,6 +268,17 @@ export function ExportDrawer({
   };
 
   const handlePublish = () => {
+    // Start a community post job
+    startJob("community_post", sessionId, sessionTitle, {
+      title: title.trim(),
+      description: description.trim(),
+      tags,
+      visibility,
+      allowComments,
+      allowAnnotations,
+      allowRemixes,
+    });
+    setShowProgress(true);
     onPublish?.({
       platform: "vantage",
       title: title.trim(),
@@ -249,8 +289,195 @@ export function ExportDrawer({
       allowAnnotations,
       allowRemixes,
     });
+  };
+
+  const handleMinimize = () => {
     onOpenChange(false);
   };
+
+  const handleCancelJob = () => {
+    if (currentJob) {
+      cancelJob(currentJob.id);
+      setShowProgress(false);
+      setCurrentJobId(null);
+    }
+  };
+
+  const handleRetryJob = () => {
+    if (currentJob) {
+      retryJob(currentJob.id);
+    }
+  };
+
+  const handleCloseProgress = () => {
+    setShowProgress(false);
+    setCurrentJobId(null);
+    if (currentJob?.status === "completed") {
+      onOpenChange(false);
+    }
+  };
+
+  // Progress panel content
+  const progressContent = currentJob && showProgress ? (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 p-4 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {currentJob.status === "processing" || currentJob.status === "pending" ? (
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            ) : currentJob.status === "completed" ? (
+              <div className="p-1 rounded-full bg-primary/10">
+                <Check className="h-4 w-4 text-primary" />
+              </div>
+            ) : (
+              <div className="p-1 rounded-full bg-destructive/10">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+              </div>
+            )}
+            <span className="font-display text-lg tracking-wide">
+              {currentJob.status === "completed" ? "COMPLETE" : 
+               currentJob.status === "failed" ? "FAILED" :
+               currentJob.status === "cancelled" ? "CANCELLED" :
+               "EXPORTING"}
+            </span>
+          </div>
+        </div>
+
+        {/* Session info */}
+        <div className="p-3 rounded-lg bg-muted/20 border border-border/30">
+          <p className="text-sm font-medium truncate">{currentJob.sessionTitle}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {currentJob.config.preset} • {currentJob.config.format?.toUpperCase()}
+          </p>
+        </div>
+
+        {/* Progress stages */}
+        <div className="space-y-3">
+          {currentJob.stages.map((stage, i) => (
+            <div key={stage.id} className="flex items-center gap-3">
+              <div className={cn(
+                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
+                stage.status === "completed" && "bg-primary text-primary-foreground",
+                stage.status === "active" && "bg-primary/20 text-primary border-2 border-primary",
+                stage.status === "pending" && "bg-muted text-muted-foreground",
+                stage.status === "failed" && "bg-destructive text-destructive-foreground"
+              )}>
+                {stage.status === "completed" ? (
+                  <Check className="h-3 w-3" />
+                ) : stage.status === "active" ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : stage.status === "failed" ? (
+                  <X className="h-3 w-3" />
+                ) : (
+                  i + 1
+                )}
+              </div>
+              <span className={cn(
+                "text-sm",
+                stage.status === "active" && "text-primary font-medium",
+                stage.status === "completed" && "text-foreground",
+                stage.status === "pending" && "text-muted-foreground",
+                stage.status === "failed" && "text-destructive"
+              )}>
+                {stage.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {currentJob.status === "failed" && currentJob.errorMessage && (
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <p className="text-sm text-destructive">{currentJob.errorMessage}</p>
+          </div>
+        )}
+
+        {/* Success results */}
+        {currentJob.status === "completed" && (
+          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+            {currentJob.outputPath && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Saved to:</span>{" "}
+                <span className="font-mono text-xs">{currentJob.outputPath}</span>
+              </p>
+            )}
+            {currentJob.shareLink && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={() => {
+                  navigator.clipboard.writeText(currentJob.shareLink!);
+                }}
+              >
+                <LinkIcon className="h-3.5 w-3.5" />
+                Copy Link
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="p-4 border-t border-border/30 bg-background/95">
+        {(currentJob.status === "pending" || currentJob.status === "processing") && (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={handleMinimize}
+            >
+              <Minimize2 className="h-4 w-4" />
+              Run in background
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleCancelJob}
+              className="text-destructive hover:text-destructive"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+          </div>
+        )}
+        
+        {currentJob.status === "completed" && (
+          <Button onClick={handleCloseProgress} className="w-full gap-2">
+            <Check className="h-4 w-4" />
+            Done
+          </Button>
+        )}
+        
+        {currentJob.status === "failed" && (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleCloseProgress}
+            >
+              Close
+            </Button>
+            {currentJob.retryCount < currentJob.maxRetries && (
+              <Button
+                className="flex-1 gap-2"
+                onClick={handleRetryJob}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </Button>
+            )}
+          </div>
+        )}
+        
+        {currentJob.status === "cancelled" && (
+          <Button variant="outline" onClick={handleCloseProgress} className="w-full">
+            Close
+          </Button>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   const content = (
     <div className="flex flex-col h-full">
@@ -710,6 +937,16 @@ export function ExportDrawer({
     </div>
   );
 
+  // Determine which content to show
+  const displayContent = showProgress && currentJob ? progressContent : content;
+  const displayTitle = showProgress && currentJob 
+    ? (currentJob.status === "completed" ? "COMPLETE" : 
+       currentJob.status === "failed" ? "FAILED" : "EXPORTING")
+    : "EXPORT";
+  const displayDescription = showProgress && currentJob
+    ? currentJob.sessionTitle
+    : "Publish or save your video";
+
   // Use Drawer for mobile, Sheet for desktop
   if (isMobile) {
     return (
@@ -717,13 +954,13 @@ export function ExportDrawer({
         <DrawerContent className="max-h-[90vh] flex flex-col">
           <DrawerHeader className="pb-0 text-left">
             <DrawerTitle className="font-display text-xl tracking-wide">
-              EXPORT
+              {displayTitle}
             </DrawerTitle>
-            <DrawerDescription className="text-sm text-muted-foreground">
-              Publish or save your video
+            <DrawerDescription className="text-sm text-muted-foreground truncate">
+              {displayDescription}
             </DrawerDescription>
           </DrawerHeader>
-          <div className="flex-1 min-h-0 overflow-hidden">{content}</div>
+          <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
         </DrawerContent>
       </Drawer>
     );
@@ -734,13 +971,13 @@ export function ExportDrawer({
       <SheetContent className="w-[400px] sm:w-[440px] p-0 flex flex-col gap-0">
         <SheetHeader className="p-4 pb-0 text-left">
           <SheetTitle className="font-display text-xl tracking-wide">
-            EXPORT
+            {displayTitle}
           </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            Publish or save your video
+          <SheetDescription className="text-sm text-muted-foreground truncate">
+            {displayDescription}
           </SheetDescription>
         </SheetHeader>
-        <div className="flex-1 min-h-0 overflow-hidden">{content}</div>
+        <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
       </SheetContent>
     </Sheet>
   );
