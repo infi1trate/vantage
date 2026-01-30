@@ -56,10 +56,8 @@ const MAX_COMPLETED_JOBS = 20;
 // Default stages for each job type
 const DEFAULT_STAGES: Record<JobType, Omit<JobStage, "status">[]> = {
   desktop_export: [
-    { id: "prepare", label: "Preparing" },
-    { id: "render", label: "Rendering video" },
-    { id: "encode", label: "Encoding" },
-    { id: "finalize", label: "Finalizing" },
+    { id: "prepare", label: "Preparing file" },
+    { id: "download", label: "Downloading" },
   ],
   platform_publish: [
     { id: "prepare", label: "Preparing" },
@@ -271,6 +269,7 @@ export function getJob(jobId: string): ExportJob | null {
 
 /**
  * Simulate job processing (for demo/local mode)
+ * For desktop_export with fast export, this completes quickly
  * In production, this would be replaced by actual backend processing
  */
 export async function simulateJobProcessing(
@@ -289,10 +288,16 @@ export async function simulateJobProcessing(
   if (!job) return null;
   onProgress(job);
   
+  // For desktop fast export, complete quickly (file download is handled separately)
+  const isFastExport = job.type === "desktop_export" && job.config.isFastExport;
+  
   // Process each stage
   for (let i = 0; i < job.stages.length; i++) {
-    // Simulate stage duration (1.5-3 seconds per stage)
-    const duration = 1500 + Math.random() * 1500;
+    // Fast export stages are quick, others take longer
+    const duration = isFastExport 
+      ? 300 + Math.random() * 200  // 300-500ms for fast export
+      : 1500 + Math.random() * 1500; // 1.5-3s for other jobs
+    
     await new Promise(resolve => setTimeout(resolve, duration));
     
     // Check if job was cancelled
@@ -314,9 +319,11 @@ export async function simulateJobProcessing(
     completedAt: new Date().toISOString(),
   };
   
-  // Add mock outputs based on job type
+  // Add outputs based on job type
   if (job.type === "desktop_export") {
-    result.outputPath = `~/Downloads/${job.sessionTitle.replace(/[^a-z0-9]/gi, "_")}.${job.config.format || "mp4"}`;
+    const ext = job.config.format || "mp4";
+    const safeTitle = job.sessionTitle.replace(/[^a-z0-9]/gi, "_").substring(0, 50);
+    result.outputPath = `~/Downloads/Vantage_${safeTitle}.${ext}`;
   } else if (job.type === "community_post") {
     result.shareLink = `${window.location.origin}/session/${job.sessionId}`;
   } else if (job.type === "platform_publish") {

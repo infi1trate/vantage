@@ -19,6 +19,7 @@ import {
   getVoiceNotes,
   getVideoAssets,
   getAudioTracks,
+  getFacecamTracks,
   deleteAnnotation,
   createAnnotation,
   permanentlyDeleteSession,
@@ -28,6 +29,7 @@ import {
   VoiceNote,
   VideoAsset,
   AudioTrack,
+  FacecamTrack,
 } from "@/lib/captures";
 import {
   getLocalSession,
@@ -67,6 +69,7 @@ export default function SessionReview() {
 
   const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [facecamTracks, setFacecamTracks] = useState<FacecamTrack[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
   
@@ -171,10 +174,11 @@ export default function SessionReview() {
         return;
       }
 
-      const [sessionData, videoAssetsData, audioTracksData, annotationsData, voiceNotesData] = await Promise.all([
+      const [sessionData, videoAssetsData, audioTracksData, facecamTracksData, annotationsData, voiceNotesData] = await Promise.all([
         getCaptureSession(sessionId!),
         getVideoAssets(sessionId!).catch(() => []),
         getAudioTracks(sessionId!).catch(() => []),
+        getFacecamTracks(sessionId!).catch(() => []),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
       ]);
@@ -182,6 +186,7 @@ export default function SessionReview() {
       setSession(sessionData);
       setVideoAssets(videoAssetsData);
       setAudioTracks(audioTracksData);
+      setFacecamTracks(facecamTracksData);
       setAnnotations(annotationsData);
       setVoiceNotes(voiceNotesData);
     } catch (error) {
@@ -596,6 +601,11 @@ export default function SessionReview() {
               <ExportCTAs
                 sessionId={displaySessionId || sessionId || ""}
                 sessionTitle={displayTitle}
+                sessionDuration={displayDuration}
+                videoUrl={videoUrl || undefined}
+                videoBlob={isLocal ? localBlob || undefined : undefined}
+                hasMicTrack={audioTracks.some(t => t.track_type === "microphone")}
+                hasWebcamTrack={facecamTracks.length > 0}
                 variant="header"
               />
             )}

@@ -9,6 +9,8 @@ interface ExportCTAsProps {
   sessionTitle: string;
   sessionThumbnail?: string;
   sessionDuration?: number;
+  videoUrl?: string;
+  videoBlob?: Blob;
   hasMicTrack?: boolean;
   hasWebcamTrack?: boolean;
   onExport?: (options: ExportOptions) => void;
@@ -26,6 +28,8 @@ export function ExportCTAs({
   sessionTitle,
   sessionThumbnail,
   sessionDuration,
+  videoUrl,
+  videoBlob,
   hasMicTrack,
   hasWebcamTrack,
   onExport,
@@ -87,6 +91,8 @@ export function ExportCTAs({
           sessionTitle={sessionTitle}
           sessionThumbnail={sessionThumbnail}
           sessionDuration={sessionDuration}
+          videoUrl={videoUrl}
+          videoBlob={videoBlob}
           hasMicTrack={hasMicTrack}
           hasWebcamTrack={hasWebcamTrack}
           onExport={onExport}
@@ -126,6 +132,8 @@ export function ExportCTAs({
         sessionTitle={sessionTitle}
         sessionThumbnail={sessionThumbnail}
         sessionDuration={sessionDuration}
+        videoUrl={videoUrl}
+        videoBlob={videoBlob}
         hasMicTrack={hasMicTrack}
         hasWebcamTrack={hasWebcamTrack}
         onExport={onExport}
