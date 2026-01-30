@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
 
 export interface MicrophoneOptions {
   deviceId?: string;
@@ -16,6 +17,7 @@ export interface UseMicrophoneCaptureReturn {
   isCapturing: boolean;
   stream: MediaStream | null;
   error: string | null;
+  captureError: CaptureError | null;
   permissionDenied: boolean;
   availableDevices: AudioDevice[];
   selectedDeviceId: string | null;
@@ -30,6 +32,7 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
   const [isCapturing, setIsCapturing] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<CaptureError | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<AudioDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -108,6 +111,7 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
   const startCapture = useCallback(async (options?: MicrophoneOptions): Promise<MediaStream | null> => {
     try {
       setError(null);
+      setCaptureError(null);
       setPermissionDenied(false);
 
       const constraints: MediaStreamConstraints = {
@@ -132,15 +136,12 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
     } catch (err: any) {
       console.error("Microphone capture error:", err);
       
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      const parsedError = parseMediaError(err, "microphone");
+      setError(parsedError.message);
+      setCaptureError(parsedError);
+      
+      if (parsedError.code === "PERMISSION_DENIED") {
         setPermissionDenied(true);
-        setError("Microphone permission denied. Please allow microphone access to record voice.");
-      } else if (err.name === "NotFoundError") {
-        setError("No microphone found. Please connect a microphone.");
-      } else if (err.name === "NotReadableError") {
-        setError("Microphone is in use by another application.");
-      } else {
-        setError(err.message || "Failed to start microphone capture.");
       }
       
       return null;
@@ -176,6 +177,7 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
     isCapturing,
     stream,
     error,
+    captureError,
     permissionDenied,
     availableDevices,
     selectedDeviceId,

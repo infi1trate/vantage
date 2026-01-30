@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { parseMediaError, type CaptureError } from "@/lib/captureErrors";
 
 export interface ScreenCaptureOptions {
   video?: {
@@ -13,6 +14,7 @@ export interface UseScreenCaptureReturn {
   isPaused: boolean;
   stream: MediaStream | null;
   error: string | null;
+  captureError: CaptureError | null;
   permissionDenied: boolean;
   startCapture: (options?: ScreenCaptureOptions) => Promise<MediaStream | null>;
   stopCapture: () => void;
@@ -25,6 +27,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
   const [isPaused, setIsPaused] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<CaptureError | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   
   const streamRef = useRef<MediaStream | null>(null);
@@ -32,7 +35,16 @@ export function useScreenCapture(): UseScreenCaptureReturn {
   const startCapture = useCallback(async (options?: ScreenCaptureOptions): Promise<MediaStream | null> => {
     try {
       setError(null);
+      setCaptureError(null);
       setPermissionDenied(false);
+
+      // Check for secure context
+      if (!window.isSecureContext) {
+        const err = parseMediaError({ name: "SecurityError" }, "screen");
+        setError(err.message);
+        setCaptureError(err);
+        return null;
+      }
 
       const displayMediaOptions: DisplayMediaStreamOptions = {
         video: {
@@ -58,17 +70,12 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     } catch (err: any) {
       console.error("Screen capture error:", err);
       
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      const parsedError = parseMediaError(err, "screen");
+      setError(parsedError.message);
+      setCaptureError(parsedError);
+      
+      if (parsedError.code === "PERMISSION_DENIED") {
         setPermissionDenied(true);
-        setError("Screen capture permission denied. Please allow screen sharing to continue.");
-      } else if (err.name === "NotFoundError") {
-        setError("No screen or window available for capture.");
-      } else if (err.name === "NotReadableError") {
-        setError("Screen capture is not available. Another application may be using it.");
-      } else if (err.name === "AbortError") {
-        setError("Screen capture was cancelled.");
-      } else {
-        setError(err.message || "Failed to start screen capture.");
       }
       
       return null;
@@ -117,6 +124,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     isPaused,
     stream,
     error,
+    captureError,
     permissionDenied,
     startCapture,
     stopCapture,
