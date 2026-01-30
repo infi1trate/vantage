@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
+import { NotStoredLocallyCard } from "@/components/player/NotStoredLocallyCard";
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
 import { AnnotationDrawer, DrawerAnnotation } from "@/components/player/AnnotationDrawer";
 import { FramePin } from "@/components/player/FramePins";
@@ -148,6 +149,22 @@ export default function SessionReview() {
         setIsLocalSession(true);
         setLocalSession(localData);
         
+        // Check if blob was actually stored
+        if (localData.status === "not_stored_locally") {
+          // Session exists but blob wasn't stored - set metadata but no video URL
+          console.log("[SessionReview] Session not stored locally, no blob available");
+          setVideoMeta({
+            blobType: null,
+            blobSize: localData.blobSize || 0,
+            storedMimeType: localData.mimeType || null,
+            videoDuration: localData.duration || null,
+            videoWidth: null,
+            videoHeight: null,
+          });
+          setLoading(false);
+          return;
+        }
+        
         let blob = await getLocalSessionBlob(sessionId);
         if (blob) {
           if (!blob.type || blob.type === "") {
@@ -165,6 +182,17 @@ export default function SessionReview() {
             blobSize: blob.size,
             storedMimeType: localData.mimeType || null,
             videoDuration: null,
+            videoWidth: null,
+            videoHeight: null,
+          });
+        } else {
+          // Blob was supposed to be stored but couldn't be retrieved
+          console.warn("[SessionReview] Blob not found for stored session");
+          setVideoMeta({
+            blobType: null,
+            blobSize: localData.blobSize || 0,
+            storedMimeType: localData.mimeType || null,
+            videoDuration: localData.duration || null,
             videoWidth: null,
             videoHeight: null,
           });
@@ -536,6 +564,9 @@ export default function SessionReview() {
   
   const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
   const videoUrl = isLocal ? localVideoUrl : (gameplayAsset?.storage_url || session?.video_url);
+  
+  // Check if this is a not_stored_locally session
+  const isNotStoredLocally = isLocal && localSession?.status === "not_stored_locally";
 
   const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
     blobType: gameplayAsset.mime_type || null,
@@ -664,31 +695,41 @@ export default function SessionReview() {
       <div className="flex-1 flex min-h-0">
         {/* Left: Video + Timeline (~70%) */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <CinematicPlayer
-            videoUrl={videoUrl}
-            duration={displayDuration}
-            currentTime={currentTime}
-            onTimeUpdate={handleTimeUpdate}
-            onSeek={handleSeek}
-            annotations={annotations}
-            voiceNotes={voiceNotes}
-            onMarkerClick={handleMarkerClick}
-            videoMeta={isLocal ? videoMeta : cloudVideoMeta}
-            onVideoLoaded={handleVideoLoaded}
-            onVideoError={handleVideoError}
-            onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
-            selection={selection}
-            onSelectionChange={setSelection}
-            onCreateMarker={handleCreateMarker}
-            onOpenNote={handleOpenNote}
-            onOpenVoice={handleOpenVoice}
-            onFrameClick={handleFrameClick}
-            framePins={framePins}
-            onPinClick={handlePinClick}
-            suggestions={suggestions}
-            onSuggestionAccept={handleSuggestionAccept}
-            onSuggestionDismiss={handleSuggestionDismiss}
-          />
+          {isNotStoredLocally ? (
+            <NotStoredLocallyCard
+              title={displayTitle}
+              duration={displayDuration}
+              blobSize={localSession?.blobSize || 0}
+              mimeType={localSession?.mimeType || "video/webm"}
+              createdAt={displayCreatedAt || new Date().toISOString()}
+            />
+          ) : (
+            <CinematicPlayer
+              videoUrl={videoUrl}
+              duration={displayDuration}
+              currentTime={currentTime}
+              onTimeUpdate={handleTimeUpdate}
+              onSeek={handleSeek}
+              annotations={annotations}
+              voiceNotes={voiceNotes}
+              onMarkerClick={handleMarkerClick}
+              videoMeta={isLocal ? videoMeta : cloudVideoMeta}
+              onVideoLoaded={handleVideoLoaded}
+              onVideoError={handleVideoError}
+              onDownloadRequest={isLocal ? handleDownloadRecording : handleDownloadCloudRecording}
+              selection={selection}
+              onSelectionChange={setSelection}
+              onCreateMarker={handleCreateMarker}
+              onOpenNote={handleOpenNote}
+              onOpenVoice={handleOpenVoice}
+              onFrameClick={handleFrameClick}
+              framePins={framePins}
+              onPinClick={handlePinClick}
+              suggestions={suggestions}
+              onSuggestionAccept={handleSuggestionAccept}
+              onSuggestionDismiss={handleSuggestionDismiss}
+            />
+          )}
         </div>
 
         {/* Right: Annotations / Drawer (~30%) */}

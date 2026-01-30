@@ -11,7 +11,8 @@ import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureWizard } from "@/components/capture/CaptureWizard";
 import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
-import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
+import { StorageRecoveryScreen } from "@/components/capture/StorageRecoveryScreen";
+import { saveLocalSession, LocalSession, type SaveSessionResult, formatBytes } from "@/lib/localSessionStorage";
 import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,17 @@ import {
 // Only show debug panel in development mode
 const IS_DEV = import.meta.env.DEV;
 
+// Storage failure state for recovery screen
+interface StorageFailureState {
+  blob: Blob;
+  duration: number;
+  title: string;
+  mimeType: string;
+  fileExt: "mp4" | "webm";
+  error: NonNullable<SaveSessionResult["error"]>;
+  thumbnailBlob: Blob | null;
+}
+
 export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [searchParams] = useSearchParams();
@@ -46,6 +58,9 @@ export default function CapturePage() {
   const [isPreviewOnly, setIsPreviewOnly] = useState(() => {
     return searchParams.get("mode") === "preview";
   });
+  
+  // Storage failure state for recovery screen
+  const [storageFailure, setStorageFailure] = useState<StorageFailureState | null>(null);
   
   // Check recording capability on mount
   const [recordingDisabledReason, setRecordingDisabledReason] = useState<string | null>(null);
@@ -209,10 +224,30 @@ export default function CapturePage() {
         browserLabel: recordedData.browserLabel,
         durationMs: recordedData.duration * 1000,
         recordedSource: recordedData.recordedSource,
+        status: "stored_local", // Will be updated by saveLocalSession if storage fails
+        totalBytes: recordedData.compositeBlob.size,
       };
 
-      // Save session with thumbnail blob
-      await saveLocalSession(localSession, recordedData.compositeBlob, thumbnailBlob);
+      // Save session with thumbnail blob - handle storage failures gracefully
+      const saveResult = await saveLocalSession(localSession, recordedData.compositeBlob, thumbnailBlob);
+      
+      if (!saveResult.success) {
+        // Storage failed - show recovery screen instead of error
+        console.warn("[Capture] Local storage failed:", saveResult.error);
+        
+        // Store the blob in state for the recovery screen
+        setStorageFailure({
+          blob: recordedData.compositeBlob,
+          duration: recordedData.duration,
+          title: session.title,
+          mimeType: recordedData.compositeMimeType || "video/webm",
+          fileExt: recordedData.fileExt,
+          error: saveResult.error!,
+          thumbnailBlob,
+        });
+        return; // Don't navigate - show recovery screen
+      }
+      
       console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes, mimeType: ${localSession.mimeType}`);
 
       // Also upload to Supabase if user is logged in
@@ -309,6 +344,45 @@ export default function CapturePage() {
     capture.retryFromError();
   };
 
+  // Retry saving to storage (for storage recovery screen)
+  const handleStorageRetry = async (): Promise<boolean> => {
+    if (!storageFailure || !session) return false;
+    
+    const localSession: LocalSession = {
+      id: session.id,
+      title: session.title,
+      gameName: session.game_name,
+      createdAt: new Date().toISOString(),
+      duration: storageFailure.duration,
+      hasCam: capture.captureConfig.hasCam,
+      hasMic: capture.captureConfig.hasMic,
+      hasSystemAudio: capture.captureConfig.hasSystemAudio,
+      visibility: "private",
+      thumbnailDataUrl: null,
+      blobSize: storageFailure.blob.size,
+      mimeType: storageFailure.mimeType,
+      fileExt: storageFailure.fileExt,
+      status: "stored_local",
+      totalBytes: storageFailure.blob.size,
+    };
+    
+    const result = await saveLocalSession(localSession, storageFailure.blob, storageFailure.thumbnailBlob);
+    
+    if (result.success) {
+      toast.success("Recording saved successfully!");
+      return true;
+    } else {
+      toast.error("Storage still full. Please download the recording.");
+      return false;
+    }
+  };
+
+  // Continue from storage recovery (navigate to library)
+  const handleStorageContinue = () => {
+    setStorageFailure(null);
+    navigate("/library", { state: { highlightSession: session?.id } });
+  };
+
   // Handle leave confirmation
   const handleConfirmLeave = () => {
     capture.cancelCapture();
@@ -394,6 +468,25 @@ export default function CapturePage() {
     );
   }
 
+  // STORAGE RECOVERY STATE - show recovery screen when local save failed
+  if (storageFailure) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <StorageRecoveryScreen
+          blob={storageFailure.blob}
+          duration={storageFailure.duration}
+          title={storageFailure.title}
+          mimeType={storageFailure.mimeType}
+          fileExt={storageFailure.fileExt}
+          error={storageFailure.error}
+          onRetry={handleStorageRetry}
+          onContinue={handleStorageContinue}
+        />
+      </div>
+    );
+  }
+
   // SAVED STATE - should redirect, but show loading
   if (capture.captureState === "saved") {
     return (
@@ -430,6 +523,10 @@ export default function CapturePage() {
                     REC
                   </Badge>
                   <span className="font-display text-3xl">{formatTime(capture.duration)}</span>
+                  {/* Live recording size */}
+                  <span className="text-xs text-muted-foreground font-mono ml-2">
+                    {formatBytes(capture.debugInfo.totalBytes)}
+                  </span>
                 </>
               )}
               {isPaused && (
@@ -439,6 +536,9 @@ export default function CapturePage() {
                     PAUSED
                   </Badge>
                   <span className="font-display text-3xl text-muted-foreground">{formatTime(capture.duration)}</span>
+                  <span className="text-xs text-muted-foreground font-mono ml-2">
+                    {formatBytes(capture.debugInfo.totalBytes)}
+                  </span>
                 </>
               )}
               {isPreviewReady && (
