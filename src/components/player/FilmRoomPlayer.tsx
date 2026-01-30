@@ -3,6 +3,7 @@ import { Annotation, VoiceNote, TimelineEvent, DrawAnnotation } from "@/lib/capt
 import { WaveformVisualizer } from "./WaveformVisualizer";
 import { LayeredTimeline } from "./LayeredTimeline";
 import { DrawingCanvas } from "./DrawingCanvas";
+import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { useVoiceAnnotationSync } from "@/hooks/useVoiceAnnotationSync";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -40,18 +41,8 @@ import {
   Mic,
   Pencil,
   VolumeOff,
-  AlertTriangle,
-  Download,
-  Bug,
-  ChevronDown,
   Info,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 export interface VideoDecodeError {
@@ -133,7 +124,7 @@ export function FilmRoomPlayer({
   const [voiceSyncEnabled, setVoiceSyncEnabled] = useState(true);
   const [videoReady, setVideoReady] = useState(false);
   const [videoDecodeError, setVideoDecodeError] = useState<VideoDecodeError | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -209,36 +200,6 @@ export function FilmRoomPlayer({
     onVideoError?.(error);
   }, [onVideoError]);
 
-  // Get supported mime types for diagnostics - check both recording and playback
-  const getMimeTypeSupportInfo = useCallback(() => {
-    const types = [
-      "video/mp4;codecs=h264,aac",
-      "video/mp4",
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm;codecs=vp9",
-      "video/webm;codecs=vp8",
-      "video/webm",
-    ];
-    
-    const video = document.createElement("video");
-    
-    return types.map((type) => {
-      let canRecord = false;
-      let canPlayback = false;
-      
-      try {
-        canRecord = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type);
-      } catch { /* ignore */ }
-      
-      try {
-        const result = video.canPlayType(type);
-        canPlayback = result === "probably" || result === "maybe";
-      } catch { /* ignore */ }
-      
-      return { type, canRecord, canPlayback };
-    });
-  }, []);
 
   // Pause video when opening drawing canvas
   const handleOpenDrawingCanvas = useCallback(() => {
@@ -550,100 +511,14 @@ export function FilmRoomPlayer({
     >
       {/* Video area */}
       <div ref={videoAreaRef} className="relative flex-1 min-h-0 bg-muted/20 overflow-hidden">
-        {/* Video decode error display */}
+        {/* Video decode error display - Full fallback card */}
         {videoDecodeError && videoUrl && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/95 p-6">
-            <div className="max-w-lg w-full space-y-4">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Playback Error</AlertTitle>
-                <AlertDescription>{videoDecodeError.message}</AlertDescription>
-              </Alert>
-
-              <div className="flex gap-2">
-                {onDownloadRequest && (
-                  <Button onClick={onDownloadRequest} className="gap-2">
-                    <Download className="h-4 w-4" />
-                    Download Recording
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={() => setShowDiagnostics(!showDiagnostics)}
-                  className="gap-2"
-                >
-                  <Bug className="h-4 w-4" />
-                  {showDiagnostics ? "Hide" : "Show"} Diagnostics
-                </Button>
-              </div>
-
-              {/* Diagnostics panel */}
-              <Collapsible open={showDiagnostics} onOpenChange={setShowDiagnostics}>
-                <CollapsibleContent>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-xs space-y-3 mt-2">
-                    <div className="text-sm font-semibold text-foreground mb-2">Diagnostic Information</div>
-                    
-                    <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
-                      <span className="text-muted-foreground">Error Type:</span>
-                      <span className="text-destructive font-medium">{videoDecodeError.type}</span>
-                      
-                      {videoDecodeError.mediaError && (
-                        <>
-                          <span className="text-muted-foreground">Error Code:</span>
-                          <span>{videoDecodeError.mediaError.code}</span>
-                          <span className="text-muted-foreground">Error Message:</span>
-                          <span>{videoDecodeError.mediaError.message || "N/A"}</span>
-                        </>
-                      )}
-                      
-                      {videoMeta && (
-                        <>
-                          <span className="text-muted-foreground">Stored mimeType:</span>
-                          <span className={videoMeta.storedMimeType ? "text-foreground" : "text-destructive"}>
-                            {videoMeta.storedMimeType || "none (legacy recording)"}
-                          </span>
-                          <span className="text-muted-foreground">Blob Type:</span>
-                          <span className={videoMeta.blobType ? "text-foreground" : "text-warning"}>
-                            {videoMeta.blobType || "empty/unknown"}
-                          </span>
-                          <span className="text-muted-foreground">Blob Size:</span>
-                          <span>{videoMeta.blobSize ? `${(videoMeta.blobSize / 1024 / 1024).toFixed(2)} MB` : "N/A"}</span>
-                        </>
-                      )}
-                      
-                      <span className="text-muted-foreground">User Agent:</span>
-                      <span className="break-all text-[10px]">{navigator.userAgent}</span>
-                    </div>
-
-                    <div className="pt-2 border-t border-border/50">
-                      <span className="text-muted-foreground block mb-2">MIME Type Support (Record / Playback):</span>
-                      <div className="space-y-1">
-                        {getMimeTypeSupportInfo().map(({ type, canRecord, canPlayback }) => (
-                          <div key={type} className="flex items-center justify-between">
-                            <span className="text-[10px]">{type.replace("video/", "")}</span>
-                            <div className="flex items-center gap-1">
-                              <Badge 
-                                variant="outline" 
-                                className={`text-[9px] ${canRecord ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
-                              >
-                                rec {canRecord ? "✓" : "✗"}
-                              </Badge>
-                              <Badge 
-                                variant="outline" 
-                                className={`text-[9px] ${canPlayback ? "text-vantage-success border-vantage-success/30" : "text-destructive border-destructive/30"}`}
-                              >
-                                play {canPlayback ? "✓" : "✗"}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          </div>
+          <PlaybackFallbackCard
+            error={videoDecodeError}
+            videoMeta={videoMeta}
+            sessionDuration={duration}
+            onDownload={onDownloadRequest}
+          />
         )}
 
         {/* Video or placeholder */}
