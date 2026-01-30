@@ -21,7 +21,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-export type PanelMode = "list" | "note" | "voice";
+export type PanelMode = "list" | "note" | "voice" | "drawer";
 
 interface AnnotationsPanelProps {
   sessionId: string;
@@ -29,6 +29,7 @@ interface AnnotationsPanelProps {
   annotations: Annotation[];
   voiceNotes: VoiceNote[];
   onAnnotationCreated: (annotation: Annotation) => void;
+  onAnnotationClick?: (annotation: Annotation) => void;
   onMarkerClick: (time: number) => void;
   onAnnotationDelete?: (annotationId: string) => void;
   mode?: PanelMode;
@@ -51,6 +52,7 @@ export function AnnotationsPanel({
   annotations,
   voiceNotes,
   onAnnotationCreated,
+  onAnnotationClick,
   onMarkerClick,
   onAnnotationDelete,
   mode = "list",
@@ -323,7 +325,7 @@ export function AnnotationsPanel({
                           ? "bg-primary/10 border border-primary/20" 
                           : "hover:bg-muted/50"
                       )}
-                      onClick={() => onMarkerClick(annotation.timestamp_seconds)}
+                      onClick={() => onAnnotationClick ? onAnnotationClick(annotation) : onMarkerClick(annotation.timestamp_seconds)}
                     >
                       <div className={cn("p-1.5 rounded", config.bg)}>
                         <config.icon className={cn("h-4 w-4", config.color)} />
