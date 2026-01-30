@@ -1,5 +1,6 @@
 import { LandingNav } from "@/components/landing/LandingNav";
 import { HeroSection } from "@/components/landing/HeroSection";
+import { PerspectiveSection } from "@/components/landing/PerspectiveSection";
 import { LivePreviewSection } from "@/components/landing/LivePreviewSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
 import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
@@ -12,6 +13,7 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       <LandingNav />
       <HeroSection />
+      <PerspectiveSection />
       <LivePreviewSection />
       <FeaturesSection />
       <StatsSection />
