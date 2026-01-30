@@ -622,6 +622,18 @@ export async function getAnnotations(sessionId: string) {
   return data as Annotation[];
 }
 
+export async function updateAnnotation(annotationId: string, updates: Partial<Annotation>) {
+  const { data, error } = await supabase
+    .from("annotations")
+    .update(updates)
+    .eq("id", annotationId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Annotation;
+}
+
 export async function deleteAnnotation(annotationId: string) {
   const { error } = await supabase
     .from("annotations")

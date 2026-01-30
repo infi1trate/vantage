@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
+import { AnnotationDrawer, DrawerAnnotation } from "@/components/player/AnnotationDrawer";
 import { FramePin } from "@/components/player/FramePins";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
@@ -75,6 +76,9 @@ export default function SessionReview() {
   const [panelMode, setPanelMode] = useState<PanelMode>("list");
   const [pendingTime, setPendingTime] = useState<number | undefined>();
   const [pendingEndTime, setPendingEndTime] = useState<number | undefined>();
+  
+  // Drawer state for editing/creating annotations
+  const [drawerAnnotation, setDrawerAnnotation] = useState<DrawerAnnotation | null>(null);
   
   // Frame pins (with position data)
   const [framePins, setFramePins] = useState<FramePin[]>([]);
@@ -181,12 +185,32 @@ export default function SessionReview() {
     setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
   }, []);
 
+  const handleAnnotationUpdated = useCallback((annotation: Annotation) => {
+    setAnnotations((prev) => 
+      prev.map(a => a.id === annotation.id ? annotation : a)
+        .sort((a, b) => a.timestamp_seconds - b.timestamp_seconds)
+    );
+  }, []);
+
   const handleMarkerClick = useCallback((time: number) => setCurrentTime(time), []);
+
+  // Open annotation in drawer for editing
+  const handleAnnotationClick = useCallback((annotation: Annotation) => {
+    setDrawerAnnotation({
+      annotation,
+      type: annotation.annotation_type,
+      timestamp: annotation.timestamp_seconds,
+      endTimestamp: annotation.end_timestamp_seconds || undefined,
+    });
+    setPanelMode("drawer");
+  }, []);
 
   const handleAnnotationDelete = useCallback(async (annotationId: string) => {
     try {
       await deleteAnnotation(annotationId);
       setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
+      // Also remove any associated pins
+      setFramePins(prev => prev.filter(p => p.annotationId !== annotationId));
       toast.success("Marker removed");
     } catch (error) {
       toast.error("Failed to delete");
@@ -221,16 +245,24 @@ export default function SessionReview() {
 
   // Handle opening note mode from floating bar
   const handleOpenNote = useCallback((time: number, endTime?: number) => {
-    setPendingTime(time);
-    setPendingEndTime(endTime);
-    setPanelMode("note");
-  }, []);
+    setDrawerAnnotation({
+      type: "note",
+      timestamp: time,
+      endTimestamp: endTime,
+      framePosition: pendingPinPosition || undefined,
+    });
+    setPanelMode("drawer");
+  }, [pendingPinPosition]);
 
   // Handle opening voice mode from floating bar
   const handleOpenVoice = useCallback((time: number) => {
-    setPendingTime(time);
-    setPanelMode("voice");
-  }, []);
+    setDrawerAnnotation({
+      type: "note",
+      timestamp: time,
+      framePosition: pendingPinPosition || undefined,
+    });
+    setPanelMode("drawer");
+  }, [pendingPinPosition]);
 
   // Handle panel mode change
   const handlePanelModeChange = useCallback((mode: PanelMode) => {
@@ -240,16 +272,31 @@ export default function SessionReview() {
       setPendingEndTime(undefined);
       setSelection({ type: null });
       setPendingPinPosition(null);
+      setDrawerAnnotation(null);
     }
+  }, []);
+
+  // Close drawer and return to list
+  const handleDrawerClose = useCallback(() => {
+    setDrawerAnnotation(null);
+    setPanelMode("list");
+    setPendingTime(undefined);
+    setPendingEndTime(undefined);
+    setPendingPinPosition(null);
+    setSelection({ type: null });
   }, []);
 
   // Handle frame click - drop a pin and open annotation drawer
   const handleFrameClick = useCallback((x: number, y: number, time: number, endTime?: number) => {
     // Store position for when annotation is created
     setPendingPinPosition({ x, y });
-    setPendingTime(time);
-    setPendingEndTime(endTime);
-    setPanelMode("note");
+    setDrawerAnnotation({
+      type: "marker",
+      timestamp: time,
+      endTimestamp: endTime,
+      framePosition: { x, y },
+    });
+    setPanelMode("drawer");
   }, []);
 
   // Handle pin click - seek to time and open annotation in drawer
@@ -259,9 +306,14 @@ export default function SessionReview() {
       // Find the annotation and open it for editing
       const annotation = annotations.find(a => a.id === pin.annotationId);
       if (annotation) {
-        setPendingTime(annotation.timestamp_seconds);
-        setPendingEndTime(annotation.end_timestamp_seconds || undefined);
-        setPanelMode("note");
+        setDrawerAnnotation({
+          annotation,
+          type: annotation.annotation_type,
+          timestamp: annotation.timestamp_seconds,
+          endTimestamp: annotation.end_timestamp_seconds || undefined,
+          framePosition: { x: pin.x, y: pin.y },
+        });
+        setPanelMode("drawer");
       }
     }
   }, [annotations]);
@@ -517,24 +569,42 @@ export default function SessionReview() {
           />
         </div>
 
-        {/* Right: Annotations (~30%) */}
+        {/* Right: Annotations / Drawer (~30%) */}
         <div className={cn(
           "shrink-0 border-l border-border/30 bg-card/50",
           focusMode ? "w-80" : "w-[340px]"
         )}>
-          <AnnotationsPanel
-            sessionId={displaySessionId || sessionId || ""}
-            currentTime={currentTime}
-            annotations={annotations}
-            voiceNotes={voiceNotes}
-            onAnnotationCreated={pendingPinPosition ? handleAnnotationCreatedWithPin : handleAnnotationCreated}
-            onMarkerClick={handleMarkerClick}
-            onAnnotationDelete={handleAnnotationDelete}
-            mode={panelMode}
-            onModeChange={handlePanelModeChange}
-            pendingTime={pendingTime}
-            pendingEndTime={pendingEndTime}
-          />
+          {panelMode === "drawer" && drawerAnnotation ? (
+            <AnnotationDrawer
+              sessionId={displaySessionId || sessionId || ""}
+              currentTime={currentTime}
+              drawerAnnotation={drawerAnnotation}
+              existingVoiceNotes={voiceNotes}
+              onClose={handleDrawerClose}
+              onAnnotationCreated={pendingPinPosition ? handleAnnotationCreatedWithPin : handleAnnotationCreated}
+              onAnnotationUpdated={handleAnnotationUpdated}
+              onAnnotationDeleted={(id) => {
+                handleAnnotationDelete(id);
+                handleDrawerClose();
+              }}
+              onSeek={handleSeek}
+            />
+          ) : (
+            <AnnotationsPanel
+              sessionId={displaySessionId || sessionId || ""}
+              currentTime={currentTime}
+              annotations={annotations}
+              voiceNotes={voiceNotes}
+              onAnnotationCreated={pendingPinPosition ? handleAnnotationCreatedWithPin : handleAnnotationCreated}
+              onAnnotationClick={handleAnnotationClick}
+              onMarkerClick={handleMarkerClick}
+              onAnnotationDelete={handleAnnotationDelete}
+              mode={panelMode}
+              onModeChange={handlePanelModeChange}
+              pendingTime={pendingTime}
+              pendingEndTime={pendingEndTime}
+            />
+          )}
         </div>
       </div>
     </div>
