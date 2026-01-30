@@ -20,13 +20,18 @@ import {
   AlertCircle,
   ArrowRight,
   ArrowLeft,
-  Circle
+  Circle,
+  Eye,
+  Chrome,
+  ExternalLink,
 } from "lucide-react";
 
 interface CaptureWizardProps {
   session: CaptureSession;
   onStart: (config: { enableFacecam: boolean; enableSystemAudio: boolean }) => void;
   isLoading: boolean;
+  /** Preview-only mode: recording is disabled in this browser */
+  previewOnly?: boolean;
 }
 
 interface DeviceInfo {
@@ -38,7 +43,7 @@ type WizardStep = "screen" | "mic" | "cam" | "summary";
 
 const STEPS: WizardStep[] = ["screen", "mic", "cam", "summary"];
 
-export function CaptureWizard({ session, onStart, isLoading }: CaptureWizardProps) {
+export function CaptureWizard({ session, onStart, isLoading, previewOnly = false }: CaptureWizardProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>("screen");
   const [enableMic, setEnableMic] = useState(true);
   const [enableFacecam, setEnableFacecam] = useState(false);
@@ -172,10 +177,34 @@ export function CaptureWizard({ session, onStart, isLoading }: CaptureWizardProp
   return (
     <Card className="p-6 bg-card border-border/30">
       <div className="space-y-6">
+        {/* Preview Mode Banner */}
+        {previewOnly && (
+          <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg space-y-2">
+            <div className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-warning" />
+              <span className="text-sm font-medium text-warning uppercase tracking-wider">
+                Preview Mode
+              </span>
+              <Badge variant="outline" className="text-[10px] border-warning/50 text-warning">
+                Recording Disabled
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Your browser doesn't support recording. You can preview the capture experience, but recording won't work.
+            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Chrome className="h-3.5 w-3.5" />
+              <span>Open in <strong>Chrome</strong> or <strong>Edge</strong> for full recording support.</span>
+            </div>
+          </div>
+        )}
+
         <div className="text-center">
-          <h2 className="font-display text-2xl tracking-wide mb-2">CAPTURE SETUP</h2>
+          <h2 className="font-display text-2xl tracking-wide mb-2">
+            {previewOnly ? "PREVIEW SETUP" : "CAPTURE SETUP"}
+          </h2>
           <p className="text-muted-foreground text-sm">
-            Configure your capture for <span className="text-foreground font-medium">{session.title}</span>
+            Configure your {previewOnly ? "preview" : "capture"} for <span className="text-foreground font-medium">{session.title}</span>
           </p>
         </div>
 
@@ -371,51 +400,92 @@ export function CaptureWizard({ session, onStart, isLoading }: CaptureWizardProp
         {currentStep === "summary" && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-vantage-success/20 flex items-center justify-center">
-                <CheckCircle className="h-5 w-5 text-vantage-success" />
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                previewOnly ? "bg-warning/20" : "bg-vantage-success/20"
+              }`}>
+                {previewOnly ? (
+                  <Eye className="h-5 w-5 text-warning" />
+                ) : (
+                  <CheckCircle className="h-5 w-5 text-vantage-success" />
+                )}
               </div>
               <div>
                 <h3 className="font-medium text-lg">Step 4: Confirm Setup</h3>
-                <p className="text-sm text-muted-foreground">Review your capture settings</p>
+                <p className="text-sm text-muted-foreground">
+                  Review your {previewOnly ? "preview" : "capture"} settings
+                </p>
               </div>
             </div>
 
-            <div className="p-4 bg-vantage-success/10 border border-vantage-success/30 rounded-lg space-y-3">
-              <h4 className="text-sm font-medium text-vantage-success uppercase tracking-wider">
-                You are about to record:
-              </h4>
-              
-              <ul className="space-y-2">
-                <li className="flex items-center gap-2 text-sm">
-                  <CheckCircle className="h-4 w-4 text-vantage-success" />
-                  <span>Screen video</span>
-                  {enableSystemAudio && (
-                    <span className="text-muted-foreground">+ System audio</span>
+            {previewOnly ? (
+              <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg space-y-3">
+                <h4 className="text-sm font-medium text-warning uppercase tracking-wider">
+                  You are about to preview:
+                </h4>
+                
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm">
+                    <Eye className="h-4 w-4 text-warning" />
+                    <span>Screen video</span>
+                    {enableSystemAudio && (
+                      <span className="text-muted-foreground">+ System audio</span>
+                    )}
+                  </li>
+                  {enableFacecam && cameras.length > 0 && (
+                    <li className="flex items-center gap-2 text-sm">
+                      <Eye className="h-4 w-4 text-warning" />
+                      <span>Webcam video</span>
+                    </li>
                   )}
-                </li>
-                <li className="flex items-center gap-2 text-sm">
-                  <CheckCircle className="h-4 w-4 text-vantage-success" />
-                  <span>Microphone audio</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({microphones.find(m => m.deviceId === selectedMic)?.label || "Default"})
-                  </span>
-                </li>
-                {enableFacecam && cameras.length > 0 && (
+                </ul>
+                
+                <div className="pt-2 border-t border-warning/20">
+                  <p className="text-xs text-warning flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Recording is disabled in this browser
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-vantage-success/10 border border-vantage-success/30 rounded-lg space-y-3">
+                <h4 className="text-sm font-medium text-vantage-success uppercase tracking-wider">
+                  You are about to record:
+                </h4>
+                
+                <ul className="space-y-2">
                   <li className="flex items-center gap-2 text-sm">
                     <CheckCircle className="h-4 w-4 text-vantage-success" />
-                    <span>Webcam video</span>
+                    <span>Screen video</span>
+                    {enableSystemAudio && (
+                      <span className="text-muted-foreground">+ System audio</span>
+                    )}
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    <CheckCircle className="h-4 w-4 text-vantage-success" />
+                    <span>Microphone audio</span>
                     <span className="text-xs text-muted-foreground">
-                      ({cameras.find(c => c.deviceId === selectedCamera)?.label || "Default"})
+                      ({microphones.find(m => m.deviceId === selectedMic)?.label || "Default"})
                     </span>
                   </li>
-                )}
-              </ul>
-            </div>
+                  {enableFacecam && cameras.length > 0 && (
+                    <li className="flex items-center gap-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-vantage-success" />
+                      <span>Webcam video</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({cameras.find(c => c.deviceId === selectedCamera)?.label || "Default"})
+                      </span>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
 
             <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground space-y-1">
               <p>• Browser will prompt you to select your screen/window/tab</p>
               <p>• Close unnecessary applications for better performance</p>
-              <p>• Press <kbd className="px-1 py-0.5 bg-muted rounded font-mono">Space</kbd> to pause/resume during recording</p>
+              {!previewOnly && (
+                <p>• Press <kbd className="px-1 py-0.5 bg-muted rounded font-mono">Space</kbd> to pause/resume during recording</p>
+              )}
             </div>
           </div>
         )}
@@ -437,12 +507,19 @@ export function CaptureWizard({ session, onStart, isLoading }: CaptureWizardProp
               size="lg"
               onClick={handleConfigure}
               disabled={!canProceed() || isLoading}
-              className="uppercase tracking-wider font-bold min-w-40"
+              className={`uppercase tracking-wider font-bold min-w-40 ${
+                previewOnly ? "bg-warning hover:bg-warning/90 text-warning-foreground" : ""
+              }`}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Acquiring...
+                </>
+              ) : previewOnly ? (
+                <>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Start Preview
                 </>
               ) : (
                 <>

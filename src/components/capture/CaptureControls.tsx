@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Loader2, Square, X, Circle, Pause, Play } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink } from "lucide-react";
 import type { CaptureState } from "@/hooks/useCaptureManager";
 import { type PreflightCheck } from "@/hooks/usePreflightChecks";
 import { PreflightChecklist } from "./PreflightChecklist";
@@ -16,6 +17,9 @@ interface CaptureControlsProps {
   preflightChecks?: PreflightCheck[];
   preflightPassed?: boolean;
   preflightRunning?: boolean;
+  // Preview-only mode props
+  previewOnly?: boolean;
+  recordingDisabledReason?: string | null;
 }
 
 export function CaptureControls({
@@ -29,6 +33,8 @@ export function CaptureControls({
   preflightChecks,
   preflightPassed = true,
   preflightRunning = false,
+  previewOnly = false,
+  recordingDisabledReason,
 }: CaptureControlsProps) {
   const isPreviewReady = captureState === "preview_ready";
   const isStarting = captureState === "starting";
@@ -37,12 +43,45 @@ export function CaptureControls({
   const isFinalizing = captureState === "finalizing";
   const isActiveRecording = isRecording || isPaused;
   
-  const canStartRecording = preflightPassed && !preflightRunning && !isStarting;
+  const canStartRecording = !previewOnly && preflightPassed && !preflightRunning && !isStarting;
 
   return (
     <div className="flex flex-col items-center gap-4">
-      {/* Preflight checklist - only show in preview_ready state */}
-      {isPreviewReady && preflightChecks && preflightChecks.length > 0 && (
+      {/* Preview Mode Banner - shown when recording is disabled */}
+      {isPreviewReady && previewOnly && (
+        <div className="w-full max-w-xl p-4 bg-warning/10 border border-warning/30 rounded-lg space-y-3">
+          <div className="flex items-center gap-2">
+            <Eye className="h-5 w-5 text-warning" />
+            <span className="text-sm font-medium text-warning uppercase tracking-wider">
+              Preview Mode
+            </span>
+            <Badge variant="outline" className="text-[10px] border-warning/50 text-warning">
+              Recording Disabled
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {recordingDisabledReason || "Recording is not supported in this browser."}
+          </p>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <Chrome className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">
+              Open in <strong>Chrome</strong> or <strong>Edge</strong> to record
+            </span>
+            <a
+              href="https://www.google.com/chrome/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-xs text-primary hover:underline inline-flex items-center gap-1"
+            >
+              Get Chrome
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Preflight checklist - only show in preview_ready state when NOT in preview-only mode */}
+      {isPreviewReady && !previewOnly && preflightChecks && preflightChecks.length > 0 && (
         <PreflightChecklist 
           checks={preflightChecks} 
           allPassed={preflightPassed} 
@@ -63,7 +102,7 @@ export function CaptureControls({
           Cancel
         </Button>
 
-        {/* Preview Ready: Show "Start Recording" button */}
+        {/* Preview Ready: Show "Start Recording" button (or disabled in preview-only mode) */}
         {isPreviewReady && (
           <>
             <Button
@@ -74,15 +113,26 @@ export function CaptureControls({
               Stop Preview
             </Button>
             
-            <Button
-              size="lg"
-              onClick={onStartRecording}
-              disabled={!canStartRecording}
-              className="min-w-44 bg-destructive hover:bg-destructive/90 text-destructive-foreground uppercase tracking-wider font-bold disabled:opacity-50"
-            >
-              <Circle className="mr-2 h-4 w-4" fill="currentColor" />
-              Start Recording
-            </Button>
+            {previewOnly ? (
+              <Button
+                size="lg"
+                disabled
+                className="min-w-44 bg-muted text-muted-foreground uppercase tracking-wider font-bold cursor-not-allowed"
+              >
+                <Circle className="mr-2 h-4 w-4" />
+                Recording Disabled
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                onClick={onStartRecording}
+                disabled={!canStartRecording}
+                className="min-w-44 bg-destructive hover:bg-destructive/90 text-destructive-foreground uppercase tracking-wider font-bold disabled:opacity-50"
+              >
+                <Circle className="mr-2 h-4 w-4" fill="currentColor" />
+                Start Recording
+              </Button>
+            )}
           </>
         )}
 
