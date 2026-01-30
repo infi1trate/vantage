@@ -15,11 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2, Video, Mic, Volume2 } from "lucide-react";
+import { Settings2, Video, Mic, Volume2, Camera, FlipHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SettingsConfig {
   videoQuality: string;
+  cameraQuality: string;
+  flipCamera: boolean;
   audioBitrate: string;
   systemAudio: boolean;
   pushToTalk: boolean;
@@ -44,6 +46,8 @@ export function SettingsModal({
 }: SettingsModalProps) {
   // Local state for editing
   const [videoQuality, setVideoQuality] = useState(config.videoQuality);
+  const [cameraQuality, setCameraQuality] = useState(config.cameraQuality);
+  const [flipCamera, setFlipCamera] = useState(config.flipCamera);
   const [audioBitrate, setAudioBitrate] = useState(config.audioBitrate);
   const [systemAudio, setSystemAudio] = useState(config.systemAudio);
   const [pushToTalk, setPushToTalk] = useState(config.pushToTalk);
@@ -54,6 +58,8 @@ export function SettingsModal({
   useEffect(() => {
     if (open) {
       setVideoQuality(config.videoQuality);
+      setCameraQuality(config.cameraQuality);
+      setFlipCamera(config.flipCamera);
       setAudioBitrate(config.audioBitrate);
       setSystemAudio(config.systemAudio);
       setPushToTalk(config.pushToTalk);
@@ -65,6 +71,8 @@ export function SettingsModal({
   const handleSave = () => {
     onSave({
       videoQuality,
+      cameraQuality,
+      flipCamera,
       audioBitrate,
       systemAudio,
       pushToTalk,
@@ -102,13 +110,67 @@ export function SettingsModal({
                 <SelectTrigger className="w-full sm:w-auto sm:min-w-[120px] h-9 text-sm bg-background border-border/40 shrink-0">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-popover border-border">
                   <SelectItem value="720p30">720p 30fps</SelectItem>
                   <SelectItem value="720p60">720p 60fps</SelectItem>
                   <SelectItem value="1080p30">1080p 30fps</SelectItem>
                   <SelectItem value="1080p60">1080p 60fps</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Camera Quality */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0 flex items-start gap-3">
+                <div className="p-2 rounded-md bg-muted/30 mt-0.5">
+                  <Camera className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Camera Quality</p>
+                  <p className="text-xs text-muted-foreground">Facecam resolution</p>
+                </div>
+              </div>
+              <Select value={cameraQuality} onValueChange={setCameraQuality} disabled={disabled}>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[130px] h-9 text-sm bg-background border-border/40 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="720p">720p</SelectItem>
+                  <SelectItem value="hd" disabled className="opacity-50">
+                    <span className="flex items-center gap-2">
+                      HD
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        Coming soon
+                      </span>
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Flip Camera */}
+            <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20 group">
+              <div className="min-w-0 flex-1 flex items-start gap-3">
+                <div className={cn(
+                  "p-2 rounded-md transition-all duration-150 mt-0.5",
+                  flipCamera ? "bg-primary/15" : "bg-muted/30"
+                )}>
+                  <FlipHorizontal className={cn(
+                    "h-4 w-4 transition-colors duration-150",
+                    flipCamera ? "text-primary" : "text-muted-foreground"
+                  )} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Flip Camera</p>
+                  <p className="text-xs text-muted-foreground">Mirror facecam preview</p>
+                </div>
+              </div>
+              <Switch 
+                checked={flipCamera} 
+                onCheckedChange={setFlipCamera} 
+                disabled={disabled} 
+                className="shrink-0 transition-transform duration-100 active:scale-95" 
+              />
             </div>
 
             {/* Auto-stop on inactivity */}
@@ -121,7 +183,7 @@ export function SettingsModal({
                 checked={autoStop} 
                 onCheckedChange={setAutoStop} 
                 disabled={disabled} 
-                className="shrink-0" 
+                className="shrink-0 transition-transform duration-100 active:scale-95" 
               />
             </div>
           </div>
@@ -143,7 +205,7 @@ export function SettingsModal({
                 <SelectTrigger className="w-full sm:w-auto sm:min-w-[100px] h-9 text-sm bg-background border-border/40 shrink-0">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-popover border-border">
                   <SelectItem value="64">64 kbps</SelectItem>
                   <SelectItem value="128">128 kbps</SelectItem>
                   <SelectItem value="192">192 kbps</SelectItem>
@@ -156,24 +218,24 @@ export function SettingsModal({
             <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
               <div className="min-w-0 flex-1 flex items-start gap-3">
                 <div className={cn(
-                  "p-2 rounded-md transition-colors mt-0.5",
+                  "p-2 rounded-md transition-all duration-150 mt-0.5",
                   systemAudio ? "bg-primary/15" : "bg-muted/30"
                 )}>
                   <Volume2 className={cn(
-                    "h-4 w-4 transition-colors",
+                    "h-4 w-4 transition-colors duration-150",
                     systemAudio ? "text-primary" : "text-muted-foreground"
                   )} />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">System Audio</p>
-                  <p className="text-xs text-muted-foreground">Record game and desktop sounds</p>
+                  <p className="text-sm font-medium">Record System Audio</p>
+                  <p className="text-xs text-muted-foreground">Capture game and desktop sounds</p>
                 </div>
               </div>
               <Switch 
                 checked={systemAudio} 
                 onCheckedChange={setSystemAudio} 
                 disabled={disabled} 
-                className="shrink-0" 
+                className="shrink-0 transition-transform duration-100 active:scale-95" 
               />
             </div>
 
@@ -187,7 +249,7 @@ export function SettingsModal({
                 checked={pushToTalk} 
                 onCheckedChange={setPushToTalk} 
                 disabled={disabled} 
-                className="shrink-0" 
+                className="shrink-0 transition-transform duration-100 active:scale-95" 
               />
             </div>
 
@@ -195,13 +257,13 @@ export function SettingsModal({
             <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Mono Audio</p>
-                <p className="text-xs text-muted-foreground">Better for voice clarity</p>
+                <p className="text-xs text-muted-foreground">Recommended for voice clarity</p>
               </div>
               <Switch 
                 checked={monoAudio} 
                 onCheckedChange={setMonoAudio} 
                 disabled={disabled} 
-                className="shrink-0" 
+                className="shrink-0 transition-transform duration-100 active:scale-95" 
               />
             </div>
           </div>
