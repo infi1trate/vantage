@@ -9,10 +9,11 @@ import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
 import { PermissionError } from "@/components/capture/PermissionError";
+import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Pause } from "lucide-react";
+import { Loader2, ArrowLeft, Pause, Bug } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -25,6 +26,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// Only show debug panel in development mode
+const IS_DEV = import.meta.env.DEV;
+
 export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user, loading: authLoading } = useAuth();
@@ -33,6 +37,7 @@ export default function CapturePage() {
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   
   const capture = useCaptureManager();
 
@@ -427,6 +432,35 @@ export default function CapturePage() {
             onStopPreview={handleStopPreview}
             onCancel={handleCancel}
           />
+
+          {/* Debug Panel - Dev mode only */}
+          {IS_DEV && (
+            <div className="mt-8">
+              {!showDebug ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDebug(true)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Bug className="h-4 w-4 mr-2" />
+                  Show Debug Panel
+                </Button>
+              ) : (
+                <CaptureDiagnostics
+                  captureState={capture.captureState}
+                  screenStream={capture.screenStream}
+                  microphoneStream={capture.microphoneStream}
+                  facecamStream={capture.facecamStream}
+                  duration={capture.duration}
+                  error={capture.error}
+                  recorderState={capture.debugInfo.recorderState || undefined}
+                  chunksCount={capture.debugInfo.chunksCount}
+                  totalBytes={capture.debugInfo.totalBytes}
+                />
+              )}
+            </div>
+          )}
         </div>
       </main>
 

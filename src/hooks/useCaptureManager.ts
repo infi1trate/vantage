@@ -98,6 +98,13 @@ export interface UseCaptureManagerReturn {
   
   // Config info for saving
   captureConfig: { hasCam: boolean; hasMic: boolean; hasSystemAudio: boolean };
+  
+  // Debug info (for diagnostics panel)
+  debugInfo: {
+    recorderState: RecordingState | null;
+    chunksCount: number;
+    totalBytes: number;
+  };
 }
 
 // Determine best supported video mime type with fallbacks
@@ -134,6 +141,10 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     enableFacecam: false,
     enableSystemAudio: true,
   });
+  
+  // Debug state for diagnostics panel
+  const [debugChunksCount, setDebugChunksCount] = useState(0);
+  const [debugTotalBytes, setDebugTotalBytes] = useState(0);
   
   // Single composite recorder ref
   const compositeRecorderRef = useRef<MediaRecorder | null>(null);
@@ -353,10 +364,14 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       
       const recorder = new MediaRecorder(compositeStream, options);
       compositeChunksRef.current = [];
+      setDebugChunksCount(0);
+      setDebugTotalBytes(0);
       
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           compositeChunksRef.current.push(event.data);
+          setDebugChunksCount(compositeChunksRef.current.length);
+          setDebugTotalBytes(prev => prev + event.data.size);
           console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
         }
       };
@@ -698,6 +713,13 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       hasCam: config.enableFacecam && facecam.stream !== null,
       hasMic: microphone.stream !== null,
       hasSystemAudio: config.enableSystemAudio,
+    },
+    
+    // Debug info for diagnostics panel
+    debugInfo: {
+      recorderState: compositeRecorderRef.current?.state || null,
+      chunksCount: debugChunksCount,
+      totalBytes: debugTotalBytes,
     },
   };
 }
