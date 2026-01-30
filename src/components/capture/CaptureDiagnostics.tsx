@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,15 @@ import {
   Monitor,
   Mic,
   Camera,
-  HardDrive
+  HardDrive,
+  Copy,
+  Check
 } from "lucide-react";
 import type { CaptureState } from "@/hooks/useCaptureManager";
 import type { RecordedSourceType } from "@/lib/localSessionStorage";
 import type { RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
 import { getAllMimeTypeSupportStatus } from "@/lib/recordingMimeTypes";
+import { toast } from "sonner";
 
 interface CaptureDiagnosticsProps {
   captureState: CaptureState;
@@ -30,31 +33,32 @@ interface CaptureDiagnosticsProps {
   microphoneStream: MediaStream | null;
   facecamStream: MediaStream | null;
   duration: number;
-  error: { code: string; message: string } | null;
-  // Optional: expose internal recorder state if available
+  error: { code: string; message: string; details?: string } | null;
   recorderState?: RecordingState;
   chunksCount?: number;
   totalBytes?: number;
-  /** Current MIME type info from chooseRecordingMimeType */
   mimeTypeInfo?: RecordingMimeTypeInfo;
-  /** Debug: What stream source will be/was recorded */
   recordedSource?: RecordedSourceType;
+  /** Log of MediaRecorder state transitions */
+  recorderStateLog?: string[];
+  /** Last MediaRecorder error event */
+  lastRecorderError?: string | null;
 }
 
-// Browser capability detection
-function detectBrowserCapabilities() {
-  const capabilities = {
-    mediaRecorder: typeof MediaRecorder !== "undefined",
-    getDisplayMedia: !!(navigator.mediaDevices && "getDisplayMedia" in navigator.mediaDevices),
-    getUserMedia: !!(navigator.mediaDevices && "getUserMedia" in navigator.mediaDevices),
-    audioContext: typeof AudioContext !== "undefined" || typeof (window as any).webkitAudioContext !== "undefined",
-    indexedDB: typeof indexedDB !== "undefined",
-  };
-
-  return capabilities;
+interface TrackDiagnostics {
+  count: number;
+  readyState: string;
+  enabled: boolean;
+  muted: boolean;
+  label: string;
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  sampleRate?: number;
+  channelCount?: number;
 }
 
-function getTrackInfo(stream: MediaStream | null, type: "video" | "audio") {
+function getStreamTrackDiagnostics(stream: MediaStream | null, type: "video" | "audio"): TrackDiagnostics | null {
   if (!stream) return null;
   
   const tracks = type === "video" ? stream.getVideoTracks() : stream.getAudioTracks();
@@ -64,17 +68,16 @@ function getTrackInfo(stream: MediaStream | null, type: "video" | "audio") {
   const settings = track.getSettings();
   
   return {
-    label: track.label,
+    count: tracks.length,
+    readyState: track.readyState,
     enabled: track.enabled,
     muted: track.muted,
-    readyState: track.readyState,
-    settings: {
-      width: settings.width,
-      height: settings.height,
-      frameRate: settings.frameRate,
-      sampleRate: settings.sampleRate,
-      channelCount: settings.channelCount,
-    },
+    label: track.label,
+    width: settings.width,
+    height: settings.height,
+    frameRate: settings.frameRate,
+    sampleRate: settings.sampleRate,
+    channelCount: settings.channelCount,
   };
 }
 
@@ -110,25 +113,133 @@ export function CaptureDiagnostics({
   totalBytes = 0,
   mimeTypeInfo,
   recordedSource,
+  recorderStateLog = [],
+  lastRecorderError,
 }: CaptureDiagnosticsProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [capabilities, setCapabilities] = useState<ReturnType<typeof detectBrowserCapabilities> | null>(null);
+  const [copied, setCopied] = useState(false);
   const [mimeTypeSupport, setMimeTypeSupport] = useState<ReturnType<typeof getAllMimeTypeSupportStatus> | null>(null);
 
   useEffect(() => {
-    setCapabilities(detectBrowserCapabilities());
     setMimeTypeSupport(getAllMimeTypeSupportStatus());
   }, []);
 
-  const screenVideo = getTrackInfo(screenStream, "video");
-  const screenAudio = getTrackInfo(screenStream, "audio");
-  const micAudio = getTrackInfo(microphoneStream, "audio");
-  const camVideo = getTrackInfo(facecamStream, "video");
+  // Gather all track diagnostics
+  const screenVideo = getStreamTrackDiagnostics(screenStream, "video");
+  const screenAudio = getStreamTrackDiagnostics(screenStream, "audio");
+  const micAudio = getStreamTrackDiagnostics(microphoneStream, "audio");
+  const camVideo = getStreamTrackDiagnostics(facecamStream, "video");
+
+  // Browser capabilities
+  const capabilities = {
+    isSecureContext: window.isSecureContext,
+    mediaRecorder: typeof MediaRecorder !== "undefined",
+    getDisplayMedia: !!(navigator.mediaDevices && "getDisplayMedia" in navigator.mediaDevices),
+    getUserMedia: !!(navigator.mediaDevices && "getUserMedia" in navigator.mediaDevices),
+    audioContext: typeof AudioContext !== "undefined" || typeof (window as any).webkitAudioContext !== "undefined",
+    indexedDB: typeof indexedDB !== "undefined",
+  };
+
+  // Generate full diagnostics object for copying
+  const generateDiagnosticsText = useCallback(() => {
+    const diag = {
+      timestamp: new Date().toISOString(),
+      environment: {
+        isSecureContext: window.isSecureContext,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+      },
+      capabilities,
+      mimeTypeSupport: mimeTypeSupport?.map(m => ({
+        type: m.mimeType,
+        record: m.canRecord,
+        playback: m.canPlayback,
+        compatible: m.compatible,
+      })),
+      selectedFormat: mimeTypeInfo ? {
+        mimeType: mimeTypeInfo.mimeType,
+        fileExt: mimeTypeInfo.fileExt,
+        codecs: mimeTypeInfo.codecsLabel,
+        browser: mimeTypeInfo.browserLabel,
+      } : null,
+      captureState,
+      recorderState: recorderState || null,
+      recorderStateLog,
+      tracks: {
+        display: screenVideo ? {
+          videoCount: screenVideo.count,
+          videoReadyState: screenVideo.readyState,
+          resolution: screenVideo.width && screenVideo.height ? `${screenVideo.width}x${screenVideo.height}` : null,
+          frameRate: screenVideo.frameRate,
+        } : null,
+        displayAudio: screenAudio ? {
+          count: screenAudio.count,
+          readyState: screenAudio.readyState,
+          muted: screenAudio.muted,
+        } : null,
+        microphone: micAudio ? {
+          count: micAudio.count,
+          readyState: micAudio.readyState,
+          enabled: micAudio.enabled,
+          muted: micAudio.muted,
+          sampleRate: micAudio.sampleRate,
+          channelCount: micAudio.channelCount,
+        } : null,
+        webcam: camVideo ? {
+          count: camVideo.count,
+          readyState: camVideo.readyState,
+          resolution: camVideo.width && camVideo.height ? `${camVideo.width}x${camVideo.height}` : null,
+          frameRate: camVideo.frameRate,
+        } : null,
+      },
+      recording: {
+        duration,
+        chunksCount,
+        totalBytes,
+        formattedSize: formatBytes(totalBytes),
+        recordedSource,
+      },
+      error: error ? {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      } : null,
+      lastRecorderError,
+    };
+    
+    return JSON.stringify(diag, null, 2);
+  }, [
+    capabilities, mimeTypeSupport, mimeTypeInfo, captureState, recorderState,
+    recorderStateLog, screenVideo, screenAudio, micAudio, camVideo,
+    duration, chunksCount, totalBytes, recordedSource, error, lastRecorderError
+  ]);
+
+  const handleCopyDiagnostics = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(generateDiagnosticsText());
+      setCopied(true);
+      toast.success("Diagnostics copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy diagnostics");
+    }
+  }, [generateDiagnosticsText]);
 
   const StatusIcon = ({ ok }: { ok: boolean }) => 
     ok ? <CheckCircle2 className="h-3 w-3 text-vantage-success" /> : <XCircle className="h-3 w-3 text-destructive" />;
 
-  const TrackStatus = ({ label, icon: Icon, track }: { label: string; icon: typeof Monitor; track: ReturnType<typeof getTrackInfo> }) => (
+  const TrackStatus = ({ 
+    label, 
+    icon: Icon, 
+    track,
+    showMuted = false 
+  }: { 
+    label: string; 
+    icon: typeof Monitor; 
+    track: TrackDiagnostics | null;
+    showMuted?: boolean;
+  }) => (
     <div className="flex items-center justify-between py-1">
       <div className="flex items-center gap-2">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -136,19 +247,33 @@ export function CaptureDiagnostics({
       </div>
       {track ? (
         <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {track.count} track{track.count !== 1 ? "s" : ""}
+          </span>
           <Badge 
             variant="outline" 
             className={track.readyState === "live" 
               ? "bg-vantage-success/20 text-vantage-success border-vantage-success/30 text-[10px]" 
-              : "bg-muted text-muted-foreground text-[10px]"
+              : "bg-destructive/20 text-destructive border-destructive/30 text-[10px]"
             }
           >
             {track.readyState}
           </Badge>
-          {track.settings.width && (
+          {showMuted && (
+            <Badge 
+              variant="outline" 
+              className={track.muted 
+                ? "bg-destructive/20 text-destructive border-destructive/30 text-[10px]" 
+                : "bg-vantage-success/20 text-vantage-success border-vantage-success/30 text-[10px]"
+              }
+            >
+              {track.muted ? "muted" : "unmuted"}
+            </Badge>
+          )}
+          {track.width && (
             <span className="text-[10px] text-muted-foreground font-mono">
-              {track.settings.width}×{track.settings.height}
-              {track.settings.frameRate && `@${Math.round(track.settings.frameRate)}fps`}
+              {track.width}×{track.height}
+              {track.frameRate && `@${Math.round(track.frameRate)}fps`}
             </span>
           )}
         </div>
@@ -185,50 +310,90 @@ export function CaptureDiagnostics({
 
         <CollapsibleContent>
           <div className="px-3 pb-3 space-y-4 text-sm">
-            {/* Browser Support */}
-            <div>
-              <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                Browser Support
-              </h4>
-              <div className="grid grid-cols-2 gap-1">
-                {capabilities && (
+            {/* Copy Button */}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyDiagnostics}
+                className="h-7 text-xs gap-1.5"
+              >
+                {copied ? (
                   <>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon ok={capabilities.mediaRecorder} />
-                      <span className="text-xs">MediaRecorder</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon ok={capabilities.getDisplayMedia} />
-                      <span className="text-xs">getDisplayMedia</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon ok={capabilities.getUserMedia} />
-                      <span className="text-xs">getUserMedia</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon ok={capabilities.audioContext} />
-                      <span className="text-xs">AudioContext</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon ok={capabilities.indexedDB} />
-                      <span className="text-xs">IndexedDB</span>
-                    </div>
+                    <Check className="h-3 w-3" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    Copy Diagnostics
                   </>
                 )}
+              </Button>
+            </div>
+
+            {/* Environment */}
+            <div>
+              <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Environment
+              </h4>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.isSecureContext} />
+                  <span className="text-xs">isSecureContext</span>
+                  <Badge 
+                    variant="outline" 
+                    className={`text-[10px] ml-auto ${capabilities.isSecureContext ? "text-vantage-success" : "text-destructive"}`}
+                  >
+                    {capabilities.isSecureContext ? "true" : "false"}
+                  </Badge>
+                </div>
+                <div className="text-[10px] font-mono text-muted-foreground break-all bg-muted/30 rounded p-1.5">
+                  {navigator.userAgent}
+                </div>
               </div>
             </div>
 
-            {/* Mime Types with Compatibility */}
+            {/* Browser Support */}
+            <div>
+              <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Browser APIs
+              </h4>
+              <div className="grid grid-cols-2 gap-1">
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.mediaRecorder} />
+                  <span className="text-xs">MediaRecorder</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.getDisplayMedia} />
+                  <span className="text-xs">getDisplayMedia</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.getUserMedia} />
+                  <span className="text-xs">getUserMedia</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.audioContext} />
+                  <span className="text-xs">AudioContext</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusIcon ok={capabilities.indexedDB} />
+                  <span className="text-xs">IndexedDB</span>
+                </div>
+              </div>
+            </div>
+
+            {/* MIME Type Support Matrix */}
             {mimeTypeSupport && (
               <div>
                 <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                  Format Compatibility (Record + Playback)
+                  Format Compatibility (isTypeSupported)
                 </h4>
                 <div className="space-y-1">
                   {mimeTypeSupport.map(({ mimeType, canRecord, canPlayback, compatible }) => (
                     <div key={mimeType} className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-muted-foreground">
-                        {mimeType.replace("video/", "")}
+                        {mimeType}
                       </span>
                       <div className="flex items-center gap-1">
                         <Badge 
@@ -283,9 +448,9 @@ export function CaptureDiagnostics({
             {/* Current State */}
             <div>
               <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                Current State
+                Capture State
               </h4>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className={stateColors[captureState]}>
                   {captureState}
                 </Badge>
@@ -300,16 +465,30 @@ export function CaptureDiagnostics({
               </div>
             </div>
 
+            {/* MediaRecorder State Log */}
+            {recorderStateLog.length > 0 && (
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                  Recorder State Log
+                </h4>
+                <div className="text-[10px] font-mono text-muted-foreground bg-muted/30 rounded p-2 max-h-24 overflow-y-auto space-y-0.5">
+                  {recorderStateLog.map((entry, i) => (
+                    <div key={i}>{entry}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Active Tracks */}
             <div>
               <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
                 Active Tracks
               </h4>
               <div className="space-y-0.5">
-                <TrackStatus label="Screen Video" icon={Monitor} track={screenVideo} />
-                <TrackStatus label="Screen Audio" icon={Monitor} track={screenAudio} />
-                <TrackStatus label="Microphone" icon={Mic} track={micAudio} />
-                <TrackStatus label="Facecam" icon={Camera} track={camVideo} />
+                <TrackStatus label="Display Video" icon={Monitor} track={screenVideo} />
+                <TrackStatus label="Display Audio" icon={Monitor} track={screenAudio} showMuted />
+                <TrackStatus label="Microphone" icon={Mic} track={micAudio} showMuted />
+                <TrackStatus label="Webcam" icon={Camera} track={camVideo} />
               </div>
             </div>
 
@@ -329,7 +508,6 @@ export function CaptureDiagnostics({
                   </span>
                 </div>
                 
-                {/* Recorded Source indicator */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Source:</span>
                   <Badge 
@@ -351,16 +529,35 @@ export function CaptureDiagnostics({
               </div>
             </div>
 
-            {/* Error */}
+            {/* Last Recorder Error */}
+            {lastRecorderError && (
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-destructive mb-2">
+                  Last MediaRecorder Error
+                </h4>
+                <div className="p-2 bg-destructive/10 rounded border border-destructive/30">
+                  <p className="text-xs font-mono text-destructive break-all">
+                    {lastRecorderError}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* App Error */}
             {error && (
               <div>
                 <h4 className="text-xs font-medium uppercase tracking-wider text-destructive mb-2">
-                  Last Error
+                  Capture Error
                 </h4>
-                <div className="p-2 bg-destructive/10 rounded border border-destructive/30">
+                <div className="p-2 bg-destructive/10 rounded border border-destructive/30 space-y-1">
                   <p className="text-xs font-mono text-destructive">
                     [{error.code}] {error.message}
                   </p>
+                  {error.details && (
+                    <p className="text-[10px] font-mono text-destructive/70 break-all">
+                      {error.details}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

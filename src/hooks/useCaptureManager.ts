@@ -120,6 +120,8 @@ export interface UseCaptureManagerReturn {
     chunksCount: number;
     totalBytes: number;
     mimeTypeInfo: RecordingMimeTypeInfo | null;
+    recorderStateLog: string[];
+    lastRecorderError: string | null;
   };
 }
 
@@ -141,6 +143,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   const [debugChunksCount, setDebugChunksCount] = useState(0);
   const [debugTotalBytes, setDebugTotalBytes] = useState(0);
   const [mimeTypeInfo, setMimeTypeInfo] = useState<RecordingMimeTypeInfo | null>(null);
+  const [recorderStateLog, setRecorderStateLog] = useState<string[]>([]);
+  const [lastRecorderError, setLastRecorderError] = useState<string | null>(null);
   
   // Single composite recorder ref
   const compositeRecorderRef = useRef<MediaRecorder | null>(null);
@@ -378,10 +382,20 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       compositeChunksRef.current = [];
       setDebugChunksCount(0);
       setDebugTotalBytes(0);
+      setRecorderStateLog([]);
+      setLastRecorderError(null);
+      
+      // Helper to log state transitions
+      const logStateTransition = (event: string) => {
+        const timestamp = new Date().toISOString().split("T")[1].slice(0, 12);
+        const entry = `${timestamp} ${event} → ${recorder.state}`;
+        setRecorderStateLog(prev => [...prev, entry]);
+        console.log(`[Recorder] ${entry}`);
+      };
       
       // Set to "starting" state - waiting for first chunk
       setCaptureState("starting");
-      console.log("[Capture] Recorder created, waiting for first data chunk...");
+      logStateTransition("created");
       
       // Promise that resolves when we get the first valid chunk
       const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
@@ -420,23 +434,43 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         };
         
         recorder.onerror = (event: Event) => {
-          console.error("[Composite] Recorder error:", event);
+          // MediaRecorder error events have an error property
+          const err = (event as any).error;
+          const errorMessage = err 
+            ? `${err.name || "Error"}: ${err.message || "Unknown error"}` 
+            : "Unknown MediaRecorder error";
+          console.error("[Composite] Recorder error:", errorMessage);
+          setLastRecorderError(errorMessage);
+          logStateTransition("error");
           clearTimeout(timeoutId);
           reject({
             code: "RECORDER_ERROR" as const,
             message: "MediaRecorder encountered an error.",
             recoverable: false,
-            details: `Error event: ${JSON.stringify(event)}`,
+            details: errorMessage,
           });
         };
         
         recorder.onstart = () => {
-          console.log(`[Composite] Recorder started, state: ${recorder.state}, mimeType: ${recorder.mimeType}`);
+          logStateTransition("start");
+        };
+        
+        recorder.onpause = () => {
+          logStateTransition("pause");
+        };
+        
+        recorder.onresume = () => {
+          logStateTransition("resume");
+        };
+        
+        recorder.onstop = () => {
+          logStateTransition("stop");
         };
       });
       
       compositeRecorderRef.current = recorder;
       recorder.start(1000); // 1 second timeslice chunks
+      logStateTransition("start()");
       
       // Wait for first chunk before transitioning to "recording" state
       await waitForFirstChunk;
@@ -826,6 +860,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       chunksCount: debugChunksCount,
       totalBytes: debugTotalBytes,
       mimeTypeInfo,
+      recorderStateLog,
+      lastRecorderError,
     },
   };
 }

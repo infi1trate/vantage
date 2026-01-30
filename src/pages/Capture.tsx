@@ -499,9 +499,11 @@ export default function CapturePage() {
                   chunksCount={capture.debugInfo.chunksCount}
                   totalBytes={capture.debugInfo.totalBytes}
                   mimeTypeInfo={capture.debugInfo.mimeTypeInfo || undefined}
+                  recorderStateLog={capture.debugInfo.recorderStateLog}
+                  lastRecorderError={capture.debugInfo.lastRecorderError}
                   recordedSource={
                     capture.captureState === "recording" || capture.captureState === "paused"
-                      ? "composed" // During active recording, we're always using composed mode
+                      ? "composed"
                       : undefined
                   }
                 />
