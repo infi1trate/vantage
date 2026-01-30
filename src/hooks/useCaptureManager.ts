@@ -3,7 +3,7 @@ import { useScreenCapture } from "./useScreenCapture";
 import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
-import { chooseRecordingMimeType, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
+import { tryRecordWithFallback, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
 import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
 
 /**
@@ -315,9 +315,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   // Track if we've had encoder failures (for automatic fallback)
   const encoderFailedOnceRef = useRef(false);
 
-  // Internal function to attempt recording with specific settings
+  // Internal function to attempt recording with a given profile
+  // Uses robust MIME type fallback - actually tries to start MediaRecorder with each candidate
   const attemptRecording = useCallback(async (
-    selectedMimeType: RecordingMimeTypeInfo,
     profile: typeof ENCODER_PROFILES.standard
   ): Promise<boolean> => {
     console.log(`[Capture] Attempting recording with profile: ${profile.frameRate}fps, ${profile.videoBitsPerSecond / 1_000_000}Mbps video`);
@@ -357,16 +357,32 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     
     console.log(`[Capture] Stream validation passed: ${streamValidation.videoTracks} video, ${streamValidation.audioTracks} audio tracks`);
     
-    // Create MediaRecorder with conservative bitrate settings
-    const options: MediaRecorderOptions = {
-      mimeType: selectedMimeType.mimeType,
+    // === ROBUST MIME TYPE FALLBACK ===
+    // Actually try to create and start MediaRecorder with each candidate mimeType
+    // Don't rely only on isTypeSupported - catch actual failures
+    const robustResult = await tryRecordWithFallback(compositeStream, {
       videoBitsPerSecond: profile.videoBitsPerSecond,
       audioBitsPerSecond: profile.audioBitsPerSecond,
-    };
+    });
     
-    console.log(`[Capture] MediaRecorder options:`, options);
+    if (robustResult.success === false) {
+      console.error("[Capture] All MIME type candidates failed:", robustResult.error);
+      composite.stopCompositing();
+      throw {
+        code: "NO_COMPATIBLE_FORMAT" as const,
+        message: "Recording not supported on this browser/device configuration.",
+        recoverable: false,
+        details: robustResult.error,
+      };
+    }
     
-    const recorder = new MediaRecorder(compositeStream, options);
+    // We have a working recorder from the robust fallback
+    const recorder = robustResult.recorder;
+    const selectedMimeType = robustResult.mimeTypeInfo;
+    
+    console.log(`[Capture] Robust fallback succeeded with: ${selectedMimeType.mimeType} (${selectedMimeType.codecsLabel})`);
+    setMimeTypeInfo(selectedMimeType);
+    
     compositeChunksRef.current = [];
     setDebugChunksCount(0);
     setDebugTotalBytes(0);
@@ -381,9 +397,10 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       console.log(`[Recorder] ${entry}`);
     };
     
+    // The recorder is already started from tryRecordWithFallback
     // Set to "starting" state - waiting for first chunk
     setCaptureState("starting");
-    logStateTransition("created");
+    logStateTransition("robust-start");
     
     // Promise that resolves when we get the first valid chunk
     const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
@@ -457,8 +474,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     });
     
     compositeRecorderRef.current = recorder;
-    recorder.start(1000); // 1 second timeslice chunks
-    logStateTransition("start()");
+    // NOTE: recorder is already started from tryRecordWithFallback
+    // We just need to wait for the first chunk
     
     // Wait for first chunk before transitioning to "recording" state
     await waitForFirstChunk;
@@ -522,23 +539,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     }
 
     try {
-      console.log("[Capture] Starting composite recording...");
-      
-      // Check for compatible MIME type FIRST
-      const selectedMimeType = chooseRecordingMimeType();
-      
-      if (!selectedMimeType) {
-        throw {
-          code: "NO_COMPATIBLE_FORMAT" as const,
-          message: "This browser can't record a playable format. Use Chrome.",
-          recoverable: false,
-          details: "No MIME type supported by both MediaRecorder and HTMLVideoElement",
-        };
-      }
-      
-      // Store for debug/diagnostics
-      setMimeTypeInfo(selectedMimeType);
-      console.log(`[Capture] Selected MIME type: ${selectedMimeType.mimeType} (${selectedMimeType.codecsLabel})`);
+      console.log("[Capture] Starting composite recording with robust MIME fallback...");
       
       // Choose profile based on whether we've failed before
       const initialProfile = encoderFailedOnceRef.current 
@@ -546,8 +547,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         : ENCODER_PROFILES.standard;
       
       try {
-        // Try with selected profile
-        return await attemptRecording(selectedMimeType, initialProfile);
+        // Try with selected profile - attemptRecording now handles MIME type fallback internally
+        return await attemptRecording(initialProfile);
       } catch (firstErr: any) {
         // If this was already a low-power attempt, don't retry
         if (encoderFailedOnceRef.current || initialProfile === ENCODER_PROFILES.lowPower) {
@@ -565,7 +566,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         
         // Retry with low-power settings
         console.log("[Capture] Retrying with low-power profile: 24fps, 1.5Mbps");
-        return await attemptRecording(selectedMimeType, ENCODER_PROFILES.lowPower);
+        return await attemptRecording(ENCODER_PROFILES.lowPower);
       }
     } catch (err: any) {
       console.error("Failed to start recording:", err);
