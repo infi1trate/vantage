@@ -41,12 +41,12 @@ export function Header() {
         {/* Navigation */}
         <nav className="hidden md:flex items-center gap-8">
           <Link 
-            to="/" 
+            to="/dashboard" 
             className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >
             Dashboard
           </Link>
-          <Link 
+          <Link
             to="/library" 
             className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >
