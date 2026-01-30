@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { LocalSession, deleteLocalSession, getLocalSessionBlob, getLocalSessionThumbnail, formatBytes } from "@/lib/localSessionStorage";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,8 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { useLazyLoad } from "@/hooks/useLazyLoad";
+import { measureAsync } from "@/lib/performanceMetrics";
 
 /**
  * Generate a deterministic placeholder color based on session id
@@ -73,14 +75,28 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   
   // Track thumbnail URL for cleanup
   const thumbnailUrlRef = useRef<string | null>(null);
+  
+  // Lazy loading - only load thumbnail when card enters viewport
+  const { ref: cardRef, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
+    rootMargin: "200px", // Pre-load 200px before entering viewport
+    triggerOnce: true,
+  });
 
-  // Load thumbnail from IndexedDB on mount
+  // Load thumbnail from IndexedDB only when card becomes visible
   useEffect(() => {
+    // Skip if not yet visible
+    if (!hasBeenVisible) return;
+    
     let cancelled = false;
     
     async function loadThumbnail() {
       try {
-        const thumbBlob = await getLocalSessionThumbnail(session.id);
+        const thumbBlob = await measureAsync(
+          "thumbnail:load",
+          () => getLocalSessionThumbnail(session.id),
+          { sessionId: session.id }
+        );
+        
         if (thumbBlob && !cancelled) {
           const url = URL.createObjectURL(thumbBlob);
           thumbnailUrlRef.current = url;
@@ -101,7 +117,7 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
         thumbnailUrlRef.current = null;
       }
     };
-  }, [session.id]);
+  }, [session.id, hasBeenVisible]);
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -195,7 +211,7 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   if (viewMode === "list") {
     return (
       <>
-        <Card className="group flex items-center gap-4 p-4 bg-card border-border/50 hover:border-primary/50 transition-all">
+        <Card ref={cardRef} className="group flex items-center gap-4 p-4 bg-card border-border/50 hover:border-primary/50 transition-all">
           {/* Thumbnail */}
           <button onClick={handlePlay} className="shrink-0 cursor-pointer">
             <div className="w-40 aspect-video relative bg-muted/50 rounded-lg overflow-hidden">
@@ -371,7 +387,7 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   // Grid view
   return (
     <>
-      <Card className="group relative overflow-hidden bg-card border-border/50 hover:border-primary/50 transition-all duration-300 card-hover">
+      <Card ref={cardRef} className="group relative overflow-hidden bg-card border-border/50 hover:border-primary/50 transition-all duration-300 card-hover">
         <button onClick={handlePlay} className="w-full text-left">
           {/* Thumbnail */}
           <div className="aspect-video relative bg-muted/50 overflow-hidden">

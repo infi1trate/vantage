@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { recordMetric, createFPSCounter } from "@/lib/performanceMetrics";
 
 interface UseBackgroundRemovalOptions {
   enabled: boolean;
@@ -38,6 +39,17 @@ export function useBackgroundRemoval({
   const segmenterRef = useRef<any>(null);
   const animationRef = useRef<number>(0);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
+  
+  // Reusable offscreen canvas to avoid GC pressure
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  
+  // Pre-allocated ImageData to avoid repeated allocations
+  const videoImageDataRef = useRef<ImageData | null>(null);
+  const bgImageDataRef = useRef<ImageData | null>(null);
+  
+  // FPS counter for monitoring
+  const fpsCounterRef = useRef(createFPSCounter("BackgroundRemoval"));
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -109,7 +121,7 @@ export function useBackgroundRemoval({
     };
   }, [enabled]);
 
-  // Process video frames
+  // Process video frames - optimized with reusable buffers
   const processFrame = useCallback(() => {
     const video = videoElement;
     const canvas = canvasRef.current;
@@ -126,71 +138,96 @@ export function useBackgroundRemoval({
       return;
     }
 
-    // Set canvas size to match video
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
+    // Resize canvas if needed
+    const targetWidth = video.videoWidth || 320;
+    const targetHeight = video.videoHeight || 240;
+    
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      
+      // Invalidate cached buffers on resize
+      videoImageDataRef.current = null;
+      bgImageDataRef.current = null;
+      offscreenCanvasRef.current = null;
+      offscreenCtxRef.current = null;
     }
+
+    // Ensure offscreen canvas is ready
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement("canvas");
+      offscreenCanvasRef.current.width = canvas.width;
+      offscreenCanvasRef.current.height = canvas.height;
+      offscreenCtxRef.current = offscreenCanvasRef.current.getContext("2d");
+    }
+
+    const startTimeMs = performance.now();
 
     try {
       setIsProcessing(true);
       
       // Run segmentation
-      const startTimeMs = performance.now();
       const result = segmenter.segmentForVideo(video, startTimeMs);
       
       if (result.categoryMask) {
         const mask = result.categoryMask;
         const maskData = mask.getAsUint8Array();
-        const width = mask.width;
-        const height = mask.height;
+        const maskWidth = mask.width;
+        const maskHeight = mask.height;
 
         // Draw background first
         if (bgImageRef.current) {
-          // Draw background image
           ctx.drawImage(bgImageRef.current, 0, 0, canvas.width, canvas.height);
         } else {
-          // Fill with background color
           ctx.fillStyle = backgroundColor || "#000000";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // Draw the video frame to an offscreen canvas to get pixel data
-        const offscreen = document.createElement("canvas");
-        offscreen.width = canvas.width;
-        offscreen.height = canvas.height;
-        const offCtx = offscreen.getContext("2d");
+        // Draw video to reusable offscreen canvas
+        const offCtx = offscreenCtxRef.current;
         if (offCtx) {
           offCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const videoImageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
-          const videoPixels = videoImageData.data;
+          
+          // Reuse ImageData if dimensions match
+          if (!videoImageDataRef.current || 
+              videoImageDataRef.current.width !== canvas.width || 
+              videoImageDataRef.current.height !== canvas.height) {
+            videoImageDataRef.current = offCtx.createImageData(canvas.width, canvas.height);
+          }
+          
+          // Get pixel data into pre-allocated buffer
+          const tempVideoData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
+          videoImageDataRef.current.data.set(tempVideoData.data);
+          const videoPixels = videoImageDataRef.current.data;
 
-          // Get the current canvas (with background) pixel data
+          // Get background pixel data
           const bgImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const bgPixels = bgImageData.data;
 
           // Composite: where mask is person (value > 0), use video pixels
-          // Scale mask coordinates to canvas coordinates
-          const scaleX = width / canvas.width;
-          const scaleY = height / canvas.height;
+          const scaleX = maskWidth / canvas.width;
+          const scaleY = maskHeight / canvas.height;
 
-          for (let y = 0; y < canvas.height; y++) {
-            for (let x = 0; x < canvas.width; x++) {
-              const canvasIdx = (y * canvas.width + x) * 4;
-              
-              // Get corresponding mask pixel
+          // Optimized loop - process in chunks for better cache locality
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          for (let y = 0; y < canvasHeight; y++) {
+            const maskY = Math.floor(y * scaleY) * maskWidth;
+            const rowOffset = y * canvasWidth * 4;
+            
+            for (let x = 0; x < canvasWidth; x++) {
               const maskX = Math.floor(x * scaleX);
-              const maskY = Math.floor(y * scaleY);
-              const maskIdx = maskY * width + maskX;
-              const maskValue = maskData[maskIdx];
+              const maskValue = maskData[maskY + maskX];
 
-              // If person detected (mask value > 0), blend video over background
               if (maskValue > 0) {
-                // Smooth edge blending based on mask value
-                const alpha = Math.min(maskValue / 255 * 1.5, 1);
-                bgPixels[canvasIdx] = Math.round(videoPixels[canvasIdx] * alpha + bgPixels[canvasIdx] * (1 - alpha));
-                bgPixels[canvasIdx + 1] = Math.round(videoPixels[canvasIdx + 1] * alpha + bgPixels[canvasIdx + 1] * (1 - alpha));
-                bgPixels[canvasIdx + 2] = Math.round(videoPixels[canvasIdx + 2] * alpha + bgPixels[canvasIdx + 2] * (1 - alpha));
+                const canvasIdx = rowOffset + x * 4;
+                const alpha = Math.min(maskValue * 0.00588235294, 1); // 1.5 / 255 ≈ 0.00588
+                const invAlpha = 1 - alpha;
+                
+                bgPixels[canvasIdx] = (videoPixels[canvasIdx] * alpha + bgPixels[canvasIdx] * invAlpha) | 0;
+                bgPixels[canvasIdx + 1] = (videoPixels[canvasIdx + 1] * alpha + bgPixels[canvasIdx + 1] * invAlpha) | 0;
+                bgPixels[canvasIdx + 2] = (videoPixels[canvasIdx + 2] * alpha + bgPixels[canvasIdx + 2] * invAlpha) | 0;
                 bgPixels[canvasIdx + 3] = 255;
               }
             }
@@ -200,6 +237,16 @@ export function useBackgroundRemoval({
         }
 
         mask.close();
+        
+        // Record frame processing time
+        const frameDuration = performance.now() - startTimeMs;
+        recordMetric("capture:background-removal", frameDuration, {
+          width: canvas.width,
+          height: canvas.height,
+        });
+        
+        // Update FPS counter
+        fpsCounterRef.current.tick();
       }
     } catch (err) {
       // Silently continue - occasional frame drops are acceptable
@@ -217,6 +264,8 @@ export function useBackgroundRemoval({
         cancelAnimationFrame(animationRef.current);
         animationRef.current = 0;
       }
+      // Reset FPS counter when stopping
+      fpsCounterRef.current.reset();
       return;
     }
 

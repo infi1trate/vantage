@@ -3,6 +3,8 @@
  * Stores session metadata and video blobs for offline access and persistence
  */
 
+import { measureSync, recordMetric } from "@/lib/performanceMetrics";
+
 const DB_NAME = "vantage_sessions";
 const DB_VERSION = 2; // Bumped for thumbnail store
 const SESSIONS_STORE = "sessions";
@@ -408,23 +410,25 @@ export function generateThumbnailFromCanvas(
   maxWidth = 320,
   quality = 0.8
 ): string {
-  // Create a smaller canvas for the thumbnail
-  const thumbCanvas = document.createElement("canvas");
-  const aspectRatio = canvas.height / canvas.width;
-  thumbCanvas.width = maxWidth;
-  thumbCanvas.height = Math.round(maxWidth * aspectRatio);
+  return measureSync("thumbnail:generate", () => {
+    // Create a smaller canvas for the thumbnail
+    const thumbCanvas = document.createElement("canvas");
+    const aspectRatio = canvas.height / canvas.width;
+    thumbCanvas.width = maxWidth;
+    thumbCanvas.height = Math.round(maxWidth * aspectRatio);
 
-  const ctx = thumbCanvas.getContext("2d");
-  if (!ctx) {
-    console.warn("[LocalStorage] Failed to get thumbnail canvas context");
-    return "";
-  }
+    const ctx = thumbCanvas.getContext("2d");
+    if (!ctx) {
+      console.warn("[LocalStorage] Failed to get thumbnail canvas context");
+      return "";
+    }
 
-  // Draw scaled version
-  ctx.drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+    // Draw scaled version
+    ctx.drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
 
-  // Return as data URL
-  return thumbCanvas.toDataURL("image/jpeg", quality);
+    // Return as data URL
+    return thumbCanvas.toDataURL("image/jpeg", quality);
+  }, { source: "canvas", maxWidth });
 }
 
 /**
@@ -436,6 +440,8 @@ export async function generateThumbnailFromBlob(
   maxWidth = 320,
   quality = 0.8
 ): Promise<string> {
+  const startTime = performance.now();
+  
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     const url = URL.createObjectURL(blob);
@@ -470,6 +476,11 @@ export async function generateThumbnailFromBlob(
         const dataUrl = canvas.toDataURL("image/jpeg", quality);
 
         URL.revokeObjectURL(url);
+        
+        // Record total thumbnail generation time
+        const duration = performance.now() - startTime;
+        recordMetric("thumbnail:generate", duration, { source: "blob", maxWidth });
+        
         resolve(dataUrl);
       } catch (err) {
         URL.revokeObjectURL(url);
