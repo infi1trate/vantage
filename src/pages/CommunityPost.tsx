@@ -1,38 +1,30 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Play,
-  Pause,
   Clock,
   Eye,
   MessageSquare,
   Send,
   Share2,
-  Flag,
   ArrowLeft,
   Lock,
   AlertCircle,
   Copy,
   Check,
-  User,
   Pencil,
   Trash2,
   MoreVertical,
-  Maximize2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -54,6 +46,11 @@ import {
   CommunityPost,
   CommunityAnnotation,
 } from "@/lib/community";
+import {
+  getCommunityReactions,
+  CommunityReaction,
+} from "@/lib/communityReactions";
+import { CommunityVideoPlayer } from "@/components/community/CommunityVideoPlayer";
 import { useAuth } from "@/contexts/AuthContext";
 
 function formatDuration(seconds: number): string {
@@ -75,17 +72,15 @@ function formatTimestamp(seconds: number): string {
 export default function CommunityPostPage() {
   const { postId, token } = useParams();
   const { user } = useAuth();
-  const videoRef = useRef<HTMLVideoElement>(null);
   
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [annotations, setAnnotations] = useState<CommunityAnnotation[]>([]);
+  const [reactions, setReactions] = useState<CommunityReaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   // Video state
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   
   // Annotation input
   const [annotationInput, setAnnotationInput] = useState("");
@@ -105,10 +100,8 @@ export default function CommunityPostPage() {
         let postData: CommunityPost | null = null;
         
         if (token) {
-          // Load by share token
           postData = await getCommunityPostByToken(token);
         } else if (postId) {
-          // Load by ID
           postData = await getCommunityPost(postId);
         }
         
@@ -127,6 +120,14 @@ export default function CommunityPostPage() {
           const annotationsData = await getCommunityAnnotations(postData.id);
           setAnnotations(annotationsData);
         }
+        
+        // Load reactions
+        try {
+          const reactionsData = await getCommunityReactions(postData.id);
+          setReactions(reactionsData);
+        } catch (err) {
+          console.error("[CommunityPost] Failed to load reactions:", err);
+        }
       } catch (err) {
         console.error("[CommunityPost] Load error:", err);
         setError("Failed to load post");
@@ -138,35 +139,13 @@ export default function CommunityPostPage() {
     loadPost();
   }, [postId, token, user?.id]);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-    }
-  };
+  const handleTimeUpdate = useCallback((time: number) => {
+    setCurrentTime(time);
+  }, []);
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-    }
-  };
-
-  const handlePlayPause = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
-    }
-  };
-
-  const handleSeekToAnnotation = (timestamp: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = timestamp;
-      setCurrentTime(timestamp);
-    }
-  };
+  const handleReactionAdded = useCallback((reaction: CommunityReaction) => {
+    setReactions((prev) => [...prev, reaction]);
+  }, []);
 
   const handleAddAnnotation = async () => {
     if (!post || !user || !annotationInput.trim()) return;
@@ -179,7 +158,9 @@ export default function CommunityPostPage() {
         currentTime,
         annotationInput.trim()
       );
-      setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
+      setAnnotations((prev) => 
+        [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds)
+      );
       setAnnotationInput("");
       toast.success("Annotation added");
     } catch (err) {
@@ -284,25 +265,16 @@ export default function CommunityPostPage() {
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Video + Info Column */}
             <div className="lg:col-span-2 space-y-4">
-              {/* Video Player */}
-              <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
-                {post.video_url ? (
-                  <video
-                    ref={videoRef}
-                    src={post.video_url}
-                    className="w-full h-full object-contain"
-                    onTimeUpdate={handleTimeUpdate}
-                    onLoadedMetadata={handleLoadedMetadata}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    controls
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    <p>Video not available</p>
-                  </div>
-                )}
-              </div>
+              {/* Premium Video Player with Reactions */}
+              <CommunityVideoPlayer
+                videoUrl={post.video_url}
+                postId={post.id}
+                userId={user?.id}
+                reactions={reactions}
+                annotations={annotations}
+                onTimeUpdate={handleTimeUpdate}
+                onReactionAdded={handleReactionAdded}
+              />
               
               {/* Title + Meta */}
               <div className="space-y-2">
@@ -315,6 +287,14 @@ export default function CommunityPostPage() {
                   </span>
                   <span>•</span>
                   <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+                  {reactions.length > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        {reactions.length} reactions
+                      </span>
+                    </>
+                  )}
                   {post.visibility !== "public" && (
                     <>
                       <span>•</span>
@@ -392,6 +372,11 @@ export default function CommunityPostPage() {
                   <h3 className="font-semibold text-sm flex items-center gap-2">
                     <Pencil className="h-4 w-4" />
                     Annotations
+                    {annotations.length > 0 && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        ({annotations.length})
+                      </span>
+                    )}
                   </h3>
                   {!post.allow_public_annotations && !isAuthor && (
                     <Tooltip>
@@ -430,9 +415,9 @@ export default function CommunityPostPage() {
                         >
                           <div className="flex items-start gap-2">
                             <button
-                              onClick={() => handleSeekToAnnotation(annotation.timestamp_seconds)}
-                              className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono shrink-0 hover:bg-primary/20 transition-colors"
+                              className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono shrink-0 hover:bg-primary/20 transition-colors flex items-center gap-1"
                             >
+                              <Clock className="h-3 w-3" />
                               {formatTimestamp(annotation.timestamp_seconds)}
                             </button>
                             <p className="text-sm flex-1">{annotation.content}</p>
