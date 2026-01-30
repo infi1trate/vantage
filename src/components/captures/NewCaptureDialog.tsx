@@ -192,18 +192,21 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
     setView("form");
   };
 
-  // Check if any effects have been customized
+  // Check if any effects have been customized from defaults
   const hasCustomEffects = effectsConfig.includeFacecam || 
-    effectsConfig.frameShape !== "circle" || 
-    effectsConfig.cameraSize !== "small" || 
     effectsConfig.backgroundColor !== "transparent" || 
     effectsConfig.backgroundImage !== null;
 
-  // Check if any settings have been customized
-  const hasCustomSettings = settingsConfig.videoQuality !== "1080p60" ||
+  // Check if any settings have been customized from defaults
+  const hasCustomSettings = 
+    settingsConfig.videoQuality !== "1080p60" ||
+    settingsConfig.cameraQuality !== "720p" ||
+    settingsConfig.flipCamera !== true ||
     settingsConfig.audioBitrate !== "128" ||
+    settingsConfig.systemAudio !== true ||
     !settingsConfig.autoStop ||
-    settingsConfig.pushToTalk;
+    settingsConfig.pushToTalk ||
+    !settingsConfig.monoAudio;
 
   // ============= Not Supported View =============
   if (view === "not_supported" && preflightResult) {
@@ -450,7 +453,9 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                       Effects
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {effectsConfig.includeFacecam ? "Facecam on" : "Facecam off"}
+                      {effectsConfig.includeFacecam 
+                        ? `${effectsConfig.frameShape === "circle" ? "⬤" : "⬜"} Facecam · ${effectsConfig.cameraSize}`
+                        : "Facecam off"}
                     </p>
                   </div>
                   {hasCustomEffects && (
@@ -490,7 +495,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                       Settings
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {settingsConfig.videoQuality}
+                      {settingsConfig.videoQuality} · {settingsConfig.audioBitrate}kbps
                     </p>
                   </div>
                   {hasCustomSettings && (
