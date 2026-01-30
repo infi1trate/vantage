@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, CameraOff, RefreshCw } from "lucide-react";
+import { Camera, CameraOff, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useBackgroundRemoval } from "@/hooks/useBackgroundRemoval";
 
 export type FrameShape = "circle" | "rounded-square";
 export type CameraSize = "small" | "large";
@@ -46,22 +47,24 @@ export function FacecamPreview({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   
   const bgColor = BACKGROUND_COLORS.find(c => c.id === backgroundColor)?.value || "transparent";
   
-  // Background image overrides color
-  const getBackgroundStyle = (): React.CSSProperties => {
-    if (backgroundImage) {
-      return {
-        backgroundImage: `url(${backgroundImage})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return {
-      backgroundColor: bgColor === "transparent" ? "black" : bgColor,
-    };
-  };
+  // Determine if we need background removal (not transparent)
+  const needsBackgroundRemoval = backgroundColor !== "transparent" || backgroundImage !== null;
+  
+  // Background removal hook
+  const {
+    canvasRef,
+    isModelLoaded,
+    error: segmentError,
+  } = useBackgroundRemoval({
+    enabled: enabled && needsBackgroundRemoval && videoReady,
+    videoElement: videoRef.current,
+    backgroundColor: bgColor === "transparent" ? "#000000" : bgColor,
+    backgroundImage,
+  });
 
   useEffect(() => {
     if (!enabled) {
@@ -70,12 +73,14 @@ export function FacecamPreview({
         stream.getTracks().forEach(track => track.stop());
         setStream(null);
       }
+      setVideoReady(false);
       return;
     }
 
     const startCamera = async () => {
       setLoading(true);
       setError(null);
+      setVideoReady(false);
       
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -121,6 +126,11 @@ export function FacecamPreview({
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
+
+  // Handle video ready state
+  const handleVideoLoadedData = () => {
+    setVideoReady(true);
+  };
 
   const getFrameClasses = () => {
     if (frameShape === "circle") {
@@ -190,34 +200,76 @@ export function FacecamPreview({
     );
   }
 
+  // Show canvas with background removal when active, otherwise show video
+  const showCanvas = needsBackgroundRemoval && isModelLoaded && videoReady;
+
   return (
     <div 
       className={cn(
-        "border border-border/30 overflow-hidden relative transition-all duration-150 ease-out",
+        "border border-border/30 overflow-hidden relative transition-all duration-150 ease-out bg-black",
         getContainerClasses(),
         getFrameClasses(),
         className
       )}
-      style={getBackgroundStyle()}
     >
+      {/* Hidden video element for source (always needed) */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted
+        onLoadedData={handleVideoLoadedData}
         className={cn(
           "w-full h-full object-cover transition-transform duration-150 ease-out",
           flipCamera && "scale-x-[-1]",
-          frameShape === "circle" && "rounded-full"
+          frameShape === "circle" && "rounded-full",
+          // Hide video when showing canvas with background removal
+          showCanvas && "opacity-0 absolute inset-0"
         )}
       />
+      
+      {/* Canvas with background removal effect */}
+      {needsBackgroundRemoval && (
+        <canvas
+          ref={canvasRef}
+          className={cn(
+            "w-full h-full object-cover transition-opacity duration-300",
+            flipCamera && "scale-x-[-1]",
+            frameShape === "circle" && "rounded-full",
+            // Only show canvas when model is loaded and processing
+            showCanvas ? "opacity-100" : "opacity-0 absolute inset-0"
+          )}
+        />
+      )}
+      
+      {/* Loading indicator for background removal model */}
+      {needsBackgroundRemoval && !isModelLoaded && videoReady && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="text-center space-y-2">
+            <RefreshCw className="h-4 w-4 text-primary mx-auto animate-spin" />
+            <p className="text-[10px] text-muted-foreground">Loading mask...</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Status badge */}
       <div className={cn(
         "absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] text-white/80 transition-all duration-150",
         frameShape === "circle" && "bottom-3 right-3"
       )}>
         <Camera className="h-3 w-3" />
         <span>Live</span>
+        {showCanvas && (
+          <Sparkles className="h-2.5 w-2.5 text-primary ml-0.5" />
+        )}
       </div>
+      
+      {/* Segmentation error indicator */}
+      {segmentError && needsBackgroundRemoval && (
+        <div className="absolute top-2 left-2 right-2 px-2 py-1 bg-warning/20 border border-warning/30 rounded text-[10px] text-warning text-center">
+          {segmentError}
+        </div>
+      )}
     </div>
   );
 }
