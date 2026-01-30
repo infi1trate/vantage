@@ -7,6 +7,10 @@ import { cn } from "@/lib/utils";
 interface ExportCTAsProps {
   sessionId: string;
   sessionTitle: string;
+  sessionThumbnail?: string;
+  sessionDuration?: number;
+  hasMicTrack?: boolean;
+  hasWebcamTrack?: boolean;
   onExport?: (options: ExportOptions) => void;
   variant?: "header" | "floating";
   className?: string;
@@ -20,15 +24,19 @@ interface ExportCTAsProps {
 export function ExportCTAs({
   sessionId,
   sessionTitle,
+  sessionThumbnail,
+  sessionDuration,
+  hasMicTrack,
+  hasWebcamTrack,
   onExport,
   variant = "header",
   className,
 }: ExportCTAsProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [defaultTab, setDefaultTab] = useState<ExportTab>("export");
+  const [defaultTab, setDefaultTab] = useState<ExportTab>("download");
 
   const handleExportClick = () => {
-    setDefaultTab("export");
+    setDefaultTab("download");
     setDrawerOpen(true);
   };
 
@@ -77,6 +85,10 @@ export function ExportCTAs({
           defaultTab={defaultTab}
           sessionId={sessionId}
           sessionTitle={sessionTitle}
+          sessionThumbnail={sessionThumbnail}
+          sessionDuration={sessionDuration}
+          hasMicTrack={hasMicTrack}
+          hasWebcamTrack={hasWebcamTrack}
           onExport={onExport}
         />
       </>
@@ -112,6 +124,10 @@ export function ExportCTAs({
         defaultTab={defaultTab}
         sessionId={sessionId}
         sessionTitle={sessionTitle}
+        sessionThumbnail={sessionThumbnail}
+        sessionDuration={sessionDuration}
+        hasMicTrack={hasMicTrack}
+        hasWebcamTrack={hasWebcamTrack}
         onExport={onExport}
       />
     </>
