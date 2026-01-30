@@ -89,9 +89,12 @@ import {
 import { cn } from "@/lib/utils";
 import { exportToDesktop, generateExportFilename } from "@/lib/fileExport";
 import { createCommunityPost, getShareableLink } from "@/lib/community";
+import { loadExportSettings, saveExportSettings } from "@/lib/exportSettings";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { ExportSummary } from "./ExportSummary";
+import { PublicPostWarning } from "./PublicPostWarning";
 
 export type ExportTab = "download" | "platforms" | "community";
 
@@ -234,25 +237,30 @@ export function ExportDrawer({
   
   const [activeTab, setActiveTab] = useState<ExportTab>(defaultTab);
   const [showProgress, setShowProgress] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [showPublicWarning, setShowPublicWarning] = useState(false);
+
+  // Load saved settings
+  const savedSettings = loadExportSettings();
 
   // Download tab state
-  const [preset, setPreset] = useState<"source" | "1080p" | "720p" | "audio">("1080p");
-  const [format, setFormat] = useState<"mp4" | "mov" | "mp3" | "wav">("mp4");
-  const [includeMic, setIncludeMic] = useState(hasMicTrack);
-  const [includeWebcam, setIncludeWebcam] = useState(hasWebcamTrack);
-  const [burnCaptions, setBurnCaptions] = useState(false);
+  const [preset, setPreset] = useState<"source" | "1080p" | "720p" | "audio">(savedSettings.preset);
+  const [format, setFormat] = useState<"mp4" | "mov" | "mp3" | "wav">(savedSettings.format);
+  const [includeMic, setIncludeMic] = useState(hasMicTrack ?? savedSettings.includeMic);
+  const [includeWebcam, setIncludeWebcam] = useState(hasWebcamTrack ?? savedSettings.includeWebcam);
+  const [burnCaptions, setBurnCaptions] = useState(savedSettings.burnCaptions);
 
   // Community tab state
   const [title, setTitle] = useState(sessionTitle);
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("public");
-  const [allowComments, setAllowComments] = useState(true);
-  const [allowAnnotations, setAllowAnnotations] = useState(false);
-  const [allowRemixes, setAllowRemixes] = useState(false);
+  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">(savedSettings.visibility);
+  const [allowComments, setAllowComments] = useState(savedSettings.allowComments);
+  const [allowAnnotations, setAllowAnnotations] = useState(savedSettings.allowAnnotations);
+  const [allowRemixes, setAllowRemixes] = useState(savedSettings.allowRemixes);
 
   // Platforms tab state
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
@@ -263,6 +271,9 @@ export function ExportDrawer({
 
   // Fast export mode (no transcoding available)
   const isFastExport = true; // TODO: Check for transcoding capability
+  
+  // Check if recording has sensitive content
+  const hasSensitiveContent = (hasMicTrack || hasWebcamTrack);
 
   // Load connected accounts
   useEffect(() => {
@@ -274,16 +285,23 @@ export function ExportDrawer({
     if (open) {
       setActiveTab(defaultTab);
       setShowProgress(false);
+      setShowSummary(false);
       setCurrentJobId(null);
     }
   }, [open, defaultTab, setCurrentJobId]);
 
-  // Show progress when job starts
+  // Show progress when job starts, show summary when completed
   useEffect(() => {
-    if (currentJob && (currentJob.status === "pending" || currentJob.status === "processing")) {
-      setShowProgress(true);
+    if (currentJob) {
+      if (currentJob.status === "pending" || currentJob.status === "processing") {
+        setShowProgress(true);
+        setShowSummary(false);
+      } else if (currentJob.status === "completed") {
+        setShowProgress(false);
+        setShowSummary(true);
+      }
     }
-  }, [currentJob]);
+  }, [currentJob, currentJob?.status]);
 
   // Update format when preset changes
   useEffect(() => {
@@ -293,6 +311,21 @@ export function ExportDrawer({
       setFormat("mp4");
     }
   }, [preset]);
+  
+  // Save settings when they change
+  useEffect(() => {
+    saveExportSettings({
+      preset,
+      format,
+      includeMic,
+      includeWebcam,
+      burnCaptions,
+      visibility,
+      allowComments,
+      allowAnnotations,
+      allowRemixes,
+    });
+  }, [preset, format, includeMic, includeWebcam, burnCaptions, visibility, allowComments, allowAnnotations, allowRemixes]);
 
   const handleExport = async () => {
     if (!videoUrl && !videoBlob) {
@@ -399,6 +432,15 @@ export function ExportDrawer({
     PLATFORMS[id].name.toLowerCase().includes(platformSearch.toLowerCase())
   );
 
+  // Check if public post needs warning
+  const handlePublishClick = () => {
+    if (visibility === "public" && hasSensitiveContent) {
+      setShowPublicWarning(true);
+    } else {
+      handlePublish();
+    }
+  };
+
   const handlePublish = async () => {
     if (!user) {
       toast.error("Please sign in to post to Community");
@@ -425,11 +467,13 @@ export function ExportDrawer({
       
       toast.success("Posted to Community!");
       
-      // Start a job for tracking
+      // Start a job for tracking with share link
+      const shareLink = `${window.location.origin}/community/${post.id}`;
       startJob("community_post", sessionId, sessionTitle, {
         postId: post.id,
         title: title.trim(),
         visibility,
+        shareLink,
       });
       
       onPublish?.({
@@ -474,10 +518,15 @@ export function ExportDrawer({
 
   const handleCloseProgress = () => {
     setShowProgress(false);
+    setShowSummary(false);
     setCurrentJobId(null);
-    if (currentJob?.status === "completed") {
-      onOpenChange(false);
-    }
+    onOpenChange(false);
+  };
+
+  const handleExportAgain = () => {
+    setShowProgress(false);
+    setShowSummary(false);
+    setCurrentJobId(null);
   };
 
   // Progress panel content
@@ -1310,7 +1359,7 @@ export function ExportDrawer({
         
         {activeTab === "community" && (
           <Button 
-            onClick={handlePublish} 
+            onClick={handlePublishClick} 
             className="w-full gap-2" 
             size="lg"
             disabled={!title.trim() || isPublishing || !user}
@@ -1332,48 +1381,90 @@ export function ExportDrawer({
     </div>
   );
 
+  // Summary content when job completes
+  const summaryContent = currentJob && showSummary ? (
+    <ExportSummary
+      job={currentJob}
+      onClose={handleCloseProgress}
+      onExportAgain={handleExportAgain}
+    />
+  ) : null;
+
   // Determine which content to show
-  const displayContent = showProgress && currentJob ? progressContent : content;
-  const displayTitle = showProgress && currentJob 
+  const displayContent = showSummary && currentJob?.status === "completed" 
+    ? summaryContent 
+    : showProgress && currentJob 
+    ? progressContent 
+    : content;
+    
+  const displayTitle = showSummary && currentJob?.status === "completed"
+    ? "COMPLETE"
+    : showProgress && currentJob 
     ? (currentJob.status === "completed" ? "COMPLETE" : 
        currentJob.status === "failed" ? "FAILED" : "EXPORTING")
     : "EXPORT";
-  const displayDescription = showProgress && currentJob
+  const displayDescription = (showProgress || showSummary) && currentJob
     ? currentJob.sessionTitle
     : "Publish or save your video";
 
   // Use Drawer for mobile, Sheet for desktop
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="max-h-[90vh] flex flex-col">
-          <DrawerHeader className="pb-0 text-left">
-            <DrawerTitle className="font-display text-xl tracking-wide">
-              {displayTitle}
-            </DrawerTitle>
-            <DrawerDescription className="text-sm text-muted-foreground truncate">
-              {displayDescription}
-            </DrawerDescription>
-          </DrawerHeader>
-          <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
-        </DrawerContent>
-      </Drawer>
+      <>
+        <Drawer open={open} onOpenChange={onOpenChange}>
+          <DrawerContent className="max-h-[90vh] flex flex-col">
+            <DrawerHeader className="pb-0 text-left">
+              <DrawerTitle className="font-display text-xl tracking-wide">
+                {displayTitle}
+              </DrawerTitle>
+              <DrawerDescription className="text-sm text-muted-foreground truncate">
+                {displayDescription}
+              </DrawerDescription>
+            </DrawerHeader>
+            <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
+          </DrawerContent>
+        </Drawer>
+        
+        <PublicPostWarning
+          open={showPublicWarning}
+          onOpenChange={setShowPublicWarning}
+          onConfirm={() => {
+            setShowPublicWarning(false);
+            handlePublish();
+          }}
+          hasMic={!!hasMicTrack}
+          hasWebcam={!!hasWebcamTrack}
+        />
+      </>
     );
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[400px] sm:w-[440px] p-0 flex flex-col gap-0">
-        <SheetHeader className="p-4 pb-0 text-left">
-          <SheetTitle className="font-display text-xl tracking-wide">
-            {displayTitle}
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground truncate">
-            {displayDescription}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
-      </SheetContent>
-    </Sheet>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent className="w-[400px] sm:w-[440px] p-0 flex flex-col gap-0">
+          <SheetHeader className="p-4 pb-0 text-left">
+            <SheetTitle className="font-display text-xl tracking-wide">
+              {displayTitle}
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground truncate">
+              {displayDescription}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 min-h-0 overflow-hidden">{displayContent}</div>
+        </SheetContent>
+      </Sheet>
+      
+      <PublicPostWarning
+        open={showPublicWarning}
+        onOpenChange={setShowPublicWarning}
+        onConfirm={() => {
+          setShowPublicWarning(false);
+          handlePublish();
+        }}
+        hasMic={!!hasMicTrack}
+        hasWebcam={!!hasWebcamTrack}
+      />
+    </>
   );
 }
