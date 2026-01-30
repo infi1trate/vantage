@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/Header";
 import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager } from "@/hooks/useCaptureManager";
+import { usePreflightChecks } from "@/hooks/usePreflightChecks";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
@@ -40,8 +41,15 @@ export default function CapturePage() {
   const [showDebug, setShowDebug] = useState(false);
   
   const capture = useCaptureManager();
-
-  // Determine if we should block navigation
+  
+  // Preflight checks - validate streams before allowing recording
+  const preflight = usePreflightChecks({
+    screenStream: capture.screenStream,
+    microphoneStream: capture.microphoneStream,
+    facecamStream: capture.facecamStream,
+    micRequired: capture.captureConfig.hasMic,
+    webcamEnabled: capture.captureConfig.hasCam,
+  });
   const isRecordingOrFinalizing = 
     capture.captureState === "recording" || 
     capture.captureState === "paused" || 
@@ -443,7 +451,7 @@ export default function CapturePage() {
             microphoneLevel={capture.microphoneLevel}
           />
 
-          {/* Controls */}
+          {/* Controls with Preflight Checklist */}
           <CaptureControls
             captureState={capture.captureState}
             onStartRecording={handleStartRecording}
@@ -452,6 +460,9 @@ export default function CapturePage() {
             onStopRecording={handleEndCapture}
             onStopPreview={handleStopPreview}
             onCancel={handleCancel}
+            preflightChecks={preflight.checks}
+            preflightPassed={preflight.allPassed}
+            preflightRunning={preflight.isRunning}
           />
 
           {/* Debug Panel - Dev mode only */}
