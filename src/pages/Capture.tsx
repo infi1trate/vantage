@@ -388,6 +388,7 @@ export default function CapturePage() {
   const isPaused = capture.captureState === "paused";
   const isFinalizing = capture.captureState === "finalizing";
   const isPreviewReady = capture.captureState === "preview_ready";
+  const isStarting = capture.captureState === "starting";
   const isActiveRecording = isRecording || isPaused;
 
   return (
@@ -422,6 +423,15 @@ export default function CapturePage() {
                   <span className="w-3 h-3 rounded-full bg-vantage-success" />
                   <Badge variant="outline" className="border-vantage-success/30 text-vantage-success uppercase tracking-wider text-xs">
                     READY
+                  </Badge>
+                  <span className="font-mono text-lg text-muted-foreground">0:00</span>
+                </>
+              )}
+              {isStarting && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-warning" />
+                  <Badge variant="outline" className="border-warning/30 text-warning uppercase tracking-wider text-xs">
+                    STARTING
                   </Badge>
                   <span className="font-mono text-lg text-muted-foreground">0:00</span>
                 </>
