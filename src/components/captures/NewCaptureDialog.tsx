@@ -660,6 +660,75 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                 />
               </div>
 
+              {/* Settings Panel */}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-2">
+                    <Settings2 className="h-3.5 w-3.5" />
+                    Settings
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Recording quality and audio</p>
+                </div>
+
+                <div className="space-y-2">
+                  {/* Video Quality */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Video Quality</p>
+                      <p className="text-[10px] text-muted-foreground">Resolution and frame rate</p>
+                    </div>
+                    <Select defaultValue="1080p60">
+                      <SelectTrigger className="w-[110px] h-8 text-xs bg-background border-border/40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="720p30">720p 30fps</SelectItem>
+                        <SelectItem value="720p60">720p 60fps</SelectItem>
+                        <SelectItem value="1080p30">1080p 30fps</SelectItem>
+                        <SelectItem value="1080p60">1080p 60fps</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Audio Bitrate */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Audio Quality</p>
+                      <p className="text-[10px] text-muted-foreground">Microphone bitrate</p>
+                    </div>
+                    <Select defaultValue="128">
+                      <SelectTrigger className="w-[90px] h-8 text-xs bg-background border-border/40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="64">64 kbps</SelectItem>
+                        <SelectItem value="128">128 kbps</SelectItem>
+                        <SelectItem value="192">192 kbps</SelectItem>
+                        <SelectItem value="320">320 kbps</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Push-to-talk */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Push-to-Talk</p>
+                      <p className="text-[10px] text-muted-foreground">Hold key to record voice</p>
+                    </div>
+                    <Switch defaultChecked={false} />
+                  </div>
+
+                  {/* Auto-stop on inactivity */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Auto-Stop</p>
+                      <p className="text-[10px] text-muted-foreground">Stop after 30min inactivity</p>
+                    </div>
+                    <Switch defaultChecked={true} />
+                  </div>
+                </div>
+              </div>
+
               {/* Screen Selection hint */}
               <div className="flex items-start gap-2 p-3 bg-muted/20 rounded-lg border border-border/20">
                 <Monitor className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-0.5" />
