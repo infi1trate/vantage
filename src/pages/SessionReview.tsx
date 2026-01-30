@@ -61,6 +61,7 @@ export default function SessionReview() {
   const [localSession, setLocalSession] = useState<LocalSession | null>(null);
   const [isLocalSession, setIsLocalSession] = useState(false);
   const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
+  const [blobLoading, setBlobLoading] = useState(false);
   const [blobMissing, setBlobMissing] = useState(false);
   const [blobDebugInfo, setBlobDebugInfo] = useState<{
     sessionFound: boolean;
@@ -88,15 +89,20 @@ export default function SessionReview() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const playerRef = useRef<{ enterDrawingMode: () => void } | null>(null);
+  
+  // Track current object URL in ref for stable cleanup
+  const videoUrlRef = useRef<string | null>(null);
 
-  // Cleanup object URL on unmount
+  // Cleanup object URL on unmount only (not on every localVideoUrl change)
   useEffect(() => {
     return () => {
-      if (localVideoUrl) {
-        URL.revokeObjectURL(localVideoUrl);
+      if (videoUrlRef.current) {
+        console.log("[SessionReview] Revoking object URL on unmount");
+        URL.revokeObjectURL(videoUrlRef.current);
+        videoUrlRef.current = null;
       }
     };
-  }, [localVideoUrl]);
+  }, []); // Empty deps - cleanup only on unmount
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -121,27 +127,41 @@ export default function SessionReview() {
         console.log("[SessionReview] Found local session:", sessionId);
         setIsLocalSession(true);
         setLocalSession(localData);
+        setBlobLoading(true);
         
-        // Load the blob
-        const blob = await getLocalSessionBlob(sessionId);
-        
-        if (blob) {
-          console.log("[SessionReview] Blob loaded, size:", blob.size);
-          const url = URL.createObjectURL(blob);
-          setLocalVideoUrl(url);
-          setBlobDebugInfo({
-            sessionFound: true,
-            blobSize: blob.size,
-            error: null,
-          });
-        } else {
-          console.warn("[SessionReview] Blob missing for session:", sessionId);
-          setBlobMissing(true);
-          setBlobDebugInfo({
-            sessionFound: true,
-            blobSize: null,
-            error: "Blob not found in IndexedDB blobs store",
-          });
+        try {
+          // Load the blob
+          const blob = await getLocalSessionBlob(sessionId);
+          
+          if (blob) {
+            console.log("[SessionReview] Blob loaded, size:", blob.size);
+            
+            // Revoke previous URL if exists (for session changes)
+            if (videoUrlRef.current) {
+              URL.revokeObjectURL(videoUrlRef.current);
+            }
+            
+            // Create stable object URL once
+            const url = URL.createObjectURL(blob);
+            videoUrlRef.current = url;
+            setLocalVideoUrl(url);
+            
+            setBlobDebugInfo({
+              sessionFound: true,
+              blobSize: blob.size,
+              error: null,
+            });
+          } else {
+            console.warn("[SessionReview] Blob missing for session:", sessionId);
+            setBlobMissing(true);
+            setBlobDebugInfo({
+              sessionFound: true,
+              blobSize: null,
+              error: "Blob not found in IndexedDB blobs store",
+            });
+          }
+        } finally {
+          setBlobLoading(false);
         }
         
         setLoading(false);
@@ -333,6 +353,16 @@ export default function SessionReview() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Show loading state while blob is being fetched from IndexedDB
+  if (isLocalSession && blobLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">Loading recording...</p>
       </div>
     );
   }
