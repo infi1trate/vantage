@@ -15,12 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2 } from "lucide-react";
+import { Settings2, Video, Mic, Volume2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface SettingsConfig {
   videoQuality: string;
   audioBitrate: string;
-  cameraQuality: string;
+  systemAudio: boolean;
   pushToTalk: boolean;
   autoStop: boolean;
   monoAudio: boolean;
@@ -44,7 +45,7 @@ export function SettingsModal({
   // Local state for editing
   const [videoQuality, setVideoQuality] = useState(config.videoQuality);
   const [audioBitrate, setAudioBitrate] = useState(config.audioBitrate);
-  const [cameraQuality, setCameraQuality] = useState(config.cameraQuality);
+  const [systemAudio, setSystemAudio] = useState(config.systemAudio);
   const [pushToTalk, setPushToTalk] = useState(config.pushToTalk);
   const [autoStop, setAutoStop] = useState(config.autoStop);
   const [monoAudio, setMonoAudio] = useState(config.monoAudio);
@@ -54,7 +55,7 @@ export function SettingsModal({
     if (open) {
       setVideoQuality(config.videoQuality);
       setAudioBitrate(config.audioBitrate);
-      setCameraQuality(config.cameraQuality);
+      setSystemAudio(config.systemAudio);
       setPushToTalk(config.pushToTalk);
       setAutoStop(config.autoStop);
       setMonoAudio(config.monoAudio);
@@ -65,7 +66,7 @@ export function SettingsModal({
     onSave({
       videoQuality,
       audioBitrate,
-      cameraQuality,
+      systemAudio,
       pushToTalk,
       autoStop,
       monoAudio,
@@ -83,102 +84,138 @@ export function SettingsModal({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-3">
-          {/* Video Quality */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Video Quality</p>
-              <p className="text-xs text-muted-foreground">Resolution and frame rate</p>
+        <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-4">
+          {/* Recording Quality Section */}
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Video className="h-3.5 w-3.5" />
+              Recording Quality
+            </p>
+            
+            {/* Video Quality */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Video Quality</p>
+                <p className="text-xs text-muted-foreground">Resolution and frame rate</p>
+              </div>
+              <Select value={videoQuality} onValueChange={setVideoQuality} disabled={disabled}>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[120px] h-9 text-sm bg-background border-border/40 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="720p30">720p 30fps</SelectItem>
+                  <SelectItem value="720p60">720p 60fps</SelectItem>
+                  <SelectItem value="1080p30">1080p 30fps</SelectItem>
+                  <SelectItem value="1080p60">1080p 60fps</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={videoQuality} onValueChange={setVideoQuality} disabled={disabled}>
-              <SelectTrigger className="w-full sm:w-auto sm:min-w-[110px] h-8 text-xs bg-background border-border/40 shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="720p30">720p 30fps</SelectItem>
-                <SelectItem value="720p60">720p 60fps</SelectItem>
-                <SelectItem value="1080p30">1080p 30fps</SelectItem>
-                <SelectItem value="1080p60">1080p 60fps</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* Auto-stop on inactivity */}
+            <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Auto-Stop</p>
+                <p className="text-xs text-muted-foreground">Stop after 30 min inactivity</p>
+              </div>
+              <Switch 
+                checked={autoStop} 
+                onCheckedChange={setAutoStop} 
+                disabled={disabled} 
+                className="shrink-0" 
+              />
+            </div>
           </div>
 
-          {/* Audio Bitrate */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Audio Quality</p>
-              <p className="text-xs text-muted-foreground">Microphone bitrate</p>
-            </div>
-            <Select value={audioBitrate} onValueChange={setAudioBitrate} disabled={disabled}>
-              <SelectTrigger className="w-full sm:w-auto sm:min-w-[90px] h-8 text-xs bg-background border-border/40 shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="64">64 kbps</SelectItem>
-                <SelectItem value="128">128 kbps</SelectItem>
-                <SelectItem value="192">192 kbps</SelectItem>
-                <SelectItem value="320">320 kbps</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Audio Section */}
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Mic className="h-3.5 w-3.5" />
+              Audio
+            </p>
 
-          {/* Camera Quality */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Camera Quality</p>
-              <p className="text-xs text-muted-foreground">Facecam resolution</p>
+            {/* Audio Bitrate */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Microphone Quality</p>
+                <p className="text-xs text-muted-foreground">Audio bitrate</p>
+              </div>
+              <Select value={audioBitrate} onValueChange={setAudioBitrate} disabled={disabled}>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[100px] h-9 text-sm bg-background border-border/40 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="64">64 kbps</SelectItem>
+                  <SelectItem value="128">128 kbps</SelectItem>
+                  <SelectItem value="192">192 kbps</SelectItem>
+                  <SelectItem value="320">320 kbps</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={cameraQuality} onValueChange={setCameraQuality} disabled={disabled}>
-              <SelectTrigger className="w-full sm:w-auto sm:min-w-[110px] h-8 text-xs bg-background border-border/40 shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="720p">720p (Standard)</SelectItem>
-                <SelectItem value="hd" disabled className="opacity-50">
-                  <span className="flex items-center gap-2">
-                    HD
-                    <span className="text-[10px] text-muted-foreground/70 italic">Soon</span>
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
 
-          {/* Push-to-talk */}
-          <div className="flex items-center justify-between py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Push-to-Talk</p>
-              <p className="text-xs text-muted-foreground">Hold key to record voice</p>
+            {/* System Audio */}
+            <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0 flex-1 flex items-start gap-3">
+                <div className={cn(
+                  "p-2 rounded-md transition-colors mt-0.5",
+                  systemAudio ? "bg-primary/15" : "bg-muted/30"
+                )}>
+                  <Volume2 className={cn(
+                    "h-4 w-4 transition-colors",
+                    systemAudio ? "text-primary" : "text-muted-foreground"
+                  )} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">System Audio</p>
+                  <p className="text-xs text-muted-foreground">Record game and desktop sounds</p>
+                </div>
+              </div>
+              <Switch 
+                checked={systemAudio} 
+                onCheckedChange={setSystemAudio} 
+                disabled={disabled} 
+                className="shrink-0" 
+              />
             </div>
-            <Switch checked={pushToTalk} onCheckedChange={setPushToTalk} disabled={disabled} className="shrink-0" />
-          </div>
 
-          {/* Auto-stop on inactivity */}
-          <div className="flex items-center justify-between py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Auto-Stop</p>
-              <p className="text-xs text-muted-foreground">Stop after 30min inactivity</p>
+            {/* Push-to-talk */}
+            <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Push-to-Talk</p>
+                <p className="text-xs text-muted-foreground">Hold key to record voice</p>
+              </div>
+              <Switch 
+                checked={pushToTalk} 
+                onCheckedChange={setPushToTalk} 
+                disabled={disabled} 
+                className="shrink-0" 
+              />
             </div>
-            <Switch checked={autoStop} onCheckedChange={setAutoStop} disabled={disabled} className="shrink-0" />
-          </div>
 
-          {/* Mono Audio */}
-          <div className="flex items-center justify-between py-2.5 px-3 bg-muted/10 rounded-lg border border-border/20">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Mono Audio</p>
-              <p className="text-xs text-muted-foreground">Better for voice clarity</p>
+            {/* Mono Audio */}
+            <div className="flex items-center justify-between py-3 px-4 bg-muted/10 rounded-xl border border-border/20">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Mono Audio</p>
+                <p className="text-xs text-muted-foreground">Better for voice clarity</p>
+              </div>
+              <Switch 
+                checked={monoAudio} 
+                onCheckedChange={setMonoAudio} 
+                disabled={disabled} 
+                className="shrink-0" 
+              />
             </div>
-            <Switch checked={monoAudio} onCheckedChange={setMonoAudio} disabled={disabled} className="shrink-0" />
           </div>
         </div>
 
         <DialogFooter className="shrink-0 px-4 sm:px-6 py-3 border-t border-border/30 bg-muted/10">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            Done
-          </Button>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 w-full sm:w-auto">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button onClick={handleSave} className="w-full sm:w-auto">
+              Done
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
