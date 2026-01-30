@@ -542,14 +542,14 @@ export function FilmRoomPlayer({
     <div 
       ref={containerRef}
       className={cn(
-        "relative bg-background rounded-lg overflow-hidden flex flex-col",
+        "relative bg-background rounded-xl overflow-hidden flex flex-col h-full",
         isFullscreen ? "fixed inset-0 z-50 rounded-none" : ""
       )}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
       {/* Video area */}
-      <div ref={videoAreaRef} className="relative flex-1 min-h-0 bg-muted/20">
+      <div ref={videoAreaRef} className="relative flex-1 min-h-0 bg-muted/20 overflow-hidden">
         {/* Video decode error display */}
         {videoDecodeError && videoUrl && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/95 p-6">
