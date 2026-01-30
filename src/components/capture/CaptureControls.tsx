@@ -1,9 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink } from "lucide-react";
-import type { CaptureState } from "@/hooks/useCaptureManager";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Loader2, Square, X, Circle, Pause, Play, Eye, Chrome, ExternalLink, AlertTriangle, Copy, Check } from "lucide-react";
+import type { CaptureState, CaptureError } from "@/hooks/useCaptureManager";
 import { type PreflightCheck } from "@/hooks/usePreflightChecks";
 import { PreflightChecklist } from "./PreflightChecklist";
+import { useState } from "react";
+import { toast } from "sonner";
 
 interface CaptureControlsProps {
   captureState: CaptureState;
@@ -20,6 +23,9 @@ interface CaptureControlsProps {
   // Preview-only mode props
   previewOnly?: boolean;
   recordingDisabledReason?: string | null;
+  // Inline recording error (shown when start recording fails but preview stays active)
+  inlineError?: CaptureError | null;
+  onDismissError?: () => void;
 }
 
 export function CaptureControls({
@@ -35,7 +41,11 @@ export function CaptureControls({
   preflightRunning = false,
   previewOnly = false,
   recordingDisabledReason,
+  inlineError,
+  onDismissError,
 }: CaptureControlsProps) {
+  const [copied, setCopied] = useState(false);
+  
   const isPreviewReady = captureState === "preview_ready";
   const isStarting = captureState === "starting";
   const isRecording = captureState === "recording";
@@ -43,10 +53,80 @@ export function CaptureControls({
   const isFinalizing = captureState === "finalizing";
   const isActiveRecording = isRecording || isPaused;
   
-  const canStartRecording = !previewOnly && preflightPassed && !preflightRunning && !isStarting;
+  const canStartRecording = !previewOnly && preflightPassed && !preflightRunning && !isStarting && !inlineError;
+
+  // Copy diagnostics for inline error
+  const handleCopyDiagnostics = async () => {
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      error: inlineError,
+      userAgent: navigator.userAgent,
+      isSecureContext: window.isSecureContext,
+      mediaRecorderSupported: typeof MediaRecorder !== "undefined",
+    };
+    
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      setCopied(true);
+      toast.success("Diagnostics copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
 
   return (
     <div className="flex flex-col items-center gap-4">
+      {/* Inline Recording Error - shown when start recording fails but preview stays active */}
+      {isPreviewReady && inlineError && (
+        <Alert variant="destructive" className="w-full max-w-xl">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle className="uppercase tracking-wider text-xs">
+            {inlineError.code === "NO_COMPATIBLE_FORMAT" || inlineError.code === "RECORDER_UNSUPPORTED"
+              ? "This Browser Can't Record This Format"
+              : "Recording Failed"}
+          </AlertTitle>
+          <AlertDescription className="mt-2 space-y-3">
+            <p className="text-sm">{inlineError.message}</p>
+            {inlineError.details && (
+              <p className="text-xs text-muted-foreground">{inlineError.details}</p>
+            )}
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyDiagnostics}
+                className="text-xs"
+              >
+                {copied ? <Check className="mr-1.5 h-3 w-3" /> : <Copy className="mr-1.5 h-3 w-3" />}
+                {copied ? "Copied" : "Copy Diagnostics"}
+              </Button>
+              <a
+                href="https://www.google.com/chrome/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button variant="outline" size="sm" className="text-xs">
+                  <Chrome className="mr-1.5 h-3 w-3" />
+                  Get Chrome
+                  <ExternalLink className="ml-1.5 h-3 w-3" />
+                </Button>
+              </a>
+              {onDismissError && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onDismissError}
+                  className="text-xs"
+                >
+                  Dismiss
+                </Button>
+              )}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Preview Mode Banner - shown when recording is disabled */}
       {isPreviewReady && previewOnly && (
         <div className="w-full max-w-xl p-4 bg-warning/10 border border-warning/30 rounded-lg space-y-3">

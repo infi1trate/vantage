@@ -169,10 +169,22 @@ export default function CapturePage() {
 
   // User clicks "Start Recording" from preview_ready state
   const handleStartRecording = async () => {
+    // Clear any previous inline error before attempting
+    if (capture.error) {
+      capture.retryFromError(); // This clears the error
+    }
+    
     const success = await capture.startRecording();
     if (!success) {
-      toast.error("Failed to start recording");
+      // Error is already set in capture.error for inline display
+      // Don't show toast - the inline error is more informative
+      console.log("[Capture] Start recording failed - showing inline error");
     }
+  };
+
+  // Dismiss inline recording error (stays in preview_ready state)
+  const handleDismissInlineError = () => {
+    capture.retryFromError(); // This clears the error without changing state
   };
 
   // User clicks "End Capture" - stops recording and saves
@@ -608,6 +620,8 @@ export default function CapturePage() {
             preflightRunning={preflight.isRunning}
             previewOnly={isPreviewOnly}
             recordingDisabledReason={recordingDisabledReason}
+            inlineError={capture.captureState === "preview_ready" ? capture.error : null}
+            onDismissError={handleDismissInlineError}
           />
 
           {/* Debug Panel - Dev mode only */}
