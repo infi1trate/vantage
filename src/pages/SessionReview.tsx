@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
-import { FilmRoomPlayer } from "@/components/player/FilmRoomPlayer";
+import { FilmRoomPlayer, VideoMetaInfo, VideoDecodeError } from "@/components/player/FilmRoomPlayer";
 import { AnnotationPanel } from "@/components/player/AnnotationPanel";
 import { VoiceNotePanel } from "@/components/player/VoiceNotePanel";
 import { AIAnalysisPanel } from "@/components/player/AIAnalysisPanel";
@@ -66,8 +66,11 @@ export default function SessionReview() {
   const [blobDebugInfo, setBlobDebugInfo] = useState<{
     sessionFound: boolean;
     blobSize: number | null;
+    blobType: string | null;
     error: string | null;
   } | null>(null);
+  const [videoMeta, setVideoMeta] = useState<VideoMetaInfo | null>(null);
+  const [localBlob, setLocalBlob] = useState<Blob | null>(null);
 
   const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
@@ -152,10 +155,21 @@ export default function SessionReview() {
             const url = URL.createObjectURL(blob);
             videoUrlRef.current = url;
             setLocalVideoUrl(url);
+            setLocalBlob(blob);
+            
+            // Set video metadata for diagnostics
+            setVideoMeta({
+              blobType: blob.type || null,
+              blobSize: blob.size,
+              videoDuration: null, // Will be set by onLoadedMetadata
+              videoWidth: null,
+              videoHeight: null,
+            });
             
             setBlobDebugInfo({
               sessionFound: true,
               blobSize: blob.size,
+              blobType: blob.type || null,
               error: null,
             });
           } else {
@@ -164,6 +178,7 @@ export default function SessionReview() {
             setBlobDebugInfo({
               sessionFound: true,
               blobSize: null,
+              blobType: null,
               error: "Blob not found in IndexedDB blobs store",
             });
           }
@@ -180,6 +195,7 @@ export default function SessionReview() {
       setBlobDebugInfo({
         sessionFound: false,
         blobSize: null,
+        blobType: null,
         error: "Session not found in IndexedDB, loaded from cloud",
       });
       
@@ -254,6 +270,45 @@ export default function SessionReview() {
   const handleDrawingCreated = useCallback((drawing: DrawAnnotation) => {
     setDrawAnnotations((prev) => [...prev, drawing].sort((a, b) => a.timestamp_ms - b.timestamp_ms));
   }, []);
+
+  // Video loaded successfully - update metadata
+  const handleVideoLoaded = useCallback((videoDuration: number) => {
+    console.log("[SessionReview] Video loaded, duration:", videoDuration);
+    setVideoMeta((prev) => prev ? { ...prev, videoDuration } : null);
+  }, []);
+
+  // Video decode error
+  const handleVideoError = useCallback((error: VideoDecodeError) => {
+    console.error("[SessionReview] Video decode error:", error);
+    toast.error(error.message);
+  }, []);
+
+  // Download the local recording
+  const handleDownloadRecording = useCallback(async () => {
+    if (!localBlob || !localSession) {
+      toast.error("No recording available to download");
+      return;
+    }
+    
+    try {
+      // Determine file extension from mimeType
+      const mimeType = localBlob.type || localSession.mimeType || "video/webm";
+      const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+      
+      const url = URL.createObjectURL(localBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${localSession.title.replace(/[^a-z0-9]/gi, "_")}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Download started");
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download recording");
+    }
+  }, [localBlob, localSession]);
 
   const handleRequestAnalysis = useCallback(async () => {
     if (!session || !user) return;
@@ -557,6 +612,10 @@ export default function SessionReview() {
               events={events}
               onAnnotationClick={handleAnnotationClick}
               onDrawingCreated={handleDrawingCreated}
+              videoMeta={isLocal ? videoMeta : null}
+              onVideoLoaded={handleVideoLoaded}
+              onVideoError={handleVideoError}
+              onDownloadRequest={isLocal ? handleDownloadRecording : undefined}
             />
           </div>
 

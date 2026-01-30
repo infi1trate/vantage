@@ -40,8 +40,33 @@ import {
   Mic,
   Pencil,
   VolumeOff,
+  AlertTriangle,
+  Download,
+  Bug,
+  ChevronDown,
+  Info,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+
+export interface VideoDecodeError {
+  type: "decode" | "network" | "src" | "unknown";
+  message: string;
+  mediaError?: MediaError | null;
+}
+
+export interface VideoMetaInfo {
+  blobType: string | null;
+  blobSize: number | null;
+  videoDuration: number | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
+}
 
 interface FilmRoomPlayerProps {
   sessionId: string;
@@ -58,6 +83,14 @@ interface FilmRoomPlayerProps {
   onAnnotationClick?: (annotation: Annotation) => void;
   onEventClick?: (event: TimelineEvent) => void;
   onDrawingCreated?: (drawing: DrawAnnotation) => void;
+  /** Video blob metadata for diagnostics */
+  videoMeta?: VideoMetaInfo | null;
+  /** Called when video metadata loads successfully */
+  onVideoLoaded?: (duration: number) => void;
+  /** Called when video fails to decode/play */
+  onVideoError?: (error: VideoDecodeError) => void;
+  /** Called to download the recording when playback fails */
+  onDownloadRequest?: () => void;
 }
 
 const PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -79,6 +112,10 @@ export function FilmRoomPlayer({
   onAnnotationClick,
   onEventClick,
   onDrawingCreated,
+  videoMeta,
+  onVideoLoaded,
+  onVideoError,
+  onDownloadRequest,
 }: FilmRoomPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -92,6 +129,9 @@ export function FilmRoomPlayer({
   const [hoverPosition, setHoverPosition] = useState(0);
   const [showDrawingCanvas, setShowDrawingCanvas] = useState(false);
   const [voiceSyncEnabled, setVoiceSyncEnabled] = useState(true);
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoDecodeError, setVideoDecodeError] = useState<VideoDecodeError | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +158,75 @@ export function FilmRoomPlayer({
     setVoiceSyncEnabledInternal(enabled);
   }, [setVoiceSyncEnabledInternal]);
 
+  // Video metadata loaded successfully
+  const handleVideoLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    console.log("[FilmRoomPlayer] Video metadata loaded:", {
+      duration: video.duration,
+      width: video.videoWidth,
+      height: video.videoHeight,
+    });
+    setVideoReady(true);
+    setVideoDecodeError(null);
+    onVideoLoaded?.(video.duration);
+  }, [onVideoLoaded]);
+
+  // Video decode/playback error
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const mediaError = video.error;
+    
+    let errorType: VideoDecodeError["type"] = "unknown";
+    let message = "An unknown error occurred while loading the video.";
+    
+    if (mediaError) {
+      switch (mediaError.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          errorType = "unknown";
+          message = "Video playback was aborted.";
+          break;
+        case MediaError.MEDIA_ERR_NETWORK:
+          errorType = "network";
+          message = "A network error occurred while loading the video.";
+          break;
+        case MediaError.MEDIA_ERR_DECODE:
+          errorType = "decode";
+          message = "This recording can't be played in this browser. The video format may not be supported.";
+          break;
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          errorType = "src";
+          message = "The video format is not supported by your browser.";
+          break;
+      }
+      console.error("[FilmRoomPlayer] Video error:", mediaError.code, mediaError.message);
+    }
+
+    const error: VideoDecodeError = { type: errorType, message, mediaError };
+    setVideoDecodeError(error);
+    setVideoReady(false);
+    onVideoError?.(error);
+  }, [onVideoError]);
+
+  // Get supported mime types for diagnostics
+  const getSupportedMimeTypes = useCallback(() => {
+    const types = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm",
+      "video/mp4;codecs=h264,aac",
+      "video/mp4",
+    ];
+    return types.filter((type) => {
+      try {
+        return MediaRecorder.isTypeSupported(type);
+      } catch {
+        return false;
+      }
+    });
+  }, []);
+
   // Pause video when opening drawing canvas
   const handleOpenDrawingCanvas = useCallback(() => {
     setIsPlaying(false);
@@ -131,6 +240,12 @@ export function FilmRoomPlayer({
   const handleDrawingCreated = useCallback((drawing: DrawAnnotation) => {
     onDrawingCreated?.(drawing);
   }, [onDrawingCreated]);
+
+  // Reset video state when URL changes
+  useEffect(() => {
+    setVideoReady(false);
+    setVideoDecodeError(null);
+  }, [videoUrl]);
 
   // Simulated playback for demo
   useEffect(() => {
@@ -422,15 +537,97 @@ export function FilmRoomPlayer({
     >
       {/* Video area */}
       <div ref={videoAreaRef} className="relative flex-1 min-h-0 bg-muted/20">
+        {/* Video decode error display */}
+        {videoDecodeError && videoUrl && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/95 p-6">
+            <div className="max-w-lg w-full space-y-4">
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Playback Error</AlertTitle>
+                <AlertDescription>{videoDecodeError.message}</AlertDescription>
+              </Alert>
+
+              <div className="flex gap-2">
+                {onDownloadRequest && (
+                  <Button onClick={onDownloadRequest} className="gap-2">
+                    <Download className="h-4 w-4" />
+                    Download Recording
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDiagnostics(!showDiagnostics)}
+                  className="gap-2"
+                >
+                  <Bug className="h-4 w-4" />
+                  {showDiagnostics ? "Hide" : "Show"} Diagnostics
+                </Button>
+              </div>
+
+              {/* Diagnostics panel */}
+              <Collapsible open={showDiagnostics} onOpenChange={setShowDiagnostics}>
+                <CollapsibleContent>
+                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-xs space-y-2 mt-2">
+                    <div className="text-sm font-semibold text-foreground mb-2">Diagnostic Information</div>
+                    
+                    <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
+                      <span className="text-muted-foreground">Error Type:</span>
+                      <span className="text-destructive font-medium">{videoDecodeError.type}</span>
+                      
+                      {videoDecodeError.mediaError && (
+                        <>
+                          <span className="text-muted-foreground">Error Code:</span>
+                          <span>{videoDecodeError.mediaError.code}</span>
+                          <span className="text-muted-foreground">Error Message:</span>
+                          <span>{videoDecodeError.mediaError.message || "N/A"}</span>
+                        </>
+                      )}
+                      
+                      {videoMeta && (
+                        <>
+                          <span className="text-muted-foreground">Blob Type:</span>
+                          <span>{videoMeta.blobType || "empty/unknown"}</span>
+                          <span className="text-muted-foreground">Blob Size:</span>
+                          <span>{videoMeta.blobSize ? `${(videoMeta.blobSize / 1024 / 1024).toFixed(2)} MB` : "N/A"}</span>
+                        </>
+                      )}
+                      
+                      <span className="text-muted-foreground">Browser:</span>
+                      <span className="break-all">{navigator.userAgent}</span>
+                    </div>
+
+                    <div className="pt-2 border-t border-border/50 mt-2">
+                      <span className="text-muted-foreground block mb-1">Supported Recording Formats:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {getSupportedMimeTypes().map((type) => (
+                          <Badge key={type} variant="secondary" className="text-xs">
+                            {type}
+                          </Badge>
+                        ))}
+                        {getSupportedMimeTypes().length === 0 && (
+                          <span className="text-destructive">No supported formats detected</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          </div>
+        )}
+
         {/* Video or placeholder */}
-        {videoUrl ? (
+        {videoUrl && !videoDecodeError ? (
           <video
             ref={videoRef}
             src={videoUrl}
             className="w-full h-full object-contain"
+            playsInline
+            onLoadedMetadata={handleVideoLoadedMetadata}
+            onError={handleVideoError}
             onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
           />
-        ) : (
+        ) : !videoUrl ? (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted via-background to-muted">
             <div className="text-center">
               <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
@@ -441,6 +638,14 @@ export function FilmRoomPlayer({
                 Press Space to play • Shift+←/→ for frame step
               </p>
             </div>
+          </div>
+        ) : null}
+
+        {/* Video ready indicator - brief flash when loaded */}
+        {videoReady && !videoDecodeError && (
+          <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded bg-vantage-success/20 text-vantage-success animate-fade-in">
+            <Info className="h-3 w-3" />
+            <span className="text-xs font-medium">Ready</span>
           </div>
         )}
 
