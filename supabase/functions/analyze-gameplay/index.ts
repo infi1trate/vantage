@@ -129,6 +129,7 @@ interface CoachingCard {
   confidence: "high" | "medium" | "low";
   confidence_reason: string;
   evidence_summary: string[];
+  safety_verified: boolean;
 }
 
 interface SessionSummary {
@@ -727,10 +728,35 @@ Remember: You are an ANALYST. Report facts and interpretations with evidence. Do
     if (analysisResult.event_analyses.length > 0) {
       const coachSystemPrompt = `You are an AI COACH for post-session gameplay review. Your role is to provide actionable coaching based on analyst observations.
 
-CRITICAL RULES:
-- This is POST-SESSION coaching only — never real-time advice
-- No enemy location inference or exploitation
-- No automation suggestions
+=== SAFETY CONSTRAINTS (MANDATORY) ===
+Before generating ANY suggestion, you MUST verify it does NOT contain:
+
+❌ REAL-TIME GUIDANCE: No advice that would only help during live gameplay
+   - Bad: "When you see the enemy peek, immediately..."
+   - Good: "Practice pre-aiming common angles in deathmatch"
+
+❌ ENEMY LOCATION INFERENCE: No advice based on where enemies were/will be
+   - Bad: "The enemy was likely flanking from..."
+   - Good: "Check common flank routes before committing"
+
+❌ AUTOMATION OR AIM ASSISTANCE: No suggestions about scripts, macros, or assisted aim
+   - Bad: "Adjust your sensitivity to track better"
+   - Good: "Focus on crosshair placement at head level"
+
+❌ EXPLOITS OR GLITCHES: No map exploits, bugs, or unintended mechanics
+   - Bad: "Use the pixel-peek on this corner"
+   - Good: "Use available cover to minimize exposure"
+
+❌ UNFAIR ADVANTAGE: Nothing that violates game ToS or competitive integrity
+
+If a coaching insight risks violating these:
+→ REWRITE it into a generalized, educational tip
+→ LOWER confidence to "low"
+→ Add "[Generalized]" prefix to the title
+
+=== COACHING SCOPE ===
+- This is POST-SESSION coaching only — purely educational
+- Advice must be general principles, not situational exploitation
 - One coaching card per event
 
 COACHING LENSES (choose the most relevant):
@@ -746,6 +772,7 @@ HIGH confidence requires ALL of:
 - ≥3 strong evidence signals from the analyst (non-"unknown" values)
 - No major uncertainties listed for this event
 - Clear cause-effect relationship in candidate_causes
+- NO safety constraint concerns
 → Use assertive language: "You pushed without checking angles"
 
 MEDIUM confidence requires:
@@ -758,6 +785,7 @@ LOW confidence applies when:
 - Mostly inferred from sparse data
 - Multiple uncertainties listed
 - Limited or ambiguous evidence signals
+- OR the tip was generalized due to safety constraints
 → Use exploratory language: "It looks like...", "This may indicate...", "One possibility is..."
 
 LANGUAGE ADAPTATION:
@@ -778,14 +806,16 @@ Return a JSON array of coaching cards:
     "drill": "Simple practice instruction",
     "confidence": "high" | "medium" | "low",
     "confidence_reason": "1 sentence explaining why this confidence level (e.g., 'Based on 4 clear signals with no uncertainties' or 'Limited to movement data only, health unknown')",
-    "evidence_summary": ["signal1", "signal2"]
+    "evidence_summary": ["signal1", "signal2"],
+    "safety_verified": true
   }
 ]
 
 QUALITY CHECK:
 - A skilled player should think "yeah, that's fair"
 - Low-confidence tips should feel exploratory, not prescriptive
-- confidence_reason must be specific to THIS event's evidence`;
+- confidence_reason must be specific to THIS event's evidence
+- ALL tips must pass safety constraints`;
 
       const coachUserPrompt = `Generate coaching cards for these analyst observations:
 
@@ -827,7 +857,39 @@ For each event_analysis:
               const jsonStr = jsonMatch ? jsonMatch[1] : coachContent;
               const parsedCards = JSON.parse(jsonStr.trim());
               
-              // Validate and filter coaching cards
+              // Safety constraint keywords to flag for review
+              const unsafePatterns = [
+                /\b(aimbot|triggerbot|wallhack|esp|cheat|hack|macro|script|exploit|glitch|bug abuse)\b/i,
+                /\b(when you see the enemy|when they peek|as soon as they)\b/i,
+                /\b(enemy (is|was|will be) (at|in|near|behind))\b/i,
+                /\b(adjust.*(sensitivity|dpi|aim assist))\b/i,
+                /\b(pixel.?peek|out of map|clip through)\b/i,
+              ];
+
+              const sanitizeCard = (card: any): any => {
+                const tipLower = (card.coaching_tip || '').toLowerCase();
+                const drillLower = (card.drill || '').toLowerCase();
+                const combinedText = `${tipLower} ${drillLower}`;
+                
+                const isUnsafe = unsafePatterns.some(pattern => pattern.test(combinedText));
+                
+                if (isUnsafe) {
+                  console.warn(`Safety filter triggered for card: ${card.title}`);
+                  return {
+                    ...card,
+                    title: `[Generalized] ${card.title}`,
+                    coaching_tip: "Focus on fundamental positioning and decision-making principles.",
+                    drill: "Review this moment and identify what information you had available.",
+                    confidence: "low",
+                    confidence_reason: "Tip was generalized to comply with safety guidelines.",
+                    safety_verified: false,
+                  };
+                }
+                
+                return { ...card, safety_verified: true };
+              };
+
+              // Validate, filter, and sanitize coaching cards
               coachingCards = (Array.isArray(parsedCards) ? parsedCards : [parsedCards])
                 .filter((card: any) => 
                   card.event_id && 
@@ -838,13 +900,13 @@ For each event_analysis:
                   card.confidence &&
                   card.confidence_reason
                 )
-                .map((card: any) => ({
+                .map((card: any) => sanitizeCard({
                   ...card,
-                  // Ensure confidence_reason exists with fallback
                   confidence_reason: card.confidence_reason || `Confidence: ${card.confidence}`,
                 }));
               
-              console.log(`Coach phase complete with ${coachingCards.length} coaching cards (confidence breakdown: ${coachingCards.filter((c: any) => c.confidence === 'high').length} high, ${coachingCards.filter((c: any) => c.confidence === 'medium').length} medium, ${coachingCards.filter((c: any) => c.confidence === 'low').length} low)`);
+              const sanitizedCount = coachingCards.filter((c: any) => !c.safety_verified).length;
+              console.log(`Coach phase complete with ${coachingCards.length} coaching cards (${sanitizedCount} sanitized, confidence breakdown: ${coachingCards.filter((c: any) => c.confidence === 'high').length} high, ${coachingCards.filter((c: any) => c.confidence === 'medium').length} medium, ${coachingCards.filter((c: any) => c.confidence === 'low').length} low)`);
             } catch (parseError) {
               console.error("Failed to parse coaching response:", coachContent);
             }
