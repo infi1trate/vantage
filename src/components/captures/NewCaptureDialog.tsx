@@ -709,6 +709,28 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     </Select>
                   </div>
 
+                  {/* Camera Quality */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Camera Quality</p>
+                      <p className="text-[10px] text-muted-foreground">Facecam resolution</p>
+                    </div>
+                    <Select defaultValue="720p">
+                      <SelectTrigger className="w-[130px] h-8 text-xs bg-background border-border/40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="720p">720p (Standard)</SelectItem>
+                        <SelectItem value="hd" disabled className="opacity-50">
+                          <span className="flex items-center gap-2">
+                            HD
+                            <span className="text-[10px] text-muted-foreground/70 italic">Coming soon</span>
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   {/* Push-to-talk */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
                     <div>
