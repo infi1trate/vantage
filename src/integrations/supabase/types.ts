@@ -305,6 +305,118 @@ export type Database = {
           },
         ]
       }
+      community_annotations: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          is_hidden: boolean | null
+          post_id: string
+          tags: string[] | null
+          timestamp_seconds: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          is_hidden?: boolean | null
+          post_id: string
+          tags?: string[] | null
+          timestamp_seconds: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          is_hidden?: boolean | null
+          post_id?: string
+          tags?: string[] | null
+          timestamp_seconds?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_annotations_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "community_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      community_posts: {
+        Row: {
+          allow_comments: boolean
+          allow_public_annotations: boolean
+          allow_public_remixes: boolean
+          author_id: string
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          id: string
+          session_id: string
+          share_token: string | null
+          tags: string[] | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          video_url: string | null
+          views_count: number | null
+          visibility: string
+        }
+        Insert: {
+          allow_comments?: boolean
+          allow_public_annotations?: boolean
+          allow_public_remixes?: boolean
+          author_id: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          id?: string
+          session_id: string
+          share_token?: string | null
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          video_url?: string | null
+          views_count?: number | null
+          visibility?: string
+        }
+        Update: {
+          allow_comments?: boolean
+          allow_public_annotations?: boolean
+          allow_public_remixes?: boolean
+          author_id?: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          id?: string
+          session_id?: string
+          share_token?: string | null
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          video_url?: string | null
+          views_count?: number | null
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_posts_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       draw_annotations: {
         Row: {
           animation: string | null
@@ -569,6 +681,7 @@ export type Database = {
           is_resolved: boolean | null
           mentioned_users: string[] | null
           parent_id: string | null
+          post_id: string | null
           reaction_counts: Json | null
           session_id: string
           timestamp_seconds: number | null
@@ -584,6 +697,7 @@ export type Database = {
           is_resolved?: boolean | null
           mentioned_users?: string[] | null
           parent_id?: string | null
+          post_id?: string | null
           reaction_counts?: Json | null
           session_id: string
           timestamp_seconds?: number | null
@@ -599,6 +713,7 @@ export type Database = {
           is_resolved?: boolean | null
           mentioned_users?: string[] | null
           parent_id?: string | null
+          post_id?: string | null
           reaction_counts?: Json | null
           session_id?: string
           timestamp_seconds?: number | null
@@ -618,6 +733,13 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "community_posts"
             referencedColumns: ["id"]
           },
         ]

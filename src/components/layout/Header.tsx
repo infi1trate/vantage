@@ -53,6 +53,12 @@ export function Header() {
             Library
           </Link>
           <Link 
+            to="/community" 
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
+          >
+            Community
+          </Link>
+          <Link 
             to="/insights" 
             className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
           >

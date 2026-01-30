@@ -88,6 +88,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportToDesktop, generateExportFilename } from "@/lib/fileExport";
+import { createCommunityPost, getShareableLink } from "@/lib/community";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 export type ExportTab = "download" | "platforms" | "community";
 
@@ -223,12 +227,15 @@ export function ExportDrawer({
   onPublish,
 }: ExportDrawerProps) {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { startJob, cancelJob, retryJob, setCurrentJobId } = useJobs();
   const currentJob = useCurrentJob();
   
   const [activeTab, setActiveTab] = useState<ExportTab>(defaultTab);
   const [showProgress, setShowProgress] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   // Download tab state
   const [preset, setPreset] = useState<"source" | "1080p" | "720p" | "audio">("1080p");
@@ -392,28 +399,59 @@ export function ExportDrawer({
     PLATFORMS[id].name.toLowerCase().includes(platformSearch.toLowerCase())
   );
 
-  const handlePublish = () => {
-    // Start a community post job
-    startJob("community_post", sessionId, sessionTitle, {
-      title: title.trim(),
-      description: description.trim(),
-      tags,
-      visibility,
-      allowComments,
-      allowAnnotations,
-      allowRemixes,
-    });
-    setShowProgress(true);
-    onPublish?.({
-      platform: "vantage",
-      title: title.trim(),
-      description: description.trim(),
-      tags,
-      visibility,
-      allowComments,
-      allowAnnotations,
-      allowRemixes,
-    });
+  const handlePublish = async () => {
+    if (!user) {
+      toast.error("Please sign in to post to Community");
+      return;
+    }
+    
+    setIsPublishing(true);
+    
+    try {
+      // Create the community post
+      const post = await createCommunityPost(user.id, {
+        sessionId,
+        title: title.trim() || sessionTitle,
+        description: description.trim() || undefined,
+        tags,
+        visibility,
+        allowComments,
+        allowPublicAnnotations: allowAnnotations,
+        allowPublicRemixes: allowRemixes,
+        thumbnailUrl: sessionThumbnail,
+        videoUrl: videoUrl,
+        durationSeconds: sessionDuration,
+      });
+      
+      toast.success("Posted to Community!");
+      
+      // Start a job for tracking
+      startJob("community_post", sessionId, sessionTitle, {
+        postId: post.id,
+        title: title.trim(),
+        visibility,
+      });
+      
+      onPublish?.({
+        platform: "vantage",
+        title: title.trim(),
+        description: description.trim(),
+        tags,
+        visibility,
+        allowComments,
+        allowAnnotations,
+        allowRemixes,
+      });
+      
+      // Close drawer and navigate to the post
+      onOpenChange(false);
+      navigate(`/community/${post.id}`);
+    } catch (error) {
+      console.error("[Community] Post failed:", error);
+      toast.error("Failed to post to Community");
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleMinimize = () => {
@@ -1275,10 +1313,19 @@ export function ExportDrawer({
             onClick={handlePublish} 
             className="w-full gap-2" 
             size="lg"
-            disabled={!title.trim()}
+            disabled={!title.trim() || isPublishing || !user}
           >
-            <Users className="h-4 w-4" />
-            <span>Post to Community</span>
+            {isPublishing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Posting...</span>
+              </>
+            ) : (
+              <>
+                <Users className="h-4 w-4" />
+                <span>Post to Community</span>
+              </>
+            )}
           </Button>
         )}
       </div>
