@@ -11,10 +11,11 @@ export interface CompositeRecorderConfig {
 }
 
 export interface CompositeRecorderReturn {
-  canvas: HTMLCanvasElement | null;
+  getCanvas: () => HTMLCanvasElement | null;
   compositeStream: MediaStream | null;
   isCompositing: boolean;
   startCompositing: (config: CompositeRecorderConfig) => MediaStream | null;
+  captureThumbnail: (maxWidth?: number, quality?: number) => string | null;
   stopCompositing: () => void;
 }
 
@@ -314,11 +315,44 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     };
   }, [stopCompositing]);
 
+  // Capture thumbnail from current canvas state
+  const captureThumbnail = useCallback((maxWidth = 320, quality = 0.8): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      console.warn("[Composite] No canvas available for thumbnail");
+      return null;
+    }
+
+    try {
+      // Create a smaller canvas for the thumbnail
+      const thumbCanvas = document.createElement("canvas");
+      const aspectRatio = canvas.height / canvas.width;
+      thumbCanvas.width = maxWidth;
+      thumbCanvas.height = Math.round(maxWidth * aspectRatio);
+
+      const ctx = thumbCanvas.getContext("2d");
+      if (!ctx) {
+        console.warn("[Composite] Failed to get thumbnail canvas context");
+        return null;
+      }
+
+      // Draw scaled version
+      ctx.drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+
+      // Return as data URL
+      return thumbCanvas.toDataURL("image/jpeg", quality);
+    } catch (err) {
+      console.error("[Composite] Failed to capture thumbnail:", err);
+      return null;
+    }
+  }, []);
+
   return {
-    canvas: canvasRef.current,
+    getCanvas: () => canvasRef.current,
     compositeStream: compositeStreamRef.current,
     isCompositing: isCompositingRef.current,
     startCompositing,
     stopCompositing,
+    captureThumbnail,
   };
 }
