@@ -355,24 +355,24 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
     );
   }
 
-  // Capture Setup form view - Premium two-column layout
+  // Capture Setup form view - Premium responsive layout
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl glass-strong p-0 overflow-hidden">
+      <DialogContent className="w-full max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl glass-strong p-0 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-border/30">
+        <div className="shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b border-border/30">
           <DialogHeader className="space-y-1">
-            <DialogTitle className="font-display text-xl tracking-wide">
+            <DialogTitle className="font-display text-lg sm:text-xl tracking-wide">
               New Capture Session
             </DialogTitle>
-            <DialogDescription className="text-sm">
+            <DialogDescription className="text-xs sm:text-sm">
               Configure your recording setup before starting capture.
             </DialogDescription>
           </DialogHeader>
 
           {/* Show warning if there are any issues but we're proceeding anyway */}
           {preflightResult && preflightResult.issues.length > 0 && (
-            <div className="flex items-start gap-2 p-2 mt-4 bg-warning/10 border border-warning/20 rounded text-sm">
+            <div className="flex items-start gap-2 p-2 mt-3 sm:mt-4 bg-warning/10 border border-warning/20 rounded text-sm">
               <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
               <div>
                 <span className="text-xs font-medium text-warning">Limited Support</span>
@@ -391,69 +391,71 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
           )}
         </div>
 
-        <form onSubmit={handleSubmit}>
-          {/* Two-column layout */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/30">
-            {/* Left Column: Session Basics - lower visual priority */}
-            <div className="p-6 space-y-5">
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-                  Session Basics
-                </h3>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="title" className="text-sm text-muted-foreground">
-                  Session Title
-                  <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
-                </Label>
-                <Input
-                  id="title"
-                  placeholder="Ranked Valorant – Bind"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="bg-transparent border-border/40 focus:border-primary/50 placeholder:text-muted-foreground/40"
-                  disabled={loading}
-                  autoFocus
-                />
-                <p className="text-[11px] text-muted-foreground/60">
-                  Used for highlights, insights, and sharing.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="game" className="text-sm text-muted-foreground">
-                  Game
-                  <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
-                </Label>
-                <Select value={gameName} onValueChange={setGameName} disabled={loading}>
-                  <SelectTrigger className="bg-transparent border-border/40">
-                    <SelectValue placeholder="Select game" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    {POPULAR_GAMES.map((game) => (
-                      <SelectItem key={game} value={game}>
-                        {game}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground/60">
-                  Auto-detection coming soon.
-                </p>
-              </div>
-            </div>
-
-            {/* Right Column: Settings + Effects */}
-            <div className="p-6 space-y-6 bg-muted/5">
-              {/* Capture Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Settings2 className="h-4 w-4 text-primary" />
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Capture Settings
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {/* Scrollable content area */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {/* Responsive grid: single column on mobile, two columns on sm+ */}
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/30">
+              {/* Left Column: Session Basics - lower visual priority */}
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                    Session Basics
                   </h3>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="title" className="text-sm text-muted-foreground">
+                    Session Title
+                    <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="title"
+                    placeholder="Ranked Valorant – Bind"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="bg-transparent border-border/40 focus:border-primary/50 placeholder:text-muted-foreground/40"
+                    disabled={loading}
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Used for highlights, insights, and sharing.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="game" className="text-sm text-muted-foreground">
+                    Game
+                    <span className="text-muted-foreground/50 ml-1 text-xs font-normal">(optional)</span>
+                  </Label>
+                  <Select value={gameName} onValueChange={setGameName} disabled={loading}>
+                    <SelectTrigger className="w-full bg-transparent border-border/40">
+                      <SelectValue placeholder="Select game" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border">
+                      {POPULAR_GAMES.map((game) => (
+                        <SelectItem key={game} value={game}>
+                          {game}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Auto-detection coming soon.
+                  </p>
+                </div>
+              </div>
+
+              {/* Right Column: Settings + Effects */}
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 bg-muted/5">
+                {/* Capture Settings */}
+                <div className="space-y-3 sm:space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="h-4 w-4 text-primary" />
+                    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Capture Settings
+                    </h3>
+                  </div>
 
                 <div className="space-y-3">
                   <CaptureToggle
@@ -675,13 +677,13 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
 
                 <div className="space-y-2">
                   {/* Video Quality */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div className="min-w-0">
                       <p className="text-xs font-medium">Video Quality</p>
                       <p className="text-[10px] text-muted-foreground">Resolution and frame rate</p>
                     </div>
                     <Select defaultValue="1080p60">
-                      <SelectTrigger className="w-[110px] h-8 text-xs bg-background border-border/40">
+                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[110px] h-8 text-xs bg-background border-border/40 shrink-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -694,13 +696,13 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   </div>
 
                   {/* Audio Bitrate */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div className="min-w-0">
                       <p className="text-xs font-medium">Audio Quality</p>
                       <p className="text-[10px] text-muted-foreground">Microphone bitrate</p>
                     </div>
                     <Select defaultValue="128">
-                      <SelectTrigger className="w-[90px] h-8 text-xs bg-background border-border/40">
+                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[90px] h-8 text-xs bg-background border-border/40 shrink-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -713,13 +715,13 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                   </div>
 
                   {/* Camera Quality */}
-                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div className="min-w-0">
                       <p className="text-xs font-medium">Camera Quality</p>
                       <p className="text-[10px] text-muted-foreground">Facecam resolution</p>
                     </div>
                     <Select defaultValue="720p">
-                      <SelectTrigger className="w-[130px] h-8 text-xs bg-background border-border/40">
+                      <SelectTrigger className="w-full sm:w-auto sm:min-w-[120px] h-8 text-xs bg-background border-border/40 shrink-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -727,7 +729,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                         <SelectItem value="hd" disabled className="opacity-50">
                           <span className="flex items-center gap-2">
                             HD
-                            <span className="text-[10px] text-muted-foreground/70 italic">Coming soon</span>
+                            <span className="text-[10px] text-muted-foreground/70 italic">Soon</span>
                           </span>
                         </SelectItem>
                       </SelectContent>
@@ -736,47 +738,47 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
 
                   {/* Flip Camera */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium">Flip Camera</p>
                       <p className="text-[10px] text-muted-foreground">Mirror your facecam</p>
                     </div>
-                    <Switch checked={flipCamera} onCheckedChange={setFlipCamera} />
+                    <Switch checked={flipCamera} onCheckedChange={setFlipCamera} className="shrink-0" />
                   </div>
 
                   {/* Push-to-talk */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium">Push-to-Talk</p>
                       <p className="text-[10px] text-muted-foreground">Hold key to record voice</p>
                     </div>
-                    <Switch defaultChecked={false} />
+                    <Switch defaultChecked={false} className="shrink-0" />
                   </div>
 
                   {/* Auto-stop on inactivity */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium">Auto-Stop</p>
                       <p className="text-[10px] text-muted-foreground">Stop after 30min inactivity</p>
                     </div>
-                    <Switch defaultChecked={true} />
+                    <Switch defaultChecked={true} className="shrink-0" />
                   </div>
 
                   {/* Record System Audio */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
-                      <p className="text-xs font-medium">Record System Audio</p>
-                      <p className="text-[10px] text-muted-foreground">Game sounds and system output</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium">System Audio</p>
+                      <p className="text-[10px] text-muted-foreground">Game sounds and output</p>
                     </div>
-                    <Switch checked={includeGameAudio} onCheckedChange={setIncludeGameAudio} />
+                    <Switch checked={includeGameAudio} onCheckedChange={setIncludeGameAudio} className="shrink-0" />
                   </div>
 
                   {/* Mono Audio */}
                   <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium">Mono Audio</p>
-                      <p className="text-[10px] text-muted-foreground">Recommended for voice clarity</p>
+                      <p className="text-[10px] text-muted-foreground">Better for voice clarity</p>
                     </div>
-                    <Switch defaultChecked={true} />
+                    <Switch defaultChecked={true} className="shrink-0" />
                   </div>
                 </div>
               </div>
@@ -792,26 +794,29 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                 </div>
               </div>
             </div>
+            {/* End right column */}
           </div>
-
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-border/30 bg-muted/10">
-            <div className="flex items-center justify-between">
+          {/* End grid */}
+        </div>
+        {/* End scrollable content area */}
+          {/* Footer - sticky at bottom */}
+          <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/30 bg-muted/10">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => onOpenChange(false)}
                 disabled={loading}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground w-full sm:w-auto"
               >
                 Cancel
               </Button>
-              <div className="flex flex-col items-end gap-1">
+              <div className="flex flex-col items-center sm:items-end gap-1 w-full sm:w-auto">
                 <Button 
                   type="submit" 
                   disabled={loading}
                   className={cn(
-                    "min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
+                    "w-full sm:w-auto sm:min-w-[140px] bg-vantage-500 hover:bg-vantage-600 text-vantage-950 font-semibold",
                     // Visual emphasis when settings have been customized
                     (includeFacecam || frameShape !== "circle" || cameraSize !== "small" || 
                      backgroundColor !== "transparent" || backgroundImage || !flipCamera || !includeGameAudio) &&
@@ -830,7 +835,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     </>
                   )}
                 </Button>
-                <p className="text-[10px] text-muted-foreground/70">
+                <p className="text-[10px] text-muted-foreground/70 text-center sm:text-right">
                   You can adjust effects during capture
                 </p>
               </div>
