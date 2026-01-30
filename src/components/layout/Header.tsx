@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { JobsIndicator } from "@/components/export/JobsIndicator";
 import { LogOut, Settings, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -59,8 +60,12 @@ export function Header() {
           </Link>
         </nav>
 
-        {/* User Menu */}
-        <div className="flex items-center gap-4">
+        {/* Right section */}
+        <div className="flex items-center gap-2">
+          {/* Jobs Indicator */}
+          <JobsIndicator />
+          
+          {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
