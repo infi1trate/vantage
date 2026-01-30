@@ -594,36 +594,38 @@ export default function SessionReview() {
         isDeleting={isDeleting}
       />
 
-      {/* Main content */}
+      {/* Main content - 2 column layout */}
       <div className="flex-1 container py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
-          {/* Video player - 2 columns */}
-          <div className="lg:col-span-2 flex flex-col">
-            <FilmRoomPlayer
-              sessionId={displaySessionId || sessionId || ""}
-              videoUrl={videoUrl}
-              audioUrl={isLocal ? undefined : microphoneTrack?.storage_url}
-              duration={displayDuration}
-              currentTime={currentTime}
-              onTimeUpdate={handleTimeUpdate}
-              onSeek={handleSeek}
-              annotations={annotations}
-              voiceNotes={voiceNotes}
-              drawAnnotations={drawAnnotations}
-              events={events}
-              onAnnotationClick={handleAnnotationClick}
-              onDrawingCreated={handleDrawingCreated}
-              videoMeta={isLocal ? videoMeta : null}
-              onVideoLoaded={handleVideoLoaded}
-              onVideoError={handleVideoError}
-              onDownloadRequest={isLocal ? handleDownloadRecording : undefined}
-            />
+        <div className="session-review-layout">
+          {/* Left: Player area */}
+          <div className="player-wrap">
+            <div className="video-stage">
+              <FilmRoomPlayer
+                sessionId={displaySessionId || sessionId || ""}
+                videoUrl={videoUrl}
+                audioUrl={isLocal ? undefined : microphoneTrack?.storage_url}
+                duration={displayDuration}
+                currentTime={currentTime}
+                onTimeUpdate={handleTimeUpdate}
+                onSeek={handleSeek}
+                annotations={annotations}
+                voiceNotes={voiceNotes}
+                drawAnnotations={drawAnnotations}
+                events={events}
+                onAnnotationClick={handleAnnotationClick}
+                onDrawingCreated={handleDrawingCreated}
+                videoMeta={isLocal ? videoMeta : null}
+                onVideoLoaded={handleVideoLoaded}
+                onVideoError={handleVideoError}
+                onDownloadRequest={isLocal ? handleDownloadRecording : undefined}
+              />
+            </div>
           </div>
 
-          {/* Side panel - 1 column */}
-          <div className="flex flex-col h-full">
-            <Tabs value={activePanel} onValueChange={(v) => setActivePanel(v as any)} className="flex flex-col h-full">
-              <TabsList className="grid w-full grid-cols-4 mb-4">
+          {/* Right: Inspector panel */}
+          <div className="inspector-panel">
+            <Tabs value={activePanel} onValueChange={(v) => setActivePanel(v as any)} className="flex flex-col h-full min-h-0">
+              <TabsList className="grid w-full grid-cols-4 mb-4 shrink-0 tabs-list-mobile">
                 <TabsTrigger value="annotations">Notes</TabsTrigger>
                 <TabsTrigger value="voice">Voice</TabsTrigger>
                 <TabsTrigger value="social" className="gap-1">
@@ -633,7 +635,7 @@ export default function SessionReview() {
                 <TabsTrigger value="ai">AI</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="annotations" className="flex-1 mt-0 min-h-0">
+              <TabsContent value="annotations" className="flex-1 mt-0 min-h-0 overflow-auto">
                 <AnnotationPanel
                   sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
@@ -644,7 +646,7 @@ export default function SessionReview() {
                 />
               </TabsContent>
 
-              <TabsContent value="voice" className="flex-1 mt-0 min-h-0">
+              <TabsContent value="voice" className="flex-1 mt-0 min-h-0 overflow-auto">
                 <VoiceNotePanel
                   sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
@@ -654,7 +656,7 @@ export default function SessionReview() {
                 />
               </TabsContent>
 
-              <TabsContent value="social" className="flex-1 mt-0 min-h-0">
+              <TabsContent value="social" className="flex-1 mt-0 min-h-0 overflow-auto">
                 <SocialCommentsPanel
                   sessionId={displaySessionId || sessionId || ""}
                   currentTime={currentTime}
@@ -664,7 +666,7 @@ export default function SessionReview() {
                 />
               </TabsContent>
 
-              <TabsContent value="ai" className="flex-1 mt-0 min-h-0">
+              <TabsContent value="ai" className="flex-1 mt-0 min-h-0 overflow-auto">
                 <AIAnalysisPanel
                   analyses={analyses}
                   feedbackCards={feedbackCards}

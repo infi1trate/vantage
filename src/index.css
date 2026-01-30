@@ -315,3 +315,82 @@
     @apply border border-primary/30 bg-primary/5;
   }
 }
+
+/* Session Review Layout */
+@layer components {
+  /* Two-column layout container */
+  .session-review-layout {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 24px;
+    height: calc(100vh - 160px);
+    min-height: 500px;
+  }
+
+  /* Player wrapper - allows proper sizing */
+  .player-wrap {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Video stage with defined height */
+  .video-stage {
+    width: 100%;
+    height: calc(100vh - 260px);
+    min-height: 420px;
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Inspector panel fixed width */
+  .inspector-panel {
+    width: 420px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* Responsive: single column on smaller screens */
+  @media (max-width: 1023px) {
+    .session-review-layout {
+      grid-template-columns: 1fr;
+      height: auto;
+      min-height: auto;
+    }
+
+    .video-stage {
+      height: 50vh;
+      min-height: 300px;
+      max-height: 480px;
+    }
+
+    .inspector-panel {
+      width: 100%;
+      height: auto;
+      max-height: 50vh;
+    }
+
+    /* Horizontal scrolling tabs on mobile */
+    .inspector-panel .tabs-list-mobile {
+      display: flex;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .inspector-panel .tabs-list-mobile::-webkit-scrollbar {
+      display: none;
+    }
+  }
+}
+
+/* Error banner that pushes content down */
+@layer components {
+  .error-banner-push {
+    position: relative;
+    z-index: 10;
+  }
+}
