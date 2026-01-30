@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Trash2,
   Clock,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -71,10 +72,11 @@ function JobItem({ job }: { job: ExportJob }) {
     <div className="p-3 rounded-lg bg-muted/20 border border-border/30 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className={cn(
+        <div className={cn(
             "p-1.5 rounded",
             isActive && "bg-primary/10 text-primary",
             job.status === "completed" && "bg-primary/10 text-primary",
+            job.status === "needs_manual_upload" && "bg-warning/10 text-warning",
             job.status === "failed" && "bg-destructive/10 text-destructive",
             job.status === "cancelled" && "bg-muted text-muted-foreground"
           )}>
@@ -82,6 +84,8 @@ function JobItem({ job }: { job: ExportJob }) {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : job.status === "completed" ? (
               <Check className="h-3.5 w-3.5" />
+            ) : job.status === "needs_manual_upload" ? (
+              <Upload className="h-3.5 w-3.5" />
             ) : job.status === "failed" ? (
               <AlertCircle className="h-3.5 w-3.5" />
             ) : (
@@ -179,6 +183,24 @@ function JobItem({ job }: { job: ExportJob }) {
         </div>
       )}
       
+      {/* Needs manual upload actions */}
+      {job.status === "needs_manual_upload" && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Video exported. Upload manually to complete.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-7 text-xs gap-1"
+            onClick={handleOpenPlatform}
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open Upload Page
+          </Button>
+        </div>
+      )}
+      
       {/* Error message */}
       {job.status === "failed" && job.errorMessage && (
         <p className="text-xs text-destructive">{job.errorMessage}</p>
@@ -197,10 +219,12 @@ export function JobsIndicator() {
   const { jobs, activeCount, showJobsPanel, setShowJobsPanel } = useJobs();
   
   const activeJobs = jobs.filter(j => j.status === "pending" || j.status === "processing");
+  const manualUploadJobs = jobs.filter(j => j.status === "needs_manual_upload");
   const completedJobs = jobs.filter(j => j.status === "completed");
   const failedJobs = jobs.filter(j => j.status === "failed");
   
   const hasJobs = jobs.length > 0;
+  const pendingCount = activeCount + manualUploadJobs.length;
   
   return (
     <Popover open={showJobsPanel} onOpenChange={setShowJobsPanel}>
@@ -258,6 +282,18 @@ export function JobsIndicator() {
                     In Progress
                   </p>
                   {activeJobs.map(job => (
+                    <JobItem key={job.id} job={job} />
+                  ))}
+                </div>
+              )}
+              
+              {/* Manual upload jobs */}
+              {manualUploadJobs.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground px-1">
+                    Needs Manual Upload
+                  </p>
+                  {manualUploadJobs.map(job => (
                     <JobItem key={job.id} job={job} />
                   ))}
                 </div>
