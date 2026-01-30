@@ -5,7 +5,7 @@
  */
 
 export type JobType = "desktop_export" | "platform_publish" | "community_post";
-export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
+export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled" | "needs_manual_upload";
 
 export interface JobStage {
   id: string;
@@ -315,9 +315,19 @@ export async function simulateJobProcessing(
   
   // Complete the job
   const result: Partial<ExportJob> = {
-    status: "completed",
     completedAt: new Date().toISOString(),
   };
+  
+  // Check if this is a manual upload job
+  const requiresManualUpload = job.type === "platform_publish" && job.config.requiresManualUpload;
+  
+  if (requiresManualUpload) {
+    // Set status to needs_manual_upload instead of completed
+    result.status = "needs_manual_upload";
+    result.platformUrl = PLATFORMS[job.config.platform as PlatformId]?.uploadPageUrl;
+  } else {
+    result.status = "completed";
+  }
   
   // Add outputs based on job type
   if (job.type === "desktop_export") {
@@ -326,7 +336,7 @@ export async function simulateJobProcessing(
     result.outputPath = `~/Downloads/Vantage_${safeTitle}.${ext}`;
   } else if (job.type === "community_post") {
     result.shareLink = `${window.location.origin}/session/${job.sessionId}`;
-  } else if (job.type === "platform_publish") {
+  } else if (job.type === "platform_publish" && !requiresManualUpload) {
     result.platformUrl = `https://${job.config.platform}.com/watch/${Math.random().toString(36).substring(2, 11)}`;
   }
   
@@ -335,3 +345,6 @@ export async function simulateJobProcessing(
   
   return job;
 }
+
+// Import PLATFORMS for manual upload URL lookup
+import { PLATFORMS, PlatformId } from "@/lib/platformConnections";

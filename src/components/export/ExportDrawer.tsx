@@ -14,6 +14,12 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -31,6 +37,18 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useJobs, useCurrentJob } from "@/contexts/JobsContext";
 import { ExportJob } from "@/lib/exportJobs";
+import {
+  PlatformId,
+  PLATFORMS,
+  FEATURED_PLATFORMS,
+  MORE_PLATFORMS,
+  ConnectedAccount,
+  loadConnections,
+  connectPlatform,
+  disconnectPlatform,
+  getConnection,
+} from "@/lib/platformConnections";
+import { PlatformPublishForm } from "./PlatformPublishForm";
 import {
   Download,
   Share2,
@@ -61,6 +79,12 @@ import {
   RefreshCw,
   Zap,
   Info,
+  LogOut,
+  Twitch,
+  Medal,
+  Search,
+  ExternalLink,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportToDesktop, generateExportFilename } from "@/lib/fileExport";
@@ -138,13 +162,17 @@ const presets = [
   },
 ];
 
-// Platform destinations
-const platforms = [
-  { id: "youtube", name: "YouTube", icon: Youtube, color: "text-red-500" },
-  { id: "tiktok", name: "TikTok", icon: Play, color: "text-foreground" },
-  { id: "medal", name: "Medal", icon: Gamepad2, color: "text-yellow-500" },
-  { id: "twitch", name: "Twitch", icon: Play, color: "text-purple-500" },
-];
+// Platform icons map
+const PLATFORM_ICONS: Record<PlatformId, React.ComponentType<{ className?: string }>> = {
+  youtube: Youtube,
+  tiktok: () => <span className="text-lg font-bold">♪</span>,
+  medal: Medal,
+  twitch: Twitch,
+  twitter: () => <span className="text-lg font-bold">𝕏</span>,
+  instagram: () => <span className="text-lg">📷</span>,
+  facebook: () => <span className="text-lg font-bold">f</span>,
+  discord: () => <span className="text-lg">💬</span>,
+};
 
 // Suggested gaming tags
 const suggestedTags = [
@@ -219,8 +247,20 @@ export function ExportDrawer({
   const [allowAnnotations, setAllowAnnotations] = useState(false);
   const [allowRemixes, setAllowRemixes] = useState(false);
 
+  // Platforms tab state
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformId | null>(null);
+  const [connectingPlatform, setConnectingPlatform] = useState<PlatformId | null>(null);
+  const [showMorePlatforms, setShowMorePlatforms] = useState(false);
+  const [platformSearch, setPlatformSearch] = useState("");
+
   // Fast export mode (no transcoding available)
   const isFastExport = true; // TODO: Check for transcoding capability
+
+  // Load connected accounts
+  useEffect(() => {
+    setConnectedAccounts(loadConnections());
+  }, []);
 
   // Reset to default tab when opening
   useEffect(() => {
@@ -313,6 +353,44 @@ export function ExportDrawer({
       handleAddTag(tagInput);
     }
   };
+
+  // Platform connection handlers
+  const handleConnectPlatform = async (platformId: PlatformId) => {
+    setConnectingPlatform(platformId);
+    try {
+      const account = await connectPlatform(platformId);
+      setConnectedAccounts(loadConnections());
+      // Auto-open publish form after connecting
+      setSelectedPlatform(platformId);
+    } catch (error) {
+      console.error("[Platform] Connection failed:", error);
+    } finally {
+      setConnectingPlatform(null);
+    }
+  };
+
+  const handleDisconnectPlatform = (platformId: PlatformId) => {
+    disconnectPlatform(platformId);
+    setConnectedAccounts(loadConnections());
+  };
+
+  const handlePlatformClick = (platformId: PlatformId) => {
+    const isConnected = connectedAccounts.some(a => a.platformId === platformId);
+    if (isConnected) {
+      setSelectedPlatform(platformId);
+    } else {
+      handleConnectPlatform(platformId);
+    }
+  };
+
+  const getAccountForPlatform = (platformId: PlatformId): ConnectedAccount | null => {
+    return connectedAccounts.find(a => a.platformId === platformId) || null;
+  };
+
+  // Filter more platforms by search
+  const filteredMorePlatforms = MORE_PLATFORMS.filter(id => 
+    PLATFORMS[id].name.toLowerCase().includes(platformSearch.toLowerCase())
+  );
 
   const handlePublish = () => {
     // Start a community post job
@@ -748,38 +826,195 @@ export function ExportDrawer({
           </TabsContent>
 
           {/* Platforms Tab */}
-          <TabsContent value="platforms" className="p-4 space-y-4 mt-0 data-[state=inactive]:hidden">
-            <div className="grid grid-cols-2 gap-3">
-              {platforms.map((platform) => {
-                const Icon = platform.icon;
-                return (
-                  <button
-                    key={platform.id}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border/50 hover:border-primary/50 hover:bg-muted/30 transition-all group"
-                  >
-                    <div className={cn(
-                      "p-3 rounded-full bg-muted/50 group-hover:bg-primary/10 transition-colors",
-                      platform.color
-                    )}>
-                      <Icon className="h-6 w-6" />
+          <TabsContent value="platforms" className="mt-0 data-[state=inactive]:hidden">
+            {/* Show publish form if platform selected */}
+            {selectedPlatform ? (
+              <PlatformPublishForm
+                platformId={selectedPlatform}
+                account={getAccountForPlatform(selectedPlatform)}
+                sessionId={sessionId}
+                sessionTitle={sessionTitle}
+                sessionDuration={sessionDuration}
+                videoUrl={videoUrl}
+                videoBlob={videoBlob}
+                onBack={() => setSelectedPlatform(null)}
+                onClose={() => onOpenChange(false)}
+              />
+            ) : (
+              <div className="p-4 space-y-4">
+                {/* Featured platforms grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  {FEATURED_PLATFORMS.map((platformId) => {
+                    const platform = PLATFORMS[platformId];
+                    const Icon = PLATFORM_ICONS[platformId];
+                    const account = getAccountForPlatform(platformId);
+                    const isConnecting = connectingPlatform === platformId;
+                    
+                    return (
+                      <button
+                        key={platformId}
+                        onClick={() => handlePlatformClick(platformId)}
+                        disabled={isConnecting}
+                        className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border/50 hover:border-primary/50 hover:bg-muted/30 transition-all group relative"
+                      >
+                        {/* Connected indicator */}
+                        {account && (
+                          <div className="absolute top-2 right-2">
+                            <div className="h-2 w-2 rounded-full bg-primary" />
+                          </div>
+                        )}
+                        
+                        <div className={cn(
+                          "p-3 rounded-full bg-muted/50 group-hover:bg-primary/10 transition-colors",
+                          platform.color
+                        )}>
+                          {isConnecting ? (
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                          ) : (
+                            <Icon className="h-6 w-6" />
+                          )}
+                        </div>
+                        <span className="text-sm font-medium">{platform.name}</span>
+                        {!account && !isConnecting && (
+                          <span className="text-[10px] text-muted-foreground">Click to connect</span>
+                        )}
+                        {account && (
+                          <span className="text-[10px] text-muted-foreground truncate max-w-full">
+                            {account.handle}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* More platforms button */}
+                <button 
+                  onClick={() => setShowMorePlatforms(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-border/50 hover:border-primary/50 hover:bg-muted/20 transition-all text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">More platforms...</span>
+                </button>
+
+                {/* Connected accounts section */}
+                {connectedAccounts.length > 0 && (
+                  <>
+                    <Separator className="bg-border/30" />
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                        Connected Accounts
+                      </Label>
+                      <div className="space-y-2">
+                        {connectedAccounts.map((account) => {
+                          const platform = PLATFORMS[account.platformId];
+                          const Icon = PLATFORM_ICONS[account.platformId];
+                          
+                          return (
+                            <div
+                              key={account.accountId}
+                              className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/30"
+                            >
+                              <div className={cn("p-2 rounded-full bg-muted/50", platform.color)}>
+                                <Icon className="h-4 w-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{platform.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {account.handle}
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={() => handleDisconnectPlatform(account.platformId)}
+                              >
+                                <LogOut className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span className="text-sm font-medium">{platform.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+                  </>
+                )}
 
-            <button className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-border/50 hover:border-primary/50 hover:bg-muted/20 transition-all text-muted-foreground hover:text-foreground">
-              <Plus className="h-4 w-4" />
-              <span className="text-sm">More platforms...</span>
-            </button>
-
-            <div className="p-4 rounded-lg bg-muted/20 border border-border/30">
-              <p className="text-xs text-muted-foreground text-center">
-                Connect your accounts to publish directly from Vantage
-              </p>
-            </div>
+                {/* Help text */}
+                {connectedAccounts.length === 0 && (
+                  <div className="p-4 rounded-lg bg-muted/20 border border-border/30">
+                    <p className="text-xs text-muted-foreground text-center">
+                      Connect your accounts to publish directly from Vantage
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
+
+          {/* More Platforms Dialog */}
+          <Dialog open={showMorePlatforms} onOpenChange={setShowMorePlatforms}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>More Platforms</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={platformSearch}
+                    onChange={(e) => setPlatformSearch(e.target.value)}
+                    placeholder="Search platforms..."
+                    className="pl-9"
+                  />
+                </div>
+                
+                {/* Platform list */}
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {filteredMorePlatforms.map((platformId) => {
+                    const platform = PLATFORMS[platformId];
+                    const Icon = PLATFORM_ICONS[platformId];
+                    const account = getAccountForPlatform(platformId);
+                    
+                    return (
+                      <button
+                        key={platformId}
+                        onClick={() => {
+                          handlePlatformClick(platformId);
+                          setShowMorePlatforms(false);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div className={cn("p-2 rounded-full bg-muted/50", platform.color)}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 text-left">
+                          <p className="text-sm font-medium">{platform.name}</p>
+                          {!platform.supportsDirectUpload && (
+                            <p className="text-xs text-muted-foreground">
+                              Manual upload
+                            </p>
+                          )}
+                        </div>
+                        {account ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    );
+                  })}
+                  
+                  {filteredMorePlatforms.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No platforms found
+                    </p>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Community Tab */}
           <TabsContent value="community" className="p-4 space-y-4 mt-0 data-[state=inactive]:hidden">
