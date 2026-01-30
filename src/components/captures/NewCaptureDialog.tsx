@@ -769,6 +769,15 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                     </div>
                     <Switch checked={includeGameAudio} onCheckedChange={setIncludeGameAudio} />
                   </div>
+
+                  {/* Mono Audio */}
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/10 rounded-lg border border-border/20">
+                    <div>
+                      <p className="text-xs font-medium">Mono Audio</p>
+                      <p className="text-[10px] text-muted-foreground">Recommended for voice clarity</p>
+                    </div>
+                    <Switch defaultChecked={true} />
+                  </div>
                 </div>
               </div>
 
