@@ -623,6 +623,15 @@ export default function CapturePage() {
             inlineError={capture.captureState === "preview_ready" ? capture.error : null}
             onDismissError={handleDismissInlineError}
             onRetryRecording={handleStartRecording}
+            onRetryLowQuality={async () => {
+              handleDismissInlineError();
+              await capture.startRecordingLowQuality();
+            }}
+            onContinuePreviewMode={() => {
+              handleDismissInlineError();
+              setIsPreviewOnly(true);
+              setRecordingDisabledReason("Recording failed - preview mode active");
+            }}
           />
 
           {/* Debug Panel - Dev mode only */}

@@ -22,6 +22,41 @@ export interface CaptureError {
   message: string;
   recoverable: boolean;
   details?: string;
+  /** Extended diagnostics for RECORDER_ERROR */
+  recorderDiagnostics?: RecorderErrorDiagnostics;
+}
+
+/** Detailed diagnostics for MediaRecorder errors */
+export interface RecorderErrorDiagnostics {
+  /** Exception name (e.g., "EncodingError", "NotSupportedError") */
+  exceptionName?: string;
+  /** Exception message */
+  exceptionMessage?: string;
+  /** Selected MIME type */
+  mimeType?: string;
+  /** Recording framerate (fps) */
+  frameRate?: number;
+  /** Video bitrate (bps) */
+  videoBitsPerSecond?: number;
+  /** Audio bitrate (bps) */
+  audioBitsPerSecond?: number;
+  /** Video track settings */
+  videoTrackSettings?: {
+    width?: number;
+    height?: number;
+    frameRate?: number;
+    deviceId?: string;
+    label?: string;
+  };
+  /** Audio track settings */
+  audioTrackSettings?: {
+    channelCount?: number;
+    sampleRate?: number;
+    deviceId?: string;
+    label?: string;
+  };
+  /** Whether low-power mode was already tried */
+  lowPowerAttempted?: boolean;
 }
 
 export interface CaptureErrorInfo {

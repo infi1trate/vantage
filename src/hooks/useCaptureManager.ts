@@ -4,7 +4,7 @@ import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
 import { tryRecordWithFallback, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
-import { type CaptureError, type CaptureErrorCode, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
+import { type CaptureError, type CaptureErrorCode, type RecorderErrorDiagnostics, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -96,6 +96,7 @@ export interface UseCaptureManagerReturn {
   // Actions - each only valid in specific states
   selectSources: (config: CaptureConfig) => Promise<void>;  // idle → selecting_sources
   startRecording: () => Promise<boolean>;                    // preview_ready → recording
+  startRecordingLowQuality: () => Promise<boolean>;         // preview_ready → recording (forced low quality)
   pauseRecording: () => void;                                // recording → paused
   resumeRecording: () => void;                               // paused → recording
   togglePause: () => void;                                   // toggle between recording/paused
@@ -318,7 +319,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   // Internal function to attempt recording with a given profile
   // Uses robust MIME type fallback - actually tries to start MediaRecorder with each candidate
   const attemptRecording = useCallback(async (
-    profile: typeof ENCODER_PROFILES.standard
+    profile: typeof ENCODER_PROFILES.standard,
+    isLowPowerRetry: boolean = false
   ): Promise<boolean> => {
     console.log(`[Capture] Attempting recording with profile: ${profile.frameRate}fps, ${profile.videoBitsPerSecond / 1_000_000}Mbps video`);
     
@@ -357,6 +359,33 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     
     console.log(`[Capture] Stream validation passed: ${streamValidation.videoTracks} video, ${streamValidation.audioTracks} audio tracks`);
     
+    // Extract track settings for diagnostics
+    const videoTrack = compositeStream.getVideoTracks()[0];
+    const audioTrack = compositeStream.getAudioTracks()[0];
+    const videoSettings = videoTrack?.getSettings();
+    const audioSettings = audioTrack?.getSettings();
+    
+    // Build base diagnostics for this recording attempt
+    const baseDiagnostics: RecorderErrorDiagnostics = {
+      frameRate: profile.frameRate,
+      videoBitsPerSecond: profile.videoBitsPerSecond,
+      audioBitsPerSecond: profile.audioBitsPerSecond,
+      lowPowerAttempted: isLowPowerRetry,
+      videoTrackSettings: videoSettings ? {
+        width: videoSettings.width,
+        height: videoSettings.height,
+        frameRate: videoSettings.frameRate,
+        deviceId: videoSettings.deviceId,
+        label: videoTrack?.label,
+      } : undefined,
+      audioTrackSettings: audioSettings ? {
+        channelCount: audioSettings.channelCount,
+        sampleRate: audioSettings.sampleRate,
+        deviceId: audioSettings.deviceId,
+        label: audioTrack?.label,
+      } : undefined,
+    };
+    
     // === ROBUST MIME TYPE FALLBACK ===
     // Actually try to create and start MediaRecorder with each candidate mimeType
     // Don't rely only on isTypeSupported - catch actual failures
@@ -373,12 +402,20 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         message: "Recording not supported on this browser/device configuration.",
         recoverable: false,
         details: robustResult.error,
+        recorderDiagnostics: {
+          ...baseDiagnostics,
+          exceptionName: "NotSupportedError",
+          exceptionMessage: "No compatible recording format found",
+        },
       };
     }
     
     // We have a working recorder from the robust fallback
     const recorder = robustResult.recorder;
     const selectedMimeType = robustResult.mimeTypeInfo;
+    
+    // Add mimeType to diagnostics
+    baseDiagnostics.mimeType = selectedMimeType.mimeType;
     
     console.log(`[Capture] Robust fallback succeeded with: ${selectedMimeType.mimeType} (${selectedMimeType.codecsLabel})`);
     setMimeTypeInfo(selectedMimeType);
@@ -417,6 +454,11 @@ export function useCaptureManager(): UseCaptureManagerReturn {
             message: "Recording failed to produce data. Your browser may not support this recording format.",
             recoverable: true,
             details: `Timeout after ${TIMEOUT_MS}ms. Recorder state: ${recorder.state}, MIME: ${selectedMimeType.mimeType}, Profile: ${profile.frameRate}fps`,
+            recorderDiagnostics: {
+              ...baseDiagnostics,
+              exceptionName: "TimeoutError",
+              exceptionMessage: "No data received within timeout period",
+            },
           });
         }
       }, TIMEOUT_MS);
@@ -441,18 +483,23 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       recorder.onerror = (event: Event) => {
         // MediaRecorder error events have an error property
         const err = (event as any).error;
-        const errorMessage = err 
-          ? `${err.name || "Error"}: ${err.message || "Unknown error"}` 
-          : "Unknown MediaRecorder error";
-        console.error("[Composite] Recorder error:", errorMessage);
-        setLastRecorderError(errorMessage);
+        const errorName = err?.name || "Error";
+        const errorMessage = err?.message || "Unknown error";
+        const fullErrorMessage = `${errorName}: ${errorMessage}`;
+        console.error("[Composite] Recorder error:", fullErrorMessage);
+        setLastRecorderError(fullErrorMessage);
         logStateTransition("error");
         clearTimeout(timeoutId);
         reject({
           code: "RECORDER_ERROR" as const,
           message: "MediaRecorder encountered an error.",
           recoverable: true,
-          details: errorMessage,
+          details: fullErrorMessage,
+          recorderDiagnostics: {
+            ...baseDiagnostics,
+            exceptionName: errorName,
+            exceptionMessage: errorMessage,
+          },
         });
       };
       
@@ -487,6 +534,11 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         message: "Recorder stopped unexpectedly before data was captured.",
         recoverable: true,
         details: `Recorder state: ${recorder.state}`,
+        recorderDiagnostics: {
+          ...baseDiagnostics,
+          exceptionName: "StateError",
+          exceptionMessage: `Recorder state changed to ${recorder.state} unexpectedly`,
+        },
       };
     }
 
@@ -548,7 +600,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       
       try {
         // Try with selected profile - attemptRecording now handles MIME type fallback internally
-        return await attemptRecording(initialProfile);
+        const isRetry = encoderFailedOnceRef.current;
+        return await attemptRecording(initialProfile, isRetry);
       } catch (firstErr: any) {
         // If this was already a low-power attempt, don't retry
         if (encoderFailedOnceRef.current || initialProfile === ENCODER_PROFILES.lowPower) {
@@ -566,7 +619,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         
         // Retry with low-power settings
         console.log("[Capture] Retrying with low-power profile: 24fps, 1.5Mbps");
-        return await attemptRecording(ENCODER_PROFILES.lowPower);
+        return await attemptRecording(ENCODER_PROFILES.lowPower, true);
       }
     } catch (err: any) {
       console.error("Failed to start recording:", err);
@@ -591,6 +644,47 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       return false;
     }
   }, [captureState, screen.stream, attemptRecording, composite, cleanupRecorder]);
+
+  // TRANSITION: preview_ready → recording (forced low quality)
+  // Used when user explicitly chooses to retry with lower settings after an error
+  const startRecordingLowQuality = useCallback(async (): Promise<boolean> => {
+    if (captureState !== "preview_ready") {
+      console.warn(`startRecordingLowQuality called in invalid state: ${captureState}. Must be in preview_ready.`);
+      return false;
+    }
+
+    // Clear any previous error
+    setError(null);
+    
+    // Force low-power profile
+    encoderFailedOnceRef.current = true;
+    
+    console.log("[Capture] Starting with forced low-quality settings: 24fps, 1.5Mbps");
+    
+    try {
+      return await attemptRecording(ENCODER_PROFILES.lowPower, true);
+    } catch (err: any) {
+      console.error("Failed to start low-quality recording:", err);
+      
+      // Cleanup on failure
+      cleanupRecorder(compositeRecorderRef.current);
+      compositeRecorderRef.current = null;
+      composite.stopCompositing();
+      
+      // Reset to preview_ready state
+      setCaptureState("preview_ready");
+      
+      const captureError: CaptureError = err.code ? err : {
+        code: "RECORDER_ERROR" as const,
+        message: err.message || "Failed to start recording even with reduced settings.",
+        recoverable: false,
+        details: err.toString(),
+      };
+      
+      setError(captureError);
+      return false;
+    }
+  }, [captureState, attemptRecording, composite, cleanupRecorder]);
 
   // TRANSITION: recording → paused
   const pauseRecording = useCallback(() => {
@@ -906,6 +1000,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Actions
     selectSources,
     startRecording,
+    startRecordingLowQuality,
     pauseRecording,
     resumeRecording,
     togglePause,
