@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useScreenCapture } from "./useScreenCapture";
 import { useMicrophoneCapture } from "./useMicrophoneCapture";
 import { useFacecamCapture } from "./useFacecamCapture";
+import { useCompositeRecorder } from "./useCompositeRecorder";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -37,6 +38,9 @@ export interface CaptureConfig {
 }
 
 export interface RecordedData {
+  /** Single composited video with PiP and mixed audio */
+  compositeBlob: Blob | null;
+  /** Legacy: screen only (null when using composite) */
   screenBlob: Blob | null;
   microphoneBlob: Blob | null;
   facecamBlob: Blob | null;
@@ -45,7 +49,7 @@ export interface RecordedData {
 }
 
 export interface CaptureError {
-  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "MEDIARECORDER_UNSUPPORTED" | "NO_CHUNKS" | "UNKNOWN";
+  code: "PERMISSION_DENIED" | "DEVICE_NOT_FOUND" | "RECORDING_FAILED" | "MEDIARECORDER_UNSUPPORTED" | "NO_CHUNKS" | "COMPOSITING_FAILED" | "UNKNOWN";
   message: string;
   recoverable: boolean;
   details?: string;
@@ -106,25 +110,6 @@ function getSupportedVideoMimeType(): string {
   return "";
 }
 
-// Determine best supported audio mime type with fallbacks
-function getSupportedAudioMimeType(): string {
-  const audioTypes = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-  ];
-  
-  for (const type of audioTypes) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      console.log(`[MediaRecorder] Using audio mime type: ${type}`);
-      return type;
-    }
-  }
-  
-  console.warn("[MediaRecorder] No preferred audio mime type supported, using default");
-  return "";
-}
-
 // Check if MediaRecorder is supported
 function isMediaRecorderSupported(): boolean {
   return typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function";
@@ -139,14 +124,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     enableSystemAudio: true,
   });
   
-  // Recording refs - use refs to avoid stale closures in callbacks
-  const screenRecorderRef = useRef<MediaRecorder | null>(null);
-  const micRecorderRef = useRef<MediaRecorder | null>(null);
-  const facecamRecorderRef = useRef<MediaRecorder | null>(null);
-  
-  const screenChunksRef = useRef<Blob[]>([]);
-  const micChunksRef = useRef<Blob[]>([]);
-  const facecamChunksRef = useRef<Blob[]>([]);
+  // Single composite recorder ref
+  const compositeRecorderRef = useRef<MediaRecorder | null>(null);
+  const compositeChunksRef = useRef<Blob[]>([]);
   
   const startTimeRef = useRef<number>(0);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -154,10 +134,13 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   // Track if we're actively recording (for cleanup)
   const isRecordingRef = useRef(false);
 
-  // Use the individual capture hooks
+  // Use the individual capture hooks for source acquisition
   const screen = useScreenCapture();
   const microphone = useMicrophoneCapture();
   const facecam = useFacecamCapture();
+  
+  // Use composite recorder for canvas + audio mixing
+  const composite = useCompositeRecorder();
 
   // Refresh all devices
   const refreshDevices = useCallback(async () => {
@@ -171,7 +154,6 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   const cleanupRecorder = useCallback((recorder: MediaRecorder | null) => {
     if (recorder) {
       try {
-        // Null out event handlers to prevent memory leaks
         recorder.ondataavailable = null;
         recorder.onstop = null;
         recorder.onerror = null;
@@ -198,28 +180,21 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       durationIntervalRef.current = null;
     }
 
-    // Cleanup recorders
-    cleanupRecorder(screenRecorderRef.current);
-    cleanupRecorder(micRecorderRef.current);
-    cleanupRecorder(facecamRecorderRef.current);
-
-    // Clear refs
-    screenRecorderRef.current = null;
-    micRecorderRef.current = null;
-    facecamRecorderRef.current = null;
+    // Cleanup composite recorder
+    cleanupRecorder(compositeRecorderRef.current);
+    compositeRecorderRef.current = null;
+    compositeChunksRef.current = [];
     
-    // Clear chunk arrays
-    screenChunksRef.current = [];
-    micChunksRef.current = [];
-    facecamChunksRef.current = [];
+    // Stop compositing
+    composite.stopCompositing();
 
-    // Stop all streams
+    // Stop all source streams
     screen.stopCapture();
     microphone.stopCapture();
     facecam.stopCapture();
     
     isRecordingRef.current = false;
-  }, [screen, microphone, facecam, cleanupRecorder]);
+  }, [screen, microphone, facecam, composite, cleanupRecorder]);
 
   // TRANSITION: idle → selecting_sources → preview_ready | error
   const selectSources = useCallback(async (captureConfig: CaptureConfig): Promise<void> => {
@@ -306,49 +281,6 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     }
   }, [captureState, screen, microphone, facecam]);
 
-  // Create MediaRecorder for a stream with proper error handling
-  const createRecorder = useCallback((
-    stream: MediaStream,
-    chunksRef: React.MutableRefObject<Blob[]>,
-    mimeType: string,
-    label: string
-  ): MediaRecorder | null => {
-    try {
-      const options: MediaRecorderOptions = {};
-      
-      // Only set mimeType if we have a supported one
-      if (mimeType) {
-        options.mimeType = mimeType;
-      }
-      
-      const recorder = new MediaRecorder(stream, options);
-      
-      // Clear previous chunks - never overwrite, start fresh
-      chunksRef.current = [];
-      
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          // Push to array, never overwrite
-          chunksRef.current.push(event.data);
-          console.log(`[${label}] Chunk received: ${event.data.size} bytes, total chunks: ${chunksRef.current.length}`);
-        }
-      };
-      
-      recorder.onerror = (event: Event) => {
-        console.error(`[${label}] Recorder error:`, event);
-      };
-      
-      recorder.onstart = () => {
-        console.log(`[${label}] Recording started, state: ${recorder.state}, mimeType: ${recorder.mimeType}`);
-      };
-      
-      return recorder;
-    } catch (err) {
-      console.error(`[${label}] Failed to create MediaRecorder:`, err);
-      return null;
-    }
-  }, []);
-
   // TRANSITION: preview_ready → recording
   const startRecording = useCallback(async (): Promise<boolean> => {
     if (captureState !== "preview_ready") {
@@ -367,54 +299,65 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       return false;
     }
 
+    if (!screen.stream) {
+      setError({
+        code: "RECORDING_FAILED",
+        message: "No screen stream available.",
+        recoverable: true,
+      });
+      setCaptureState("error");
+      return false;
+    }
+
     try {
-      const videoMimeType = getSupportedVideoMimeType();
-      const audioMimeType = getSupportedAudioMimeType();
+      console.log("[Capture] Starting composite recording...");
       
-      let hasScreenRecorder = false;
-
-      // Create screen recorder (required)
-      if (screen.stream) {
-        const recorder = createRecorder(screen.stream, screenChunksRef, videoMimeType, "Screen");
-        if (recorder) {
-          screenRecorderRef.current = recorder;
-          recorder.start(1000); // 1 second timeslice chunks
-          hasScreenRecorder = true;
-          console.log("[Screen] Started with timeslice=1000ms");
-        } else {
-          throw new Error("Failed to create screen recorder");
+      // Start canvas compositing with all available streams
+      const compositeStream = composite.startCompositing({
+        screenStream: screen.stream,
+        microphoneStream: microphone.stream,
+        facecamStream: facecam.stream,
+        facecamPosition: { x: 0.88, y: 0.82, scale: 0.22 }, // Bottom-right PiP
+        frameRate: 60,
+      });
+      
+      if (!compositeStream) {
+        throw {
+          code: "COMPOSITING_FAILED" as const,
+          message: "Failed to start video compositing. Please try again.",
+          recoverable: true,
+        };
+      }
+      
+      console.log(`[Capture] Composite stream ready: ${compositeStream.getTracks().length} tracks`);
+      
+      // Create MediaRecorder for the composite stream
+      const videoMimeType = getSupportedVideoMimeType();
+      const options: MediaRecorderOptions = {};
+      if (videoMimeType) {
+        options.mimeType = videoMimeType;
+      }
+      
+      const recorder = new MediaRecorder(compositeStream, options);
+      compositeChunksRef.current = [];
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          compositeChunksRef.current.push(event.data);
+          console.log(`[Composite] Chunk received: ${event.data.size} bytes, total: ${compositeChunksRef.current.length}`);
         }
-      } else {
-        throw new Error("No screen stream available");
-      }
-
-      // Create microphone recorder (optional but expected)
-      if (microphone.stream) {
-        const recorder = createRecorder(microphone.stream, micChunksRef, audioMimeType, "Microphone");
-        if (recorder) {
-          micRecorderRef.current = recorder;
-          recorder.start(1000); // 1 second timeslice chunks
-          console.log("[Microphone] Started with timeslice=1000ms");
-        } else {
-          console.warn("Failed to create microphone recorder, continuing without it");
-        }
-      }
-
-      // Create facecam recorder if available (optional)
-      if (facecam.stream) {
-        const recorder = createRecorder(facecam.stream, facecamChunksRef, videoMimeType, "Facecam");
-        if (recorder) {
-          facecamRecorderRef.current = recorder;
-          recorder.start(1000); // 1 second timeslice chunks
-          console.log("[Facecam] Started with timeslice=1000ms");
-        } else {
-          console.warn("Failed to create facecam recorder, continuing without it");
-        }
-      }
-
-      if (!hasScreenRecorder) {
-        throw new Error("Screen recorder is required but could not be created");
-      }
+      };
+      
+      recorder.onerror = (event: Event) => {
+        console.error("[Composite] Recorder error:", event);
+      };
+      
+      recorder.onstart = () => {
+        console.log(`[Composite] Recording started, mimeType: ${recorder.mimeType}`);
+      };
+      
+      compositeRecorderRef.current = recorder;
+      recorder.start(1000); // 1 second timeslice chunks
 
       // Start duration timer - ONLY runs in recording state
       startTimeRef.current = Date.now();
@@ -428,29 +371,28 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       }, 100);
 
       setCaptureState("recording");
-      console.log("[Capture] Recording started successfully");
+      console.log("[Capture] Recording started successfully (composite mode)");
       return true;
     } catch (err: any) {
       console.error("Failed to start recording:", err);
       
-      // Cleanup any partially created recorders
-      cleanupRecorder(screenRecorderRef.current);
-      cleanupRecorder(micRecorderRef.current);
-      cleanupRecorder(facecamRecorderRef.current);
-      screenRecorderRef.current = null;
-      micRecorderRef.current = null;
-      facecamRecorderRef.current = null;
+      // Cleanup on failure
+      cleanupRecorder(compositeRecorderRef.current);
+      compositeRecorderRef.current = null;
+      composite.stopCompositing();
       
-      setError({
-        code: "RECORDING_FAILED",
+      const captureError: CaptureError = err.code ? err : {
+        code: "RECORDING_FAILED" as const,
         message: err.message || "Failed to start recording. Please try again.",
         recoverable: true,
         details: err.toString(),
-      });
+      };
+      
+      setError(captureError);
       setCaptureState("error");
       return false;
     }
-  }, [captureState, screen.stream, microphone.stream, facecam.stream, createRecorder, cleanupRecorder]);
+  }, [captureState, screen.stream, microphone.stream, facecam.stream, composite, cleanupRecorder]);
 
   // TRANSITION: recording → finalizing → saved
   const stopRecording = useCallback(async (): Promise<RecordedData | null> => {
@@ -472,25 +414,24 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     const finalDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
     console.log(`[Capture] Final duration: ${finalDuration}s`);
 
-    // Helper to stop recorder and await onstop, then create blob
-    const stopRecorderAndGetBlob = (
-      recorder: MediaRecorder | null,
-      chunks: Blob[],
-      label: string
-    ): Promise<Blob | null> => {
+    // Stop composite recorder and get blob
+    const stopCompositeRecorder = (): Promise<Blob | null> => {
       return new Promise((resolve) => {
+        const recorder = compositeRecorderRef.current;
+        const chunks = compositeChunksRef.current;
+        
         if (!recorder) {
-          console.log(`[${label}] No recorder to stop`);
+          console.log("[Composite] No recorder to stop");
           resolve(null);
           return;
         }
 
         if (recorder.state === "inactive") {
-          console.log(`[${label}] Recorder already inactive, chunks: ${chunks.length}`);
+          console.log(`[Composite] Recorder already inactive, chunks: ${chunks.length}`);
           if (chunks.length > 0) {
             const mimeType = recorder.mimeType || "video/webm";
             const blob = new Blob(chunks, { type: mimeType });
-            console.log(`[${label}] Created blob from existing chunks: ${blob.size} bytes`);
+            console.log(`[Composite] Created blob from existing chunks: ${blob.size} bytes`);
             resolve(blob);
           } else {
             resolve(null);
@@ -500,25 +441,24 @@ export function useCaptureManager(): UseCaptureManagerReturn {
 
         // Set up onstop handler BEFORE calling stop()
         recorder.onstop = () => {
-          console.log(`[${label}] onstop fired, chunks collected: ${chunks.length}`);
+          console.log(`[Composite] onstop fired, chunks collected: ${chunks.length}`);
           
           if (chunks.length > 0) {
             const mimeType = recorder.mimeType || "video/webm";
             const blob = new Blob(chunks, { type: mimeType });
-            console.log(`[${label}] Created blob: ${blob.size} bytes, type: ${blob.type}`);
+            console.log(`[Composite] Created blob: ${blob.size} bytes, type: ${blob.type}`);
             resolve(blob);
           } else {
-            console.warn(`[${label}] No chunks collected!`);
+            console.warn("[Composite] No chunks collected!");
             resolve(null);
           }
         };
 
         try {
-          console.log(`[${label}] Calling stop(), current state: ${recorder.state}`);
+          console.log(`[Composite] Calling stop(), current state: ${recorder.state}`);
           recorder.stop();
         } catch (err) {
-          console.error(`[${label}] Error stopping recorder:`, err);
-          // Still try to create blob from existing chunks
+          console.error("[Composite] Error stopping recorder:", err);
           if (chunks.length > 0) {
             const blob = new Blob(chunks, { type: "video/webm" });
             resolve(blob);
@@ -530,55 +470,46 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     };
 
     try {
-      // Stop all recorders and wait for onstop callbacks
-      console.log("[Capture] Waiting for all recorders to stop...");
-      const [screenBlob, microphoneBlob, facecamBlob] = await Promise.all([
-        stopRecorderAndGetBlob(screenRecorderRef.current, screenChunksRef.current, "Screen"),
-        stopRecorderAndGetBlob(micRecorderRef.current, micChunksRef.current, "Microphone"),
-        stopRecorderAndGetBlob(facecamRecorderRef.current, facecamChunksRef.current, "Facecam"),
-      ]);
+      // Stop composite recorder and wait for blob
+      console.log("[Capture] Waiting for composite recorder to stop...");
+      const compositeBlob = await stopCompositeRecorder();
 
-      console.log("[Capture] All recorders stopped:", {
-        screen: screenBlob?.size || 0,
-        microphone: microphoneBlob?.size || 0,
-        facecam: facecamBlob?.size || 0,
+      console.log("[Capture] Composite recorder stopped:", {
+        compositeSize: compositeBlob?.size || 0,
+        chunks: compositeChunksRef.current.length,
       });
 
-      // Validate we got at least the screen recording
-      if (!screenBlob || screenBlob.size === 0) {
+      // Validate we got the composite recording
+      if (!compositeBlob || compositeBlob.size === 0) {
         throw {
           code: "NO_CHUNKS" as const,
-          message: "No screen recording data was captured. The recording may have been too short or failed.",
+          message: "No recording data was captured. The recording may have been too short or failed.",
           recoverable: false,
-          details: `Screen chunks: ${screenChunksRef.current.length}, Duration: ${finalDuration}s`,
+          details: `Chunks: ${compositeChunksRef.current.length}, Duration: ${finalDuration}s`,
         };
       }
 
-      // Stop all streams (stop tracks)
+      // Stop compositing (canvas animation, audio context)
+      composite.stopCompositing();
+
+      // Stop all source streams
       screen.stopCapture();
       microphone.stopCapture();
       facecam.stopCapture();
 
-      // Cleanup recorders - null event handlers to prevent memory leaks
-      cleanupRecorder(screenRecorderRef.current);
-      cleanupRecorder(micRecorderRef.current);
-      cleanupRecorder(facecamRecorderRef.current);
-
-      // Clear all refs
-      screenRecorderRef.current = null;
-      micRecorderRef.current = null;
-      facecamRecorderRef.current = null;
-      screenChunksRef.current = [];
-      micChunksRef.current = [];
-      facecamChunksRef.current = [];
+      // Cleanup recorder
+      cleanupRecorder(compositeRecorderRef.current);
+      compositeRecorderRef.current = null;
+      compositeChunksRef.current = [];
 
       setCaptureState("saved");
-      console.log("[Capture] Recording saved successfully");
+      console.log("[Capture] Recording saved successfully (single composite file)");
 
       return {
-        screenBlob,
-        microphoneBlob,
-        facecamBlob,
+        compositeBlob,
+        screenBlob: null, // Using composite instead
+        microphoneBlob: null,
+        facecamBlob: null,
         systemAudioBlob: null,
         duration: finalDuration,
       };
@@ -599,7 +530,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       setCaptureState("error");
       return null;
     }
-  }, [captureState, screen, microphone, facecam, cleanupRecorder, fullCleanup]);
+  }, [captureState, screen, microphone, facecam, composite, cleanupRecorder, fullCleanup]);
 
   // TRANSITION: preview_ready → idle (stops streams without recording)
   const stopPreview = useCallback(() => {
