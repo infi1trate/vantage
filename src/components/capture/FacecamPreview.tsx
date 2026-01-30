@@ -5,10 +5,29 @@ import { cn } from "@/lib/utils";
 export type FrameShape = "circle" | "rounded-square";
 export type CameraSize = "small" | "large";
 
+// Professional, muted color palette for background masks
+export const BACKGROUND_COLORS = [
+  { id: "transparent", value: "transparent", label: "None" },
+  { id: "slate-900", value: "hsl(222.2 47.4% 11.2%)", label: "Charcoal" },
+  { id: "zinc-800", value: "hsl(240 3.7% 15.9%)", label: "Graphite" },
+  { id: "neutral-700", value: "hsl(0 0% 32%)", label: "Steel" },
+  { id: "stone-600", value: "hsl(25 5.3% 44.7%)", label: "Taupe" },
+  { id: "amber-900", value: "hsl(21.7 77.8% 26.5%)", label: "Ember" },
+  { id: "emerald-900", value: "hsl(152 68% 18%)", label: "Forest" },
+  { id: "vantage", value: "hsl(65 70% 45%)", label: "Vantage" },
+  { id: "cyan-900", value: "hsl(192 91% 18%)", label: "Deep Teal" },
+  { id: "blue-900", value: "hsl(224 64% 23%)", label: "Navy" },
+  { id: "violet-900", value: "hsl(263 70% 24%)", label: "Plum" },
+  { id: "rose-900", value: "hsl(343 79% 22%)", label: "Wine" },
+] as const;
+
+export type BackgroundColorId = typeof BACKGROUND_COLORS[number]["id"];
+
 interface FacecamPreviewProps {
   enabled: boolean;
   frameShape?: FrameShape;
   cameraSize?: CameraSize;
+  backgroundColor?: BackgroundColorId;
   className?: string;
 }
 
@@ -16,12 +35,15 @@ export function FacecamPreview({
   enabled, 
   frameShape = "circle", 
   cameraSize = "small",
+  backgroundColor = "transparent",
   className 
 }: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  const bgColor = BACKGROUND_COLORS.find(c => c.id === backgroundColor)?.value || "transparent";
 
   useEffect(() => {
     if (!enabled) {
@@ -151,12 +173,15 @@ export function FacecamPreview({
   }
 
   return (
-    <div className={cn(
-      "bg-black border border-border/30 overflow-hidden relative",
-      getContainerClasses(),
-      getFrameClasses(),
-      className
-    )}>
+    <div 
+      className={cn(
+        "border border-border/30 overflow-hidden relative",
+        getContainerClasses(),
+        getFrameClasses(),
+        className
+      )}
+      style={{ backgroundColor: bgColor === "transparent" ? "black" : bgColor }}
+    >
       <video
         ref={videoRef}
         autoPlay

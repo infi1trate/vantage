@@ -44,7 +44,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { FacecamPreview, type FrameShape, type CameraSize } from "@/components/capture/FacecamPreview";
+import { FacecamPreview, BACKGROUND_COLORS, type FrameShape, type CameraSize, type BackgroundColorId } from "@/components/capture/FacecamPreview";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -83,6 +83,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [includeGameAudio, setIncludeGameAudio] = useState(true);
   const [frameShape, setFrameShape] = useState<FrameShape>("circle");
   const [cameraSize, setCameraSize] = useState<CameraSize>("small");
+  const [backgroundColor, setBackgroundColor] = useState<BackgroundColorId>("transparent");
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -108,6 +109,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setIncludeGameAudio(true);
       setFrameShape("circle");
       setCameraSize("small");
+      setBackgroundColor("transparent");
     }
   }, [open]);
 
@@ -552,11 +554,47 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
                         </button>
                       </div>
                     </div>
+
+                    {/* Background Mask */}
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground/80">Background Mask</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {BACKGROUND_COLORS.map((color) => (
+                          <button
+                            key={color.id}
+                            type="button"
+                            onClick={() => setBackgroundColor(color.id)}
+                            className={cn(
+                              "relative w-full aspect-square rounded-md transition-all duration-200",
+                              "hover:scale-105 hover:ring-2 hover:ring-primary/30",
+                              color.id === "transparent" && "bg-[conic-gradient(from_45deg,#1a1a1a_25%,#2a2a2a_25%,#2a2a2a_50%,#1a1a1a_50%,#1a1a1a_75%,#2a2a2a_75%)] bg-[length:8px_8px]",
+                              backgroundColor === color.id && "ring-2 ring-primary ring-offset-1 ring-offset-background"
+                            )}
+                            style={{ 
+                              backgroundColor: color.id !== "transparent" ? color.value : undefined 
+                            }}
+                            disabled={loading}
+                            title={color.label}
+                          >
+                            {backgroundColor === color.id && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Check className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </>
                 )}
 
                 {/* Live Camera Preview */}
-                <FacecamPreview enabled={includeFacecam} frameShape={frameShape} cameraSize={cameraSize} />
+                <FacecamPreview 
+                  enabled={includeFacecam} 
+                  frameShape={frameShape} 
+                  cameraSize={cameraSize} 
+                  backgroundColor={backgroundColor}
+                />
               </div>
 
               {/* Screen Selection hint */}
