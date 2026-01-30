@@ -57,7 +57,7 @@ export function SessionRightRail({
   commentsEnabled = false,
   onSeekTo,
 }: SessionRightRailProps) {
-  const [activeSection, setActiveSection] = useState<RailSection>("coach");
+  const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
   // Count highlights specifically (kill, death, highlight types)
   const highlightCount = useMemo(() => {
@@ -91,11 +91,10 @@ export function SessionRightRail({
     badge?: "new" | "loading" | "error";
   }> = [
     { 
-      id: "coach", 
-      label: "Coach", 
-      icon: Brain,
-      count: suggestions.length,
-      badge: coachState === "running" ? "loading" : coachState === "complete" ? "new" : undefined,
+      id: "highlights", 
+      label: "Highlights", 
+      icon: Star,
+      count: highlightCount,
     },
     { 
       id: "annotations", 
@@ -104,10 +103,11 @@ export function SessionRightRail({
       count: annotationCount,
     },
     { 
-      id: "highlights", 
-      label: "Highlights", 
-      icon: Star,
-      count: highlightCount,
+      id: "coach", 
+      label: "Coach", 
+      icon: Brain,
+      count: suggestions.length,
+      badge: coachState === "running" ? "loading" : coachState === "complete" ? "new" : undefined,
     },
   ];
 
@@ -165,18 +165,15 @@ export function SessionRightRail({
         </div>
 
         {/* Tab content */}
-        <TabsContent value="coach" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <CoachSection
-            annotations={annotations}
-            voiceNotes={voiceNotes}
+        <TabsContent value="highlights" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
+          <HighlightsSection
+            annotations={annotations.filter(a => 
+              ["kill", "death", "highlight"].includes(a.annotation_type)
+            )}
             currentTime={currentTime}
+            onAnnotationClick={onAnnotationClick}
             onMarkerClick={onMarkerClick}
-            suggestions={suggestions}
-            onSuggestionAccept={onSuggestionAccept}
-            onSuggestionDismiss={onSuggestionDismiss}
-            onGenerateSuggestions={onGenerateSuggestions}
-            isLoadingSuggestions={isLoadingSuggestions}
-            coachError={coachError}
+            onAnnotationDelete={onAnnotationDelete}
           />
         </TabsContent>
 
@@ -194,6 +191,21 @@ export function SessionRightRail({
           />
         </TabsContent>
 
+        <TabsContent value="coach" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
+          <CoachSection
+            annotations={annotations}
+            voiceNotes={voiceNotes}
+            currentTime={currentTime}
+            onMarkerClick={onMarkerClick}
+            suggestions={suggestions}
+            onSuggestionAccept={onSuggestionAccept}
+            onSuggestionDismiss={onSuggestionDismiss}
+            onGenerateSuggestions={onGenerateSuggestions}
+            isLoadingSuggestions={isLoadingSuggestions}
+            coachError={coachError}
+          />
+        </TabsContent>
+
         {commentsEnabled && (
           <TabsContent value="comments" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
             <CommentsSection
@@ -203,18 +215,6 @@ export function SessionRightRail({
             />
           </TabsContent>
         )}
-
-        <TabsContent value="highlights" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <HighlightsSection
-            annotations={annotations.filter(a => 
-              ["kill", "death", "highlight"].includes(a.annotation_type)
-            )}
-            currentTime={currentTime}
-            onAnnotationClick={onAnnotationClick}
-            onMarkerClick={onMarkerClick}
-            onAnnotationDelete={onAnnotationDelete}
-          />
-        </TabsContent>
       </Tabs>
 
       {/* Sync indicator - show when Coach is running but user is on another tab */}
