@@ -1,13 +1,12 @@
 import { useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
-import { ActiveCaptureIndicators } from "@/components/privacy/ActiveCaptureIndicators";
-import { Mic, Shield, Circle } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Mic, Shield, Circle, Pause } from "lucide-react";
 
 interface CapturePreviewProps {
   screenStream: MediaStream | null;
   facecamStream: MediaStream | null;
   isRecording: boolean;
+  isPaused?: boolean;
   microphoneLevel: number;
   captureConfig?: {
     screen: boolean;
@@ -21,6 +20,7 @@ export function CapturePreview({
   screenStream,
   facecamStream,
   isRecording,
+  isPaused = false,
   microphoneLevel,
   captureConfig = { screen: true, microphone: true, facecam: false, systemAudio: true },
 }: CapturePreviewProps) {
@@ -38,6 +38,35 @@ export function CapturePreview({
       facecamVideoRef.current.srcObject = facecamStream;
     }
   }, [facecamStream]);
+
+  // Determine status indicator
+  const getStatusIndicator = () => {
+    if (isRecording) {
+      return (
+        <div className="flex items-center gap-2 bg-destructive/90 rounded-full px-3 py-1.5">
+          <Circle className="h-3 w-3 text-destructive-foreground recording-pulse" fill="currentColor" />
+          <span className="text-xs font-bold text-destructive-foreground uppercase tracking-wider">REC</span>
+        </div>
+      );
+    }
+    
+    if (isPaused) {
+      return (
+        <div className="flex items-center gap-2 bg-warning/90 rounded-full px-3 py-1.5">
+          <Pause className="h-3 w-3 text-warning-foreground" />
+          <span className="text-xs font-bold text-warning-foreground uppercase tracking-wider">PAUSED</span>
+        </div>
+      );
+    }
+    
+    // Preview ready state
+    return (
+      <div className="flex items-center gap-2 bg-vantage-success/90 rounded-full px-3 py-1.5">
+        <span className="w-2 h-2 rounded-full bg-background" />
+        <span className="text-xs font-bold text-background uppercase tracking-wider">READY</span>
+      </div>
+    );
+  };
 
   return (
     <Card className="relative aspect-video bg-black rounded-lg overflow-hidden border border-border/30 mb-6">
@@ -78,18 +107,8 @@ export function CapturePreview({
 
       {/* Top bar with recording indicator and privacy badge */}
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-        {/* Recording indicator - ONLY shown when actually recording */}
-        {isRecording ? (
-          <div className="flex items-center gap-2 bg-destructive/90 rounded-full px-3 py-1.5">
-            <Circle className="h-3 w-3 text-destructive-foreground recording-pulse" fill="currentColor" />
-            <span className="text-xs font-bold text-destructive-foreground uppercase tracking-wider">REC</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 bg-background/80 rounded-full px-3 py-1.5">
-            <span className="w-2 h-2 rounded-full bg-vantage-success" />
-            <span className="text-xs font-medium text-foreground uppercase tracking-wider">Preview</span>
-          </div>
-        )}
+        {/* Status indicator */}
+        {getStatusIndicator()}
 
         {/* Privacy assurance */}
         <div className="flex items-center gap-1.5 bg-vantage-success/10 border border-vantage-success/30 rounded-full px-2.5 py-1">

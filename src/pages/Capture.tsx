@@ -1,18 +1,28 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate, useBlocker } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
-import { useCaptureManager, RecordedData } from "@/hooks/useCaptureManager";
+import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureSetup } from "@/components/capture/CaptureSetup";
 import { PermissionError } from "@/components/capture/PermissionError";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Play } from "lucide-react";
+import { Loader2, ArrowLeft, Pause } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -21,8 +31,56 @@ export default function CapturePage() {
   
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   
   const capture = useCaptureManager();
+
+  // Determine if we should block navigation
+  const isRecordingOrFinalizing = 
+    capture.captureState === "recording" || 
+    capture.captureState === "paused" || 
+    capture.captureState === "finalizing";
+
+  // Block navigation when recording
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isRecordingOrFinalizing && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  // Show dialog when blocker is triggered
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowLeaveDialog(true);
+    }
+  }, [blocker.state]);
+
+  // Handle beforeunload (browser close/refresh)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isRecordingOrFinalizing) {
+        e.preventDefault();
+        e.returnValue = "You have an active recording. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isRecordingOrFinalizing]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Space to toggle pause/resume during recording
+      if (e.code === "Space" && (capture.captureState === "recording" || capture.captureState === "paused")) {
+        e.preventDefault();
+        capture.togglePause();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [capture.captureState, capture.togglePause]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -57,7 +115,6 @@ export default function CapturePage() {
   // Setup complete → acquire sources (preview_ready)
   const handleSetupComplete = async (config: { enableFacecam: boolean; enableSystemAudio: boolean }) => {
     await capture.selectSources(config);
-    // Don't auto-start recording - user must explicitly click "Start Recording"
   };
 
   // User clicks "Start Recording" from preview_ready state
@@ -72,9 +129,9 @@ export default function CapturePage() {
   const handleEndCapture = async () => {
     if (!session || !user) return;
     
-    // Only proceed if we're actually recording
-    if (capture.captureState !== "recording") {
-      console.warn("handleEndCapture called but not in recording state");
+    // Only proceed if we're recording or paused
+    if (capture.captureState !== "recording" && capture.captureState !== "paused") {
+      console.warn("handleEndCapture called but not in recording/paused state");
       return;
     }
 
@@ -86,7 +143,7 @@ export default function CapturePage() {
         throw new Error("No recorded data");
       }
 
-      // Upload the single composite recording (screen + PiP webcam + mixed audio)
+      // Upload the single composite recording
       if (recordedData.compositeBlob) {
         const compositePath = `${user.id}/${session.id}/gameplay.webm`;
         
@@ -131,7 +188,9 @@ export default function CapturePage() {
       });
 
       toast.success("Capture saved successfully!");
-      navigate(`/session/${session.id}`);
+      
+      // Navigate to library with this session highlighted
+      navigate("/library", { state: { highlightSession: session.id } });
     } catch (error: any) {
       console.error("Error saving capture:", error);
       toast.error(error.message || "Failed to save capture");
@@ -161,6 +220,22 @@ export default function CapturePage() {
   // Retry from error state
   const handleRetry = () => {
     capture.retryFromError();
+  };
+
+  // Handle leave confirmation
+  const handleConfirmLeave = () => {
+    capture.cancelCapture();
+    setShowLeaveDialog(false);
+    if (blocker.state === "blocked") {
+      blocker.proceed();
+    }
+  };
+
+  const handleCancelLeave = () => {
+    setShowLeaveDialog(false);
+    if (blocker.state === "blocked") {
+      blocker.reset();
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -237,16 +312,18 @@ export default function CapturePage() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Redirecting to session...</p>
+          <p className="text-muted-foreground">Redirecting to library...</p>
         </div>
       </div>
     );
   }
 
-  // PREVIEW_READY, RECORDING, or FINALIZING STATE
+  // PREVIEW_READY, RECORDING, PAUSED, or FINALIZING STATE
   const isRecording = capture.captureState === "recording";
+  const isPaused = capture.captureState === "paused";
   const isFinalizing = capture.captureState === "finalizing";
   const isPreviewReady = capture.captureState === "preview_ready";
+  const isActiveRecording = isRecording || isPaused;
 
   return (
     <div className="min-h-screen bg-background">
@@ -266,20 +343,29 @@ export default function CapturePage() {
                   <span className="font-display text-3xl">{formatTime(capture.duration)}</span>
                 </>
               )}
+              {isPaused && (
+                <>
+                  <Pause className="h-4 w-4 text-warning" />
+                  <Badge variant="outline" className="border-warning/30 text-warning uppercase tracking-wider text-xs">
+                    PAUSED
+                  </Badge>
+                  <span className="font-display text-3xl text-muted-foreground">{formatTime(capture.duration)}</span>
+                </>
+              )}
               {isPreviewReady && (
                 <>
                   <span className="w-3 h-3 rounded-full bg-vantage-success" />
                   <Badge variant="outline" className="border-vantage-success/30 text-vantage-success uppercase tracking-wider text-xs">
-                    PREVIEW
+                    READY
                   </Badge>
-                  <span className="text-sm text-muted-foreground">Ready to record</span>
+                  <span className="font-mono text-lg text-muted-foreground">0:00</span>
                 </>
               )}
               {isFinalizing && (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   <Badge variant="outline" className="border-primary/30 text-primary uppercase tracking-wider text-xs">
-                    SAVING
+                    FINALIZING
                   </Badge>
                 </>
               )}
@@ -295,6 +381,7 @@ export default function CapturePage() {
             screenStream={capture.screenStream}
             facecamStream={capture.facecamStream}
             isRecording={isRecording}
+            isPaused={isPaused}
             microphoneLevel={capture.microphoneLevel}
           />
 
@@ -302,12 +389,36 @@ export default function CapturePage() {
           <CaptureControls
             captureState={capture.captureState}
             onStartRecording={handleStartRecording}
+            onPauseRecording={capture.pauseRecording}
+            onResumeRecording={capture.resumeRecording}
             onStopRecording={handleEndCapture}
             onStopPreview={handleStopPreview}
             onCancel={handleCancel}
           />
         </div>
       </main>
+
+      {/* Leave confirmation dialog */}
+      <AlertDialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display uppercase tracking-wide">
+              Recording in Progress
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              You have an active recording. If you leave now, your recording will be lost. Are you sure you want to leave?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelLeave}>
+              Continue Recording
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmLeave} className="bg-destructive hover:bg-destructive/90">
+              Discard & Leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

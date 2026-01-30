@@ -26,6 +26,7 @@ export type CaptureState =
   | "selecting_sources"     // Requesting permissions, acquiring streams
   | "preview_ready"         // Streams active, preview visible, NOT recording
   | "recording"             // MediaRecorder actively recording, timer running
+  | "paused"                // Recording paused, timer stopped
   | "finalizing"            // Stop requested, waiting for recorder.onstop, building blobs
   | "saved"                 // Session persisted successfully
   | "error";                // Actionable error state
@@ -59,6 +60,7 @@ export interface UseCaptureManagerReturn {
   // State
   captureState: CaptureState;
   error: CaptureError | null;
+  isPaused: boolean;
   
   // Only valid in recording state
   duration: number;
@@ -80,7 +82,10 @@ export interface UseCaptureManagerReturn {
   // Actions - each only valid in specific states
   selectSources: (config: CaptureConfig) => Promise<void>;  // idle → selecting_sources
   startRecording: () => Promise<boolean>;                    // preview_ready → recording
-  stopRecording: () => Promise<RecordedData | null>;        // recording → finalizing → saved
+  pauseRecording: () => void;                                // recording → paused
+  resumeRecording: () => void;                               // paused → recording
+  togglePause: () => void;                                   // toggle between recording/paused
+  stopRecording: () => Promise<RecordedData | null>;        // recording/paused → finalizing → saved
   stopPreview: () => void;                                   // preview_ready → idle
   cancelCapture: () => void;                                 // any → idle
   retryFromError: () => void;                               // error → idle
@@ -129,6 +134,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   const compositeChunksRef = useRef<Blob[]>([]);
   
   const startTimeRef = useRef<number>(0);
+  const pausedAtRef = useRef<number>(0);
+  const accumulatedDurationRef = useRef<number>(0);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Track if we're actively recording (for cleanup)
@@ -394,10 +401,68 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     }
   }, [captureState, screen.stream, microphone.stream, facecam.stream, composite, cleanupRecorder]);
 
-  // TRANSITION: recording → finalizing → saved
-  const stopRecording = useCallback(async (): Promise<RecordedData | null> => {
+  // TRANSITION: recording → paused
+  const pauseRecording = useCallback(() => {
     if (captureState !== "recording") {
-      console.warn(`stopRecording called in invalid state: ${captureState}. Must be in recording.`);
+      console.warn(`pauseRecording called in invalid state: ${captureState}. Must be in recording.`);
+      return;
+    }
+
+    const recorder = compositeRecorderRef.current;
+    if (recorder && recorder.state === "recording") {
+      recorder.pause();
+      console.log("[Capture] Recording paused");
+    }
+
+    // Stop timer and store accumulated duration
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+    accumulatedDurationRef.current = duration;
+    pausedAtRef.current = Date.now();
+
+    setCaptureState("paused");
+  }, [captureState, duration]);
+
+  // TRANSITION: paused → recording
+  const resumeRecording = useCallback(() => {
+    if (captureState !== "paused") {
+      console.warn(`resumeRecording called in invalid state: ${captureState}. Must be in paused.`);
+      return;
+    }
+
+    const recorder = compositeRecorderRef.current;
+    if (recorder && recorder.state === "paused") {
+      recorder.resume();
+      console.log("[Capture] Recording resumed");
+    }
+
+    // Restart timer from accumulated duration
+    startTimeRef.current = Date.now();
+    durationIntervalRef.current = setInterval(() => {
+      if (isRecordingRef.current) {
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setDuration(accumulatedDurationRef.current + elapsed);
+      }
+    }, 100);
+
+    setCaptureState("recording");
+  }, [captureState]);
+
+  // Toggle between recording/paused
+  const togglePause = useCallback(() => {
+    if (captureState === "recording") {
+      pauseRecording();
+    } else if (captureState === "paused") {
+      resumeRecording();
+    }
+  }, [captureState, pauseRecording, resumeRecording]);
+
+  // TRANSITION: recording/paused → finalizing → saved
+  const stopRecording = useCallback(async (): Promise<RecordedData | null> => {
+    if (captureState !== "recording" && captureState !== "paused") {
+      console.warn(`stopRecording called in invalid state: ${captureState}. Must be in recording or paused.`);
       return null;
     }
 
@@ -586,6 +651,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // State
     captureState,
     error,
+    isPaused: captureState === "paused",
     
     // Duration - only meaningful in recording state
     duration,
@@ -607,6 +673,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Actions
     selectSources,
     startRecording,
+    pauseRecording,
+    resumeRecording,
+    togglePause,
     stopRecording,
     stopPreview,
     cancelCapture,
