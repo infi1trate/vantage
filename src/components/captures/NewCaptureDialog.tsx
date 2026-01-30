@@ -65,6 +65,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [gameName, setGameName] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [previewOnlyMode, setPreviewOnlyMode] = useState(false);
 
   // Run preflight check when dialog opens
   useEffect(() => {
@@ -84,6 +85,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       setView("preflight");
       setTitle("");
       setGameName("");
+      setPreviewOnlyMode(false);
     }
   }, [open]);
 
@@ -110,7 +112,11 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       
       toast.success("Capture session created!");
       onOpenChange(false);
-      navigate(`/capture/${session.id}`);
+      // Navigate with preview mode flag if applicable
+      const url = previewOnlyMode 
+        ? `/capture/${session.id}?mode=preview`
+        : `/capture/${session.id}`;
+      navigate(url);
     } catch (error: any) {
       console.error("Error creating session:", error);
       toast.error(error.message || "Failed to create capture session");
@@ -270,7 +276,10 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
             {preflightResult.canPreview && (
               <Button
                 variant="outline"
-                onClick={() => setView("form")}
+                onClick={() => {
+                  setPreviewOnlyMode(true);
+                  setView("form");
+                }}
                 className="w-full sm:w-auto"
               >
                 Continue in Preview Mode

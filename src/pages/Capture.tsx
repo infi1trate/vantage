@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, useBlocker } from "react-router-dom";
+import { useParams, useNavigate, useBlocker, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
@@ -12,9 +12,10 @@ import { CaptureWizard } from "@/components/capture/CaptureWizard";
 import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { saveLocalSession, LocalSession } from "@/lib/localSessionStorage";
+import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Pause, Bug } from "lucide-react";
+import { Loader2, ArrowLeft, Pause, Bug, Eye, Chrome, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -32,6 +33,7 @@ const IS_DEV = import.meta.env.DEV;
 
 export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   
@@ -39,6 +41,26 @@ export default function CapturePage() {
   const [loading, setLoading] = useState(true);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  
+  // Preview-only mode: browser can preview but not record
+  const [isPreviewOnly, setIsPreviewOnly] = useState(() => {
+    return searchParams.get("mode") === "preview";
+  });
+  
+  // Check recording capability on mount
+  const [recordingDisabledReason, setRecordingDisabledReason] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const preflightResult = runCapturePreflightGate();
+    if (!preflightResult.supported) {
+      if (preflightResult.canPreview) {
+        setIsPreviewOnly(true);
+        // Find the main issue to display
+        const mainIssue = preflightResult.issues.find(i => i.severity === "critical");
+        setRecordingDisabledReason(mainIssue?.title || "Recording not supported");
+      }
+    }
+  }, []);
   
   const capture = useCaptureManager();
   
@@ -364,6 +386,7 @@ export default function CapturePage() {
               session={session}
               onStart={handleSetupComplete}
               isLoading={capture.captureState === "selecting_sources"}
+              previewOnly={isPreviewOnly}
             />
           </div>
         </main>
@@ -420,10 +443,21 @@ export default function CapturePage() {
               )}
               {isPreviewReady && (
                 <>
-                  <span className="w-3 h-3 rounded-full bg-vantage-success" />
-                  <Badge variant="outline" className="border-vantage-success/30 text-vantage-success uppercase tracking-wider text-xs">
-                    READY
-                  </Badge>
+                  {isPreviewOnly ? (
+                    <>
+                      <Eye className="h-4 w-4 text-warning" />
+                      <Badge variant="outline" className="border-warning/30 text-warning uppercase tracking-wider text-xs">
+                        PREVIEW MODE
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-3 h-3 rounded-full bg-vantage-success" />
+                      <Badge variant="outline" className="border-vantage-success/30 text-vantage-success uppercase tracking-wider text-xs">
+                        READY
+                      </Badge>
+                    </>
+                  )}
                   <span className="font-mono text-lg text-muted-foreground">0:00</span>
                 </>
               )}
@@ -472,6 +506,8 @@ export default function CapturePage() {
             preflightChecks={preflight.checks}
             preflightPassed={preflight.allPassed}
             preflightRunning={preflight.isRunning}
+            previewOnly={isPreviewOnly}
+            recordingDisabledReason={recordingDisabledReason}
           />
 
           {/* Debug Panel - Dev mode only */}
