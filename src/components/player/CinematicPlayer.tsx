@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { TimelineSelection, SelectionState } from "./TimelineSelection";
+import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -52,6 +53,9 @@ interface CinematicPlayerProps {
   onDownloadRequest?: () => void;
   selection?: SelectionState;
   onSelectionChange?: (selection: SelectionState) => void;
+  onCreateMarker?: (type: "kill" | "death" | "highlight" | "marker", time: number, endTime?: number) => void;
+  onOpenNote?: (time: number, endTime?: number) => void;
+  onOpenVoice?: (time: number) => void;
 }
 
 export function CinematicPlayer({
@@ -69,6 +73,9 @@ export function CinematicPlayer({
   onDownloadRequest,
   selection = { type: null },
   onSelectionChange,
+  onCreateMarker,
+  onOpenNote,
+  onOpenVoice,
 }: CinematicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -332,6 +339,31 @@ export function CinematicPlayer({
               {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
             </Button>
           </div>
+        </div>
+
+        {/* Floating annotation bar - appears above timeline when selection exists */}
+        <div className="relative mx-4">
+          {activeSelection.type !== null && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-10">
+              <FloatingAnnotationBar
+                selection={activeSelection}
+                onCreateMarker={(type) => {
+                  const time = activeSelection.type === "range" ? activeSelection.rangeStart! : activeSelection.point!;
+                  const endTime = activeSelection.type === "range" ? activeSelection.rangeEnd : undefined;
+                  onCreateMarker?.(type, time, endTime);
+                }}
+                onOpenNote={() => {
+                  const time = activeSelection.type === "range" ? activeSelection.rangeStart! : activeSelection.point!;
+                  const endTime = activeSelection.type === "range" ? activeSelection.rangeEnd : undefined;
+                  onOpenNote?.(time, endTime);
+                }}
+                onOpenVoice={() => {
+                  const time = activeSelection.type === "range" ? activeSelection.rangeStart! : activeSelection.point!;
+                  onOpenVoice?.(time);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Main timeline with selection support */}
