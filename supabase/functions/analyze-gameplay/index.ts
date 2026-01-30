@@ -115,11 +115,28 @@ interface EventAnalysis {
   candidate_causes: CandidateCause[];
 }
 
+// Coach layer output structure
+type CoachingLens = "Positioning" | "Awareness" | "Tempo" | "Resource Management" | "Mechanics";
+
+interface CoachingCard {
+  event_id: string;
+  title: string;
+  lens: CoachingLens;
+  what_happened: string;
+  why_it_mattered: string;
+  coaching_tip: string;
+  drill: string;
+  confidence: "high" | "medium" | "low";
+  evidence_summary: string[];
+}
+
 interface AnalysisResult {
   summary: string;
   overall_score: number;
   // Event-level analyses (analyst output - facts only)
   event_analyses: EventAnalysis[];
+  // Coach-generated coaching cards (actionable advice)
+  coaching_cards: CoachingCard[];
   // Legacy feedback cards (for backward compatibility, may be empty)
   feedback_cards: FeedbackCard[];
   patterns: {
@@ -127,12 +144,6 @@ interface AnalysisResult {
     description: string;
     frequency: string;
     impact: "positive" | "negative" | "neutral";
-  }[];
-  // Recommendations removed from analyst output - downstream coach layer provides these
-  recommendations?: {
-    text: string;
-    priority: "high" | "medium" | "low";
-    category: string;
   }[];
   clip_windows?: ClipWindow[];
   clip_evidence?: ClipWindowWithEvidence[];
@@ -693,7 +704,114 @@ Remember: You are an ANALYST. Report facts and interpretations with evidence. Do
       analysisResult.event_analyses = [];
     }
 
-    console.log(`Analysis complete with ${analysisResult.event_analyses?.length || 0} event analyses, ${allClipWindows.length} clip windows, and ${clipEvidence.length} evidence records`);
+    console.log(`Analyst phase complete with ${analysisResult.event_analyses?.length || 0} event analyses`);
+
+    // ========== COACH LAYER ==========
+    // Transform analyst output into actionable coaching cards
+    let coachingCards: CoachingCard[] = [];
+    
+    if (analysisResult.event_analyses.length > 0) {
+      const coachSystemPrompt = `You are an AI COACH for post-session gameplay review. Your role is to provide actionable coaching based on analyst observations.
+
+CRITICAL RULES:
+- This is POST-SESSION coaching only — never real-time advice
+- No enemy location inference or exploitation
+- No automation suggestions
+- One coaching card per event
+
+COACHING LENSES (choose the most relevant):
+- Positioning: Where the player was relative to cover, angles, teammates
+- Awareness: Information gathering, minimap usage, sound cues, tracking threats
+- Tempo: Pacing decisions, when to push vs hold, rotation timing
+- Resource Management: Health, ammo, abilities, economy decisions
+- Mechanics: Aim, movement tech, ability usage execution
+
+LANGUAGE RULES:
+- High confidence evidence → assertive but respectful ("You pushed without checking angles")
+- Medium/Low confidence → hypothesis wording ("It looks like the rotation may have been delayed")
+
+OUTPUT FORMAT:
+Return a JSON array of coaching cards:
+[
+  {
+    "event_id": "<from analyst>",
+    "title": "Specific, non-generic title (e.g., 'Wide Peek Into Crossfire' not 'Positioning Error')",
+    "lens": "Positioning" | "Awareness" | "Tempo" | "Resource Management" | "Mechanics",
+    "what_happened": "1-2 grounded sentences describing what occurred",
+    "why_it_mattered": "Game-logic explanation of the consequence",
+    "coaching_tip": "1 specific, actionable behavior change",
+    "drill": "Simple practice instruction (e.g., 'In deathmatch, practice jiggle-peeking corners before committing')",
+    "confidence": "high" | "medium" | "low",
+    "evidence_summary": ["signal1", "signal2"]
+  }
+]
+
+QUALITY CHECK:
+A skilled player reading this should think "yeah, that's fair."`;
+
+      const coachUserPrompt = `Generate coaching cards for these analyst observations:
+
+GAME: ${session.game_name || 'Unknown'}
+
+EVENT ANALYSES:
+${JSON.stringify(analysisResult.event_analyses, null, 2)}
+
+For each event_analysis, generate exactly ONE coaching card. Use the observed_behaviors and candidate_causes to inform your coaching. Acknowledge uncertainties in your confidence level.`;
+
+      try {
+        const coachResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-3-flash-preview",
+            messages: [
+              { role: "system", content: coachSystemPrompt },
+              { role: "user", content: coachUserPrompt }
+            ],
+            temperature: 0.5,
+          }),
+        });
+
+        if (coachResponse.ok) {
+          const coachData = await coachResponse.json();
+          const coachContent = coachData.choices?.[0]?.message?.content;
+
+          if (coachContent) {
+            try {
+              const jsonMatch = coachContent.match(/```json\n?([\s\S]*?)\n?```/) || coachContent.match(/```\n?([\s\S]*?)\n?```/);
+              const jsonStr = jsonMatch ? jsonMatch[1] : coachContent;
+              const parsedCards = JSON.parse(jsonStr.trim());
+              
+              // Validate and filter coaching cards
+              coachingCards = (Array.isArray(parsedCards) ? parsedCards : [parsedCards])
+                .filter((card: any) => 
+                  card.event_id && 
+                  card.title && 
+                  card.lens && 
+                  card.what_happened &&
+                  card.coaching_tip
+                );
+              
+              console.log(`Coach phase complete with ${coachingCards.length} coaching cards`);
+            } catch (parseError) {
+              console.error("Failed to parse coaching response:", coachContent);
+            }
+          }
+        } else {
+          console.error("Coach API error:", coachResponse.status);
+        }
+      } catch (coachError) {
+        console.error("Coach phase error:", coachError);
+        // Continue without coaching cards - analyst output is still valuable
+      }
+    }
+
+    analysisResult.coaching_cards = coachingCards;
+
+    console.log(`Analysis complete: ${analysisResult.event_analyses?.length || 0} analyses, ${coachingCards.length} coaching cards, ${allClipWindows.length} clip windows`);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
