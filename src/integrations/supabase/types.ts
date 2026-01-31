@@ -605,6 +605,59 @@ export type Database = {
           },
         ]
       }
+      dropbox_sync_status: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          dropbox_file_id: string | null
+          dropbox_path: string | null
+          error_message: string | null
+          file_size_bytes: number | null
+          id: string
+          session_id: string
+          started_at: string | null
+          sync_status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          dropbox_file_id?: string | null
+          dropbox_path?: string | null
+          error_message?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          session_id: string
+          started_at?: string | null
+          sync_status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          dropbox_file_id?: string | null
+          dropbox_path?: string | null
+          error_message?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          session_id?: string
+          started_at?: string | null
+          sync_status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dropbox_sync_status_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facecam_tracks: {
         Row: {
           border_radius: number | null
