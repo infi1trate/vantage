@@ -39,6 +39,7 @@ export interface EffectsConfig {
   backgroundColor: BackgroundColorId;
   backgroundImage: string | null;
   flipCamera: boolean;
+  aiBackgroundPrompt?: string | null; // Persists the prompt used to generate AI background
 }
 
 interface EffectsModalProps {
@@ -64,10 +65,11 @@ export function EffectsModal({
   const [backgroundImage, setBackgroundImage] = useState<string | null>(config.backgroundImage);
   const [flipCamera, setFlipCamera] = useState(config.flipCamera);
   
-  // AI Background state
+  // AI Background state - persisted prompt and UI state
   const [aiExpanded, setAiExpanded] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiPrompt, setAiPrompt] = useState(config.aiBackgroundPrompt || "");
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [savedAiPrompt, setSavedAiPrompt] = useState<string | null>(config.aiBackgroundPrompt || null);
 
   // Sync local state when modal opens
   useEffect(() => {
@@ -78,8 +80,11 @@ export function EffectsModal({
       setBackgroundColor(config.backgroundColor);
       setBackgroundImage(config.backgroundImage);
       setFlipCamera(config.flipCamera);
-      setAiExpanded(false);
-      setAiPrompt("");
+      // Restore AI prompt if we have a saved one
+      setAiPrompt(config.aiBackgroundPrompt || "");
+      setSavedAiPrompt(config.aiBackgroundPrompt || null);
+      // Auto-expand if we have a saved AI prompt
+      setAiExpanded(!!config.aiBackgroundPrompt);
     }
   }, [open, config]);
 
@@ -114,8 +119,9 @@ export function EffectsModal({
         // → backgroundImage prop → useBackgroundRemoval hook → same compositing
         // Subject segmentation, alpha matte, and frame clipping all apply automatically
         setBackgroundImage(data.imageUrl);
+        // Save the prompt for persistence and regeneration
+        setSavedAiPrompt(aiPrompt.trim());
         setAiExpanded(false);
-        setAiPrompt("");
         toast({
           title: "Background generated",
           description: "AI background applied to your preview",
@@ -143,8 +149,17 @@ export function EffectsModal({
       backgroundColor,
       backgroundImage,
       flipCamera,
+      aiBackgroundPrompt: savedAiPrompt, // Persist AI prompt for session
     });
     onOpenChange(false);
+  };
+  
+  // Handle regeneration with same prompt
+  const handleRegenerate = () => {
+    if (savedAiPrompt) {
+      setAiPrompt(savedAiPrompt);
+      handleAiGenerate();
+    }
   };
 
   return (
@@ -382,19 +397,45 @@ export function EffectsModal({
                           style={{ backgroundImage: `url(${backgroundImage})` }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">Custom image</p>
-                          <p className="text-xs text-muted-foreground">
-                            Replaces color • Remove to restore
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {savedAiPrompt ? "AI background" : "Custom image"}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {savedAiPrompt || "Replaces color • Remove to restore"}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setBackgroundImage(null)}
-                          className="p-2 rounded-lg bg-muted/20 hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-95"
-                          title="Remove image and restore color"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {/* Regenerate button for AI backgrounds */}
+                          {savedAiPrompt && (
+                            <button
+                              type="button"
+                              onClick={handleRegenerate}
+                              disabled={disabled || aiGenerating}
+                              className={cn(
+                                "p-2 rounded-lg bg-muted/20 hover:bg-primary/20 text-muted-foreground hover:text-primary transition-all duration-150 active:scale-95",
+                                aiGenerating && "opacity-50"
+                              )}
+                              title="Regenerate with same prompt"
+                            >
+                              <Sparkles className={cn(
+                                "h-4 w-4",
+                                aiGenerating && "animate-pulse"
+                              )} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBackgroundImage(null);
+                              setSavedAiPrompt(null);
+                              setAiPrompt("");
+                            }}
+                            className="p-2 rounded-lg bg-muted/20 hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-95"
+                            title="Remove background"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <label className="group flex items-center gap-3 p-3 bg-muted/10 rounded-xl border-2 border-dashed border-border/40 cursor-pointer hover:border-vantage-500/50 hover:bg-vantage-500/5 transition-all duration-150">
