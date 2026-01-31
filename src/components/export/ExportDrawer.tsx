@@ -354,11 +354,15 @@ export function ExportDrawer({
         title: sessionTitle,
         format: preset === "audio" ? (format as "mp3" | "wav") : (format as "mp4" | "mov"),
         onProgress: (stage, progress) => {
-          console.log(`[Export] ${stage}: ${Math.round(progress * 100)}%`);
+          if (import.meta.env.DEV) {
+            console.log(`[Export] ${stage}: ${Math.round(progress * 100)}%`);
+          }
         },
       });
       
-      console.log("[Export] Download started:", result.filename);
+      if (import.meta.env.DEV) {
+        console.log("[Export] Download started:", result.filename);
+      }
       
       // Notify parent
       onExport?.({

@@ -175,7 +175,9 @@ export class ChunkQueue {
   private setBackpressure(value: boolean): void {
     if (this.isBackpressured !== value) {
       this.isBackpressured = value;
-      console.log(`[ChunkQueue] Backpressure: ${value ? "ON" : "OFF"} (depth: ${this.queue.length})`);
+      if (import.meta.env.DEV) {
+        console.log(`[ChunkQueue] Backpressure: ${value ? "ON" : "OFF"} (depth: ${this.queue.length})`);
+      }
       
       // Notify callbacks
       for (const callback of this.backpressureCallbacks) {

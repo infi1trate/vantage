@@ -169,7 +169,7 @@ export function CinematicPlayer({
       const startupTime = endTiming(`playback:${videoUrl.slice(-20)}`, "playback:startup", {
         duration: e.currentTarget.duration,
       });
-      if (startupTime > 0) {
+      if (import.meta.env.DEV && startupTime > 0) {
         console.log(`[Perf] Playback startup: ${startupTime.toFixed(0)}ms`);
       }
     }
