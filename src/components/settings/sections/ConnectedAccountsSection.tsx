@@ -5,6 +5,7 @@
  * - Show all providers with "Not connected" status when not linked
  * - Handle slow network with inline spinners on connect/disconnect buttons
  * - Proper toasts for success/error states
+ * - Dropbox uses real OAuth flow
  */
 
 import { useState, useEffect } from "react";
@@ -17,6 +18,7 @@ import { toast } from "sonner";
 import { Loader2, Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { startDropboxOAuth, disconnectDropbox } from "@/lib/dropboxOAuth";
 
 interface ConnectedAccount {
   id: string;
@@ -180,16 +182,33 @@ export function ConnectedAccountsSection() {
     setConfirmingConnect(null);
 
     try {
-      // In production, this would redirect to /api/oauth/{provider}/start
-      // For now, simulate the OAuth flow
+      // Handle Dropbox with real OAuth
+      if (providerId === "dropbox") {
+        const result = await startDropboxOAuth();
+        
+        if (result.success) {
+          // Refresh connected accounts
+          await fetchConnectedAccounts();
+          toast.success("Connected to Dropbox", {
+            description: result.email ? `Signed in as ${result.email}` : undefined,
+          });
+        } else {
+          toast.error("Failed to connect Dropbox", {
+            description: result.error || "Please try again",
+          });
+        }
+        setConnecting(null);
+        return;
+      }
+
+      // For other providers, use mock OAuth flow (to be implemented)
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Simulate successful connection
       const providerName = providerGroups
         .flatMap(g => g.providers)
         .find(p => p.id === providerId)?.name || providerId;
 
-      // Add to connected accounts (mock)
+      // Add to connected accounts (mock for non-Dropbox)
       const newAccount: ConnectedAccount = {
         id: crypto.randomUUID(),
         provider: providerId,
@@ -199,7 +218,6 @@ export function ConnectedAccountsSection() {
         last_used_at: null,
       };
 
-      // Insert into database
       const { error } = await supabase
         .from("connected_accounts")
         .insert({
@@ -241,6 +259,17 @@ export function ConnectedAccountsSection() {
       .find(p => p.id === providerId)?.name || providerId;
 
     try {
+      // Handle Dropbox with edge function (to clean up tokens)
+      if (providerId === "dropbox") {
+        const result = await disconnectDropbox();
+        
+        if (!result.success) {
+          // Fall back to direct DB delete if edge function fails
+          console.warn("[ConnectedAccounts] Edge function disconnect failed, falling back to direct delete");
+        }
+      }
+
+      // Always delete from connected_accounts
       const { error } = await supabase
         .from("connected_accounts")
         .delete()

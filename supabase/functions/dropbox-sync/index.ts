@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-custom-path",
 };
 
 const DROPBOX_APP_KEY = Deno.env.get("DROPBOX_APP_KEY");
@@ -40,9 +40,13 @@ serve(async (req) => {
       throw new Error("Supabase configuration missing");
     }
 
-    // Parse request
+    // Get path from custom header (since Supabase functions don't support subpaths well)
+    const customPath = req.headers.get("x-custom-path") || "";
     const url = new URL(req.url);
-    const path = url.pathname.replace("/dropbox-sync", "");
+    const urlPath = url.pathname.replace("/dropbox-sync", "");
+    const path = customPath || urlPath || "";
+
+    console.log(`[DropboxSync] Request: ${req.method} ${path}`);
 
     // Auth validation
     const authHeader = req.headers.get("Authorization");
@@ -85,11 +89,17 @@ serve(async (req) => {
       return handleGetStatus(url, userId, supabase);
     }
 
-    if (path === "/disconnect" && req.method === "DELETE") {
+    if ((path === "/disconnect" && req.method === "DELETE") || 
+        (path === "/disconnect" && req.method === "POST")) {
       return handleDisconnect(userId, supabase);
     }
 
-    return new Response(JSON.stringify({ error: "Not found" }), {
+    // Default route - show available endpoints
+    return new Response(JSON.stringify({ 
+      error: "Not found",
+      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/status", "/disconnect"],
+      receivedPath: path,
+    }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
