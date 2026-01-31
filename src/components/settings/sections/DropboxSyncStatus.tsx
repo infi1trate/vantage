@@ -1,7 +1,7 @@
 /**
  * Dropbox Sync Status Card
  * 
- * Shows sync statistics and retry controls in Settings only.
+ * Shows sync statistics, last attempt/error info, and retry controls in Settings only.
  * Sync failures are silent elsewhere in the app.
  */
 
@@ -19,17 +19,26 @@ import {
   XCircle, 
   Clock,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  FileUp
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { triggerAutoSync } from "@/lib/dropboxSync";
 
 interface SyncStats {
   totalSynced: number;
   pending: number;
   failed: number;
   lastSyncAt: string | null;
+  lastAttemptAt: string | null;
+  lastError: string | null;
   totalSizeBytes: number;
+}
+
+interface PendingSync {
+  session_id: string;
+  sync_status: string;
 }
 
 interface DropboxSyncStatusProps {
@@ -41,6 +50,8 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
   const [stats, setStats] = useState<SyncStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [retryingPending, setRetryingPending] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (user && isConnected) {
@@ -56,7 +67,7 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     try {
       const { data, error } = await supabase
         .from("dropbox_sync_status")
-        .select("sync_status, completed_at, file_size_bytes")
+        .select("sync_status, completed_at, started_at, file_size_bytes, error_message, updated_at")
         .eq("user_id", user.id);
 
       if (error) throw error;
@@ -75,6 +86,26 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
           })
         : null;
 
+      // Find most recent attempt (any status)
+      const allRecords = data || [];
+      const lastAttempt = allRecords.length > 0
+        ? allRecords.reduce((latest, current) => {
+            const latestTime = latest.started_at || latest.updated_at;
+            const currentTime = current.started_at || current.updated_at;
+            return new Date(currentTime) > new Date(latestTime) ? current : latest;
+          })
+        : null;
+
+      // Find most recent error
+      const failedRecords = failed.filter(f => f.error_message);
+      const lastFailed = failedRecords.length > 0
+        ? failedRecords.reduce((latest, current) => {
+            return new Date(current.updated_at) > new Date(latest.updated_at) 
+              ? current 
+              : latest;
+          })
+        : null;
+
       // Calculate total synced size
       const totalSize = synced.reduce((sum, s) => sum + (s.file_size_bytes || 0), 0);
 
@@ -83,12 +114,45 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         pending: pending.length,
         failed: failed.length,
         lastSyncAt: lastSync?.completed_at || null,
+        lastAttemptAt: lastAttempt?.started_at || lastAttempt?.updated_at || null,
+        lastError: lastFailed?.error_message || null,
         totalSizeBytes: totalSize,
       });
     } catch (error) {
       console.error("[DropboxSyncStatus] Failed to fetch stats:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestWrite = async () => {
+    setTesting(true);
+
+    try {
+      const response = await supabase.functions.invoke("dropbox-sync", {
+        headers: { "x-custom-path": "/test" },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.success) {
+        toast.success("Test write successful", {
+          description: "Dropbox connection is working correctly.",
+        });
+      } else {
+        toast.error("Test write failed", {
+          description: response.data?.error || "Could not write to Dropbox. Try reconnecting.",
+        });
+      }
+    } catch (error) {
+      console.error("[DropboxSyncStatus] Test write error:", error);
+      toast.error("Test write failed", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -112,7 +176,7 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         return;
       }
 
-      // Mark all failed as pending (background job will pick them up)
+      // Mark all failed as pending
       const { error: updateError } = await supabase
         .from("dropbox_sync_status")
         .update({ 
@@ -125,7 +189,18 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
 
       if (updateError) throw updateError;
 
-      toast.success(`Queued ${failedSyncs.length} recording(s) for retry`, {
+      // Trigger sync for each session
+      let triggeredCount = 0;
+      for (const sync of failedSyncs) {
+        try {
+          await triggerAutoSync(sync.session_id);
+          triggeredCount++;
+        } catch (err) {
+          console.warn(`[DropboxSyncStatus] Failed to trigger sync for ${sync.session_id}:`, err);
+        }
+      }
+
+      toast.success(`Queued ${triggeredCount} recording(s) for retry`, {
         description: "Syncing will continue in the background",
       });
 
@@ -136,6 +211,51 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
       toast.error("Failed to retry syncs");
     } finally {
       setRetrying(false);
+    }
+  };
+
+  const handleRetryPending = async () => {
+    if (!user) return;
+
+    setRetryingPending(true);
+
+    try {
+      // Get pending/syncing syncs that might be stuck
+      const { data: pendingSyncs, error: fetchError } = await supabase
+        .from("dropbox_sync_status")
+        .select("session_id, sync_status")
+        .eq("user_id", user.id)
+        .in("sync_status", ["pending", "syncing"]);
+
+      if (fetchError) throw fetchError;
+
+      if (!pendingSyncs || pendingSyncs.length === 0) {
+        toast.info("No pending uploads to retry");
+        return;
+      }
+
+      // Trigger sync for each session
+      let triggeredCount = 0;
+      for (const sync of pendingSyncs) {
+        try {
+          await triggerAutoSync(sync.session_id);
+          triggeredCount++;
+        } catch (err) {
+          console.warn(`[DropboxSyncStatus] Failed to trigger sync for ${sync.session_id}:`, err);
+        }
+      }
+
+      toast.success(`Re-triggered ${triggeredCount} pending upload(s)`, {
+        description: "Syncing will continue in the background",
+      });
+
+      // Refresh stats
+      await fetchSyncStats();
+    } catch (error) {
+      console.error("[DropboxSyncStatus] Retry pending error:", error);
+      toast.error("Failed to retry pending uploads");
+    } finally {
+      setRetryingPending(false);
     }
   };
 
@@ -191,10 +311,16 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
           {/* Pending */}
           <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
             <div className="flex items-center gap-2 mb-1">
-              <Clock className="h-4 w-4 text-muted-foreground" />
+              <Clock className={cn(
+                "h-4 w-4",
+                (stats?.pending || 0) > 0 ? "text-amber-500" : "text-muted-foreground"
+              )} />
               <span className="text-xs text-muted-foreground">Pending</span>
             </div>
-            <p className="text-xl font-bold font-mono-data text-foreground">
+            <p className={cn(
+              "text-xl font-bold font-mono-data",
+              (stats?.pending || 0) > 0 ? "text-amber-500" : "text-foreground"
+            )}>
               {stats?.pending || 0}
             </p>
           </div>
@@ -228,11 +354,33 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
           </div>
         </div>
 
-        {/* Last sync time */}
-        {stats?.lastSyncAt && (
-          <p className="text-sm text-muted-foreground">
-            Last backup: {formatDistanceToNow(new Date(stats.lastSyncAt), { addSuffix: true })}
-          </p>
+        {/* Last sync/attempt info */}
+        <div className="text-sm text-muted-foreground space-y-1">
+          {stats?.lastSyncAt && (
+            <p>
+              Last successful backup: {formatDistanceToNow(new Date(stats.lastSyncAt), { addSuffix: true })}
+            </p>
+          )}
+          {stats?.lastAttemptAt && stats.lastAttemptAt !== stats.lastSyncAt && (
+            <p>
+              Last sync attempt: {format(new Date(stats.lastAttemptAt), "MMM d, h:mm a")}
+            </p>
+          )}
+        </div>
+
+        {/* Last error - shown only if there are failures */}
+        {stats?.lastError && (stats?.failed || 0) > 0 && (
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-destructive">Last error</p>
+                <p className="text-xs text-destructive/80 mt-1 break-words">
+                  {stats.lastError}
+                </p>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* No syncs yet */}
@@ -243,27 +391,72 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
           </div>
         )}
 
-        {/* Retry button - only show if there are failed syncs */}
-        {(stats?.failed || 0) > 0 && (
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-2">
+          {/* Test Write button */}
           <Button
             variant="outline"
             size="sm"
-            onClick={handleRetryFailed}
-            disabled={retrying}
+            onClick={handleTestWrite}
+            disabled={testing}
           >
-            {retrying ? (
+            {testing ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Retrying...
+                Testing...
               </>
             ) : (
               <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry failed syncs
+                <FileUp className="h-4 w-4 mr-2" />
+                Test Write
               </>
             )}
           </Button>
-        )}
+
+          {/* Retry Pending button - only show if there are pending syncs */}
+          {(stats?.pending || 0) > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRetryPending}
+              disabled={retryingPending}
+            >
+              {retryingPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry Pending ({stats?.pending})
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Retry Failed button - only show if there are failed syncs */}
+          {(stats?.failed || 0) > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRetryFailed}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry Failed ({stats?.failed})
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
     </SettingsCard>
   );
