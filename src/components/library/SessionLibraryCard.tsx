@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { SessionWithAssets, deleteSessionPermanently } from "@/lib/sessionLibrary";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ExportDrawer, ExportTab } from "@/components/export/ExportDrawer";
 import { 
   Play, 
@@ -36,7 +41,8 @@ import {
   Lock,
   Globe,
   Link as LinkIcon,
-  Loader2
+  Loader2,
+  CloudIcon
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Link } from "react-router-dom";
@@ -126,7 +132,17 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                   <Gamepad2 className="h-8 w-8 text-muted-foreground/30" />
                 </div>
               )}
-              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm">
+              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1.5">
+                {session.dropbox_synced && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CloudIcon className="h-3 w-3 text-muted-foreground/70" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Backed up to Dropbox
+                    </TooltipContent>
+                  </Tooltip>
+                )}
                 <span className="text-xs font-mono-data font-medium">{formatDuration(session.duration_seconds)}</span>
               </div>
             </div>
@@ -303,8 +319,18 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
               </div>
             </div>
 
-            {/* Duration badge */}
-            <div className="absolute bottom-2 right-2 px-2 py-1 rounded bg-background/80 backdrop-blur-sm">
+            {/* Duration badge with Dropbox indicator */}
+            <div className="absolute bottom-2 right-2 px-2 py-1 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1.5">
+              {session.dropbox_synced && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CloudIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    Backed up to Dropbox
+                  </TooltipContent>
+                </Tooltip>
+              )}
               <span className="text-xs font-mono-data font-medium">{formatDuration(session.duration_seconds)}</span>
             </div>
 
