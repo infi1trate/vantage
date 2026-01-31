@@ -321,29 +321,41 @@ function ReelPreviewContent({
   return (
     <div className="flex flex-col h-full max-h-[85vh] md:max-h-[650px]">
       {/* AI-generated header - clear labeling */}
-      <div className="shrink-0 px-4 pt-3 pb-2">
+      <div className="shrink-0 px-3 sm:px-4 pt-3 pb-2">
         <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20">
-          <Sparkles className="h-4 w-4 text-primary" />
+          <Sparkles className="h-4 w-4 text-primary shrink-0" />
           <span className="text-xs font-medium text-primary">
             AI-generated Reel
           </span>
           <Badge 
             variant="secondary" 
-            className="ml-auto text-[10px] bg-muted/50"
+            className="ml-auto text-[10px] bg-muted/50 shrink-0"
           >
             {reel.momentCount} clips • {formatDuration(reel.duration)}
           </Badge>
         </div>
       </div>
 
-      {/* Video Preview - no timeline, no scrubbing */}
-      <div className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center">
+      {/* Video Preview - full-width on mobile */}
+      <div className={cn(
+        "flex-1 min-h-0 flex items-center justify-center",
+        isMobile ? "px-2 py-2" : "px-4 py-2"
+      )}>
         <div 
           className={cn(
-            "relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-2xl",
-            reel.aspectRatio === "9:16" && "max-w-[280px]",
-            reel.aspectRatio === "1:1" && "max-w-[320px]",
-            reel.aspectRatio === "16:9" && "max-w-full"
+            "relative w-full overflow-hidden rounded-xl bg-black shadow-2xl",
+            // Full-width on mobile for portrait reels, constrained on desktop
+            isMobile 
+              ? reel.aspectRatio === "16:9" 
+                ? "max-w-full" 
+                : reel.aspectRatio === "1:1"
+                  ? "max-w-[85vw]"
+                  : "max-w-[75vw]" // 9:16 portrait
+              : reel.aspectRatio === "9:16" 
+                ? "max-w-[280px]"
+                : reel.aspectRatio === "1:1" 
+                  ? "max-w-[320px]"
+                  : "max-w-full"
           )}
         >
           <AspectRatio ratio={ratioConfig.ratio}>
@@ -364,41 +376,46 @@ function ReelPreviewContent({
                 onPause={() => setIsPlaying(false)}
               />
               
-              {/* Visual placeholder */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+              {/* Visual placeholder - larger touch target */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 sm:gap-4">
                 <div className={cn(
-                  "w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200",
+                  "rounded-full flex items-center justify-center transition-all duration-200",
+                  // Larger play button on mobile for easier tapping
+                  isMobile ? "w-24 h-24" : "w-20 h-20",
                   isPlaying 
                     ? "bg-primary/10 backdrop-blur-sm" 
                     : "bg-white/90 shadow-lg"
                 )}>
                   {isPlaying ? (
-                    <Film className="h-8 w-8 text-primary animate-pulse" />
+                    <Film className={cn("text-primary animate-pulse", isMobile ? "h-10 w-10" : "h-8 w-8")} />
                   ) : (
-                    <Play className="h-8 w-8 text-background ml-1" />
+                    <Play className={cn("text-background ml-1", isMobile ? "h-10 w-10" : "h-8 w-8")} />
                   )}
                 </div>
                 {!isPlaying && (
-                  <p className="text-xs text-muted-foreground">
-                    {isMobile ? "Tap to play" : "Click to play"}
+                  <p className="text-sm sm:text-xs text-muted-foreground">
+                    Tap to play
                   </p>
                 )}
               </div>
 
-              {/* Minimal overlay controls - only mute toggle */}
+              {/* Mute toggle - larger on mobile */}
               {isPlaying && (
                 <div className="absolute bottom-3 right-3 flex gap-2">
                   <button
-                    className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm transition-transform active:scale-95 touch-manipulation"
+                    className={cn(
+                      "rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm transition-transform active:scale-95 touch-manipulation",
+                      isMobile ? "w-11 h-11" : "w-9 h-9"
+                    )}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleMute();
                     }}
                   >
                     {isMuted ? (
-                      <VolumeX className="h-4 w-4 text-white" />
+                      <VolumeX className={cn("text-white", isMobile ? "h-5 w-5" : "h-4 w-4")} />
                     ) : (
-                      <Volume2 className="h-4 w-4 text-white" />
+                      <Volume2 className={cn("text-white", isMobile ? "h-5 w-5" : "h-4 w-4")} />
                     )}
                   </button>
                 </div>
@@ -419,19 +436,26 @@ function ReelPreviewContent({
         </div>
       </div>
 
-      {/* Footer actions with inline export progress */}
-      <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
-        {/* Export progress - inline, never sends user away */}
+      {/* Footer actions - thumb-friendly on mobile */}
+      <div className={cn(
+        "shrink-0 border-t border-border/30 bg-muted/10",
+        isMobile ? "p-3 pb-4" : "p-4"
+      )}>
+        {/* Export progress - larger text on mobile */}
         {isProcessing && (
           <div className="mb-3">
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                <span className="text-xs font-medium text-foreground">{getPhaseLabel()}</span>
+                <Loader2 className={cn("animate-spin text-primary", isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />
+                <span className={cn("font-medium text-foreground", isMobile ? "text-sm" : "text-xs")}>
+                  {getPhaseLabel()}
+                </span>
               </div>
-              <span className="text-xs font-mono text-muted-foreground">{Math.round(exportProgress)}%</span>
+              <span className={cn("font-mono text-muted-foreground", isMobile ? "text-sm" : "text-xs")}>
+                {Math.round(exportProgress)}%
+              </span>
             </div>
-            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+            <div className={cn("bg-muted rounded-full overflow-hidden", isMobile ? "h-2" : "h-1.5")}>
               <div 
                 className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${exportProgress}%` }}
@@ -443,19 +467,22 @@ function ReelPreviewContent({
         {/* Complete state - satisfying confirmation */}
         {exportPhase === "complete" && (
           <div className="mb-4">
-            <div className="flex items-center gap-2 px-3 py-3 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
-              <CheckCircle2 className="h-5 w-5 text-vantage-success" />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-vantage-success block">
+            <div className={cn(
+              "flex items-center gap-3 rounded-lg bg-vantage-success/10 border border-vantage-success/20",
+              isMobile ? "px-4 py-3.5" : "px-3 py-3"
+            )}>
+              <CheckCircle2 className={cn("text-vantage-success shrink-0", isMobile ? "h-6 w-6" : "h-5 w-5")} />
+              <div className="flex-1 min-w-0">
+                <span className={cn("font-medium text-vantage-success block", isMobile ? "text-base" : "text-sm")}>
                   Reel exported
                 </span>
-                <span className="text-[11px] text-muted-foreground">
+                <span className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-[11px]")}>
                   Ready to post anywhere
                 </span>
               </div>
               <Badge 
                 variant="secondary" 
-                className="text-[10px] bg-muted/50"
+                className="text-[10px] bg-muted/50 shrink-0"
               >
                 {reel.aspectRatio} MP4
               </Badge>
@@ -463,27 +490,27 @@ function ReelPreviewContent({
           </div>
         )}
 
-        {/* Action buttons */}
+        {/* Action buttons - taller on mobile for thumb reach */}
         <div className="flex gap-2">
           {exportPhase === "complete" ? (
             <>
               {/* Complete: Download MP4 is primary */}
               <Button
                 size="lg"
-                className="flex-1 h-12 gap-2"
+                className={cn("flex-1 gap-2 font-semibold", isMobile ? "h-14 text-base" : "h-12")}
                 onClick={handleDownload}
               >
-                <Download className="h-4 w-4" />
+                <Download className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
                 Download MP4
               </Button>
               <Button
                 variant="outline"
                 size="lg"
-                className="h-12 gap-2 px-4"
+                className={cn("gap-2", isMobile ? "h-14 px-5" : "h-12 px-4")}
                 onClick={handleShareLink}
               >
-                <Share2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Share</span>
+                <Share2 className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
+                <span className={isMobile ? "" : "hidden sm:inline"}>Share</span>
               </Button>
             </>
           ) : (
@@ -491,18 +518,18 @@ function ReelPreviewContent({
               {/* Default: Export Reel is primary */}
               <Button
                 size="lg"
-                className="flex-1 h-12 gap-2"
+                className={cn("flex-1 gap-2 font-semibold", isMobile ? "h-14 text-base" : "h-12")}
                 onClick={handleExport}
                 disabled={isProcessing}
               >
                 {isProcessing ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className={cn("animate-spin", isMobile ? "h-5 w-5" : "h-4 w-4")} />
                     {exportPhase === "preparing" ? "Preparing…" : "Exporting…"}
                   </>
                 ) : (
                   <>
-                    <Download className="h-4 w-4" />
+                    <Download className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
                     Export Reel
                   </>
                 )}
@@ -512,43 +539,55 @@ function ReelPreviewContent({
               <Button
                 variant="outline"
                 size="lg"
-                className="h-12 gap-2 px-4"
+                className={cn("gap-2", isMobile ? "h-14 px-5" : "h-12 px-4")}
                 onClick={handleShareLink}
                 disabled={isProcessing}
               >
-                <Share2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Share</span>
+                <Share2 className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
+                <span className={isMobile ? "" : "hidden sm:inline"}>Share</span>
               </Button>
             </>
           )}
         </div>
         
-        {/* Footer actions - contextual */}
+        {/* Footer actions - larger touch targets on mobile */}
         {exportPhase === "complete" ? (
-          <div className="flex items-center justify-center gap-4 mt-3">
+          <div className={cn(
+            "flex items-center justify-center gap-4",
+            isMobile ? "mt-4" : "mt-3"
+          )}>
             <button
-              className="py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 touch-manipulation"
+              className={cn(
+                "text-muted-foreground hover:text-foreground active:text-foreground transition-colors flex items-center gap-1.5 touch-manipulation",
+                isMobile ? "py-3 px-4 text-sm" : "py-2 text-xs"
+              )}
               onClick={handleReExport}
             >
-              <Film className="h-3 w-3" />
+              <Film className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />
               Export again
             </button>
             <span className="text-muted-foreground/30">•</span>
             <button
-              className="py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 touch-manipulation"
+              className={cn(
+                "text-muted-foreground hover:text-foreground active:text-foreground transition-colors flex items-center gap-1.5 touch-manipulation",
+                isMobile ? "py-3 px-4 text-sm" : "py-2 text-xs"
+              )}
               onClick={onClose}
             >
-              <Check className="h-3 w-3" />
+              <Check className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />
               Done
             </button>
           </div>
         ) : (
           <button
-            className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
+            className={cn(
+              "w-full text-muted-foreground hover:text-foreground active:text-foreground transition-colors flex items-center justify-center gap-1.5 touch-manipulation",
+              isMobile ? "mt-4 py-3 text-sm" : "mt-3 py-2 text-xs"
+            )}
             onClick={onBack}
             disabled={isProcessing}
           >
-            <ArrowLeft className="h-3 w-3" />
+            <ArrowLeft className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />
             Create another reel
           </button>
         )}
