@@ -70,6 +70,9 @@ export function EffectsModal({
   const [aiPrompt, setAiPrompt] = useState(config.aiBackgroundPrompt || "");
   const [aiGenerating, setAiGenerating] = useState(false);
   const [savedAiPrompt, setSavedAiPrompt] = useState<string | null>(config.aiBackgroundPrompt || null);
+  
+  // Session cache for AI backgrounds - avoids regenerating same prompts
+  const [aiBackgroundCache] = useState<Map<string, string>>(() => new Map());
 
   // Sync local state when modal opens
   useEffect(() => {
@@ -104,7 +107,25 @@ export function EffectsModal({
   };
 
   const handleAiGenerate = async () => {
-    if (!aiPrompt.trim() || aiGenerating) return;
+    const promptKey = aiPrompt.trim().toLowerCase();
+    if (!promptKey || aiGenerating) return;
+    
+    // Check session cache first for instant reuse
+    const cachedImage = aiBackgroundCache.get(promptKey);
+    if (cachedImage) {
+      setBackgroundImage(cachedImage);
+      setSavedAiPrompt(aiPrompt.trim());
+      setAiExpanded(false);
+      toast({
+        title: "Background applied",
+        description: "Using cached result",
+      });
+      return;
+    }
+    
+    // Store current background for fallback
+    const previousBackground = backgroundImage;
+    const previousPrompt = savedAiPrompt;
     
     setAiGenerating(true);
     try {
@@ -119,23 +140,35 @@ export function EffectsModal({
         // → backgroundImage prop → useBackgroundRemoval hook → same compositing
         // Subject segmentation, alpha matte, and frame clipping all apply automatically
         setBackgroundImage(data.imageUrl);
-        // Save the prompt for persistence and regeneration
         setSavedAiPrompt(aiPrompt.trim());
+        // Cache for session reuse
+        aiBackgroundCache.set(promptKey, data.imageUrl);
         setAiExpanded(false);
         toast({
           title: "Background generated",
-          description: "AI background applied to your preview",
+          description: "AI background applied",
         });
       } else if (data?.error) {
         throw new Error(data.error);
       }
     } catch (err: any) {
       console.error("AI background generation error:", err);
-      toast({
-        title: "Generation failed",
-        description: err.message || "Could not generate background. Try again.",
-        variant: "destructive",
-      });
+      
+      // Graceful fallback: keep previous background if available
+      if (previousBackground && previousPrompt) {
+        // Silently keep existing background
+        toast({
+          title: "Generation failed",
+          description: "Keeping current background",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Generation failed",
+          description: err.message || "Could not generate background",
+          variant: "destructive",
+        });
+      }
     } finally {
       setAiGenerating(false);
     }
