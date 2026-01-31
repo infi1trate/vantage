@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, memo } from "react";
 import { Card } from "@/components/ui/card";
 import { Mic, Shield, Circle, Pause } from "lucide-react";
 
@@ -16,7 +16,7 @@ interface CapturePreviewProps {
   };
 }
 
-export function CapturePreview({
+export const CapturePreview = memo(function CapturePreview({
   screenStream,
   facecamStream,
   isRecording,
@@ -130,4 +130,4 @@ export function CapturePreview({
       </div>
     </Card>
   );
-}
+});

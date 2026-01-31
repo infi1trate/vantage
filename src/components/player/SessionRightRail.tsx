@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -39,7 +39,7 @@ interface SessionRightRailProps {
   onSeekTo?: (time: number) => void;
 }
 
-export function SessionRightRail({
+export const SessionRightRail = memo(function SessionRightRail({
   sessionId,
   currentTime,
   annotations,
@@ -228,4 +228,4 @@ export function SessionRightRail({
       )}
     </div>
   );
-}
+});

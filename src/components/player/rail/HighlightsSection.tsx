@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, memo, useCallback } from "react";
 import { Annotation } from "@/lib/captures";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,94 @@ const formatRange = (start: number, end: number) => {
   return `${formatTime(start)} – ${formatTime(end)}`;
 };
 
-export function HighlightsSection({
+// Memoized list item to prevent re-renders when currentTime changes
+const HighlightItem = memo(function HighlightItem({
+  annotation,
+  isActive,
+  onClick,
+  onDelete,
+}: {
+  annotation: Annotation;
+  isActive: boolean;
+  onClick: () => void;
+  onDelete?: () => void;
+}) {
+  const config = EVENT_CONFIG[annotation.annotation_type] || EVENT_CONFIG.highlight;
+  const Icon = config.icon;
+  
+  return (
+    <button
+      className={cn(
+        "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all group",
+        isActive 
+          ? "bg-primary/10 border border-primary/30 shadow-sm" 
+          : "hover:bg-muted/50 border border-transparent"
+      )}
+      onClick={onClick}
+    >
+      {/* Icon */}
+      <div className={cn(
+        "shrink-0 p-2 rounded-lg transition-colors",
+        isActive ? "bg-primary/20" : config.bg
+      )}>
+        <Icon className={cn(
+          "h-4 w-4",
+          isActive ? "text-primary" : config.color
+        )} />
+      </div>
+      
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-xs font-medium",
+            isActive ? "text-primary" : config.color
+          )}>
+            {config.label}
+          </span>
+          <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
+            {annotation.end_timestamp_seconds 
+              ? formatRange(annotation.timestamp_seconds, annotation.end_timestamp_seconds)
+              : formatTime(annotation.timestamp_seconds)
+            }
+          </span>
+        </div>
+        
+        {annotation.title && (
+          <p className={cn(
+            "text-sm truncate mt-0.5",
+            isActive ? "text-foreground" : "text-muted-foreground"
+          )}>
+            {annotation.title}
+          </p>
+        )}
+      </div>
+      
+      {/* Actions */}
+      <div className="shrink-0 flex items-center gap-1">
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+          </Button>
+        )}
+        <ChevronRight className={cn(
+          "h-4 w-4 transition-opacity",
+          isActive ? "opacity-100 text-primary" : "opacity-0 group-hover:opacity-50 text-muted-foreground"
+        )} />
+      </div>
+    </button>
+  );
+});
+
+export const HighlightsSection = memo(function HighlightsSection({
   annotations,
   currentTime,
   onAnnotationClick,
@@ -65,13 +152,9 @@ export function HighlightsSection({
     return active?.id;
   }, [items, currentTime]);
 
-  const handleItemClick = (annotation: Annotation) => {
+  const handleItemClick = useCallback((annotation: Annotation) => {
     onAnnotationClick?.(annotation) ?? onMarkerClick(annotation.timestamp_seconds);
-  };
-
-  const getItemConfig = (type: string) => {
-    return EVENT_CONFIG[type] || EVENT_CONFIG.highlight;
-  };
+  }, [onAnnotationClick, onMarkerClick]);
 
   // Count by type for summary
   const counts = useMemo(() => ({
@@ -126,86 +209,18 @@ export function HighlightsSection({
       <ScrollArea className="flex-1">
         <div className="p-2">
           <div className="space-y-0.5">
-            {items.map((annotation) => {
-              const config = getItemConfig(annotation.annotation_type);
-              const Icon = config.icon;
-              const isActive = annotation.id === activeItemId;
-              
-              return (
-                <button
-                  key={annotation.id}
-                  className={cn(
-                    "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all group",
-                    isActive 
-                      ? "bg-primary/10 border border-primary/30 shadow-sm" 
-                      : "hover:bg-muted/50 border border-transparent"
-                  )}
-                  onClick={() => handleItemClick(annotation)}
-                >
-                  {/* Icon */}
-                  <div className={cn(
-                    "shrink-0 p-2 rounded-lg transition-colors",
-                    isActive ? "bg-primary/20" : config.bg
-                  )}>
-                    <Icon className={cn(
-                      "h-4 w-4",
-                      isActive ? "text-primary" : config.color
-                    )} />
-                  </div>
-                  
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-xs font-medium",
-                        isActive ? "text-primary" : config.color
-                      )}>
-                        {config.label}
-                      </span>
-                      <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
-                        {annotation.end_timestamp_seconds 
-                          ? formatRange(annotation.timestamp_seconds, annotation.end_timestamp_seconds)
-                          : formatTime(annotation.timestamp_seconds)
-                        }
-                      </span>
-                    </div>
-                    
-                    {annotation.title && (
-                      <p className={cn(
-                        "text-sm truncate mt-0.5",
-                        isActive ? "text-foreground" : "text-muted-foreground"
-                      )}>
-                        {annotation.title}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Actions */}
-                  <div className="shrink-0 flex items-center gap-1">
-                    {onAnnotationDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAnnotationDelete(annotation.id);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                      </Button>
-                    )}
-                    <ChevronRight className={cn(
-                      "h-4 w-4 transition-opacity",
-                      isActive ? "opacity-100 text-primary" : "opacity-0 group-hover:opacity-50 text-muted-foreground"
-                    )} />
-                  </div>
-                </button>
-              );
-            })}
+            {items.map((annotation) => (
+              <HighlightItem
+                key={annotation.id}
+                annotation={annotation}
+                isActive={annotation.id === activeItemId}
+                onClick={() => handleItemClick(annotation)}
+                onDelete={onAnnotationDelete ? () => onAnnotationDelete(annotation.id) : undefined}
+              />
+            ))}
           </div>
         </div>
       </ScrollArea>
     </div>
   );
-}
+});
