@@ -1108,7 +1108,76 @@ async function handleAutoSync(
 }
 
 /**
+ * Verify uploaded file exists in Dropbox via metadata API
+ * Returns file metadata if found, null if not found
+ */
+async function verifyDropboxUpload(
+  accessToken: string,
+  dropboxPath: string
+): Promise<{ verified: boolean; fileId?: string; size?: number; rev?: string; error?: string }> {
+  console.log(`[DropboxSync] Verifying upload at path: ${dropboxPath}`);
+  
+  try {
+    const response = await fetch(DROPBOX_GET_METADATA_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: dropboxPath }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[DropboxSync] Verification failed - metadata request error:`, errorText);
+      return { 
+        verified: false, 
+        error: `Metadata request failed: ${response.status}` 
+      };
+    }
+    
+    const metadata = await response.json();
+    console.log(`[DropboxSync] Verification response:`, JSON.stringify(metadata));
+    
+    // Verify it's a file (not a folder)
+    if (metadata[".tag"] !== "file") {
+      console.error(`[DropboxSync] Verification failed - path is not a file:`, metadata[".tag"]);
+      return { 
+        verified: false, 
+        error: `Path is not a file: ${metadata[".tag"]}` 
+      };
+    }
+    
+    // Verify file has content
+    if (!metadata.size || metadata.size === 0) {
+      console.error(`[DropboxSync] Verification failed - file is empty`);
+      return { 
+        verified: false, 
+        error: "Uploaded file is empty (0 bytes)" 
+      };
+    }
+    
+    console.log(`[DropboxSync] Verification SUCCESS: file_id=${metadata.id}, size=${metadata.size}, rev=${metadata.rev}`);
+    
+    return {
+      verified: true,
+      fileId: metadata.id,
+      size: metadata.size,
+      rev: metadata.rev,
+    };
+    
+  } catch (error) {
+    console.error(`[DropboxSync] Verification error:`, error);
+    return { 
+      verified: false, 
+      error: error instanceof Error ? error.message : "Verification network error" 
+    };
+  }
+}
+
+/**
  * Execute the auto-sync operation (runs in background)
+ * Uses streaming upload to avoid memory issues with large files
  */
 async function executeAutoSync(
   sessionId: string,
@@ -1129,7 +1198,7 @@ async function executeAutoSync(
     // Get the video storage path from video_assets (NOT the signed URL which expires)
     const { data: asset, error: assetError } = await supabase
       .from("video_assets")
-      .select("storage_path, storage_url, session_id")
+      .select("storage_path, storage_url, file_size_bytes, session_id")
       .eq("session_id", sessionId)
       .single();
 
@@ -1163,27 +1232,43 @@ async function executeAutoSync(
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
     const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-    // CRITICAL: Validate file exists server-side before attempting upload
-    // This prevents silent failures when the file is missing or empty
-    console.log(`[DropboxSync] Validating video file for auto-sync...`);
-    const validation = await validateVideoFile(
-      supabase,
-      asset.storage_path,
-      asset.storage_url,
-      null // no fallback URL for auto-sync
-    );
+    // Get a signed URL for streaming (avoid loading entire file into memory)
+    console.log(`[DropboxSync] Getting signed URL for streaming upload...`);
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from("video-assets")
+      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
     
-    if (!validation.valid) {
-      console.error(`[DropboxSync] Auto-sync aborted: ${validation.error}`);
-      await updateSyncStatus(supabase, sessionId, "failed", validation.error || "File not found or empty at upload time");
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error(`[DropboxSync] Failed to get signed URL:`, signedUrlError);
+      await updateSyncStatus(supabase, sessionId, "failed", "Failed to get video URL");
       return;
     }
-    
-    const videoBlob = validation.fileData!;
-    const fileSize = validation.fileSize!;
-    console.log(`[DropboxSync] File validated: ${fileSize} bytes, proceeding with upload to: ${dropboxPath}`);
 
-    // Upload to Dropbox
+    // Fetch the video as a stream (this still downloads, but we'll stream to Dropbox)
+    console.log(`[DropboxSync] Fetching video for upload...`);
+    const videoResponse = await fetch(signedUrlData.signedUrl);
+    
+    if (!videoResponse.ok) {
+      console.error(`[DropboxSync] Failed to fetch video: ${videoResponse.status}`);
+      await updateSyncStatus(supabase, sessionId, "failed", `Failed to fetch video: ${videoResponse.status}`);
+      return;
+    }
+
+    // Get file size from response headers or database
+    const contentLength = videoResponse.headers.get("content-length");
+    const fileSize = contentLength ? parseInt(contentLength, 10) : (asset.file_size_bytes || 0);
+    
+    console.log(`[DropboxSync] Video size: ${fileSize} bytes, uploading to: ${dropboxPath}`);
+
+    // Validate file size
+    if (fileSize < 1024) {
+      console.error(`[DropboxSync] File too small: ${fileSize} bytes`);
+      await updateSyncStatus(supabase, sessionId, "failed", `File too small: ${fileSize} bytes`);
+      return;
+    }
+
+    // Stream the video body directly to Dropbox (avoids buffering entire file in memory)
+    console.log(`[DropboxSync] Uploading to Dropbox...`);
     const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
       method: "POST",
       headers: {
@@ -1196,26 +1281,38 @@ async function executeAutoSync(
           mute: true,
         }),
       },
-      body: videoBlob,
+      body: videoResponse.body, // Stream directly!
     });
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
-      console.error("[DropboxSync] Auto-sync upload failed:", errorText);
-      await updateSyncStatus(supabase, sessionId, "failed", `Upload failed: ${uploadResponse.status}`);
+      console.error("[DropboxSync] Upload failed:", errorText);
+      await updateSyncStatus(supabase, sessionId, "failed", `Upload failed: ${uploadResponse.status} - ${errorText}`);
       return;
     }
 
     const uploadResult = await uploadResponse.json();
+    console.log(`[DropboxSync] Upload API response:`, JSON.stringify(uploadResult));
 
-    // Update sync status to completed
+    // CRITICAL: Verify the file actually exists in Dropbox
+    // Don't trust the upload response alone - confirm via metadata
+    const verification = await verifyDropboxUpload(tokenResult.accessToken, dropboxPath);
+    
+    if (!verification.verified) {
+      console.error(`[DropboxSync] Post-upload verification FAILED: ${verification.error}`);
+      await updateSyncStatus(supabase, sessionId, "failed", `Verification failed: ${verification.error}`);
+      return;
+    }
+
+    // File verified! Update sync status to completed with confirmed metadata
+    console.log(`[DropboxSync] Upload verified! Updating status...`);
     await supabase
       .from("dropbox_sync_status")
       .update({
         sync_status: "completed",
         dropbox_path: uploadResult.path_display || dropboxPath,
-        dropbox_file_id: uploadResult.id,
-        file_size_bytes: fileSize,
+        dropbox_file_id: verification.fileId || uploadResult.id,
+        file_size_bytes: verification.size || fileSize,
         completed_at: new Date().toISOString(),
         error_message: null,
       })
@@ -1228,7 +1325,7 @@ async function executeAutoSync(
       .eq("user_id", userId)
       .eq("provider", "dropbox");
 
-    console.log(`[DropboxSync] Auto-sync completed for session ${sessionId} to ${dropboxPath}`);
+    console.log(`[DropboxSync] Auto-sync COMPLETED and VERIFIED for session ${sessionId} at ${dropboxPath}`);
 
   } catch (error) {
     console.error("[DropboxSync] Auto-sync error:", error);
@@ -1263,6 +1360,7 @@ async function updateSyncStatus(
 
 /**
  * Sync a video to Dropbox (manual trigger with provided token)
+ * Uses streaming upload to avoid memory issues with large files
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleSync(
@@ -1316,7 +1414,7 @@ async function handleSync(
   // Get video asset with storage path
   const { data: asset, error: assetError } = await supabase
     .from("video_assets")
-    .select("storage_path, storage_url")
+    .select("storage_path, storage_url, file_size_bytes")
     .eq("session_id", sessionId)
     .single();
 
@@ -1345,45 +1443,41 @@ async function handleSync(
   const filename = sanitizeFilename(session?.title || "Recording", sessionId);
   const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-  // CRITICAL: Validate file exists server-side before attempting upload
-  // This prevents silent failures when the file is missing or empty
-  console.log(`[DropboxSync] Validating video file for manual sync...`);
-  const validation = await validateVideoFile(
-    supabase,
-    asset.storage_path,
-    asset.storage_url,
-    videoUrl // allow caller-provided URL as fallback
-  );
-  
-  if (!validation.valid) {
-    console.error(`[DropboxSync] Manual sync aborted: ${validation.error}`);
-    
-    // Update sync status to failed with specific error
-    await supabase
-      .from("dropbox_sync_status")
-      .update({
-        sync_status: "failed",
-        error_message: validation.error || "File not found or empty at upload time",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("session_id", sessionId);
-    
-    return new Response(JSON.stringify({ 
-      error: validation.error || "File not found or empty at upload time",
-      success: false,
-    }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  
-  const videoBlob = validation.fileData!;
-  const fileSize = validation.fileSize!;
-  console.log(`[DropboxSync] File validated: ${fileSize} bytes, proceeding with upload to: ${dropboxPath}`);
-
   try {
+    // Get a signed URL for streaming (avoid loading entire file into memory)
+    console.log(`[DropboxSync] Getting signed URL for streaming upload...`);
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from("video-assets")
+      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
+    
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error(`[DropboxSync] Failed to get signed URL:`, signedUrlError);
+      throw new Error("Failed to get video URL");
+    }
 
-    // Upload to Dropbox
+    // Fetch the video as a stream
+    console.log(`[DropboxSync] Fetching video for upload...`);
+    const videoResponse = await fetch(signedUrlData.signedUrl);
+    
+    if (!videoResponse.ok) {
+      console.error(`[DropboxSync] Failed to fetch video: ${videoResponse.status}`);
+      throw new Error(`Failed to fetch video: ${videoResponse.status}`);
+    }
+
+    // Get file size from response headers or database
+    const contentLength = videoResponse.headers.get("content-length");
+    const fileSize = contentLength ? parseInt(contentLength, 10) : (asset.file_size_bytes || 0);
+    
+    console.log(`[DropboxSync] Video size: ${fileSize} bytes, uploading to: ${dropboxPath}`);
+
+    // Validate file size
+    if (fileSize < 1024) {
+      console.error(`[DropboxSync] File too small: ${fileSize} bytes`);
+      throw new Error(`File too small: ${fileSize} bytes`);
+    }
+
+    // Stream the video body directly to Dropbox
+    console.log(`[DropboxSync] Uploading to Dropbox...`);
     const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
       method: "POST",
       headers: {
@@ -1396,36 +1490,35 @@ async function handleSync(
           mute: true,
         }),
       },
-      body: videoBlob,
+      body: videoResponse.body, // Stream directly!
     });
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
       console.error("[DropboxSync] Upload failed:", errorText);
-      
-      // Update sync status to failed
-      await supabase
-        .from("dropbox_sync_status")
-        .update({
-          sync_status: "failed",
-          error_message: `Upload failed: ${uploadResponse.status}`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("session_id", sessionId);
-
-      throw new Error(`Dropbox upload failed: ${uploadResponse.status}`);
+      throw new Error(`Dropbox upload failed: ${uploadResponse.status} - ${errorText}`);
     }
 
     const uploadResult = await uploadResponse.json();
+    console.log(`[DropboxSync] Upload API response:`, JSON.stringify(uploadResult));
 
-    // Update sync status to completed
+    // CRITICAL: Verify the file actually exists in Dropbox
+    const verification = await verifyDropboxUpload(accessToken, dropboxPath);
+    
+    if (!verification.verified) {
+      console.error(`[DropboxSync] Post-upload verification FAILED: ${verification.error}`);
+      throw new Error(`Verification failed: ${verification.error}`);
+    }
+
+    // File verified! Update sync status to completed with confirmed metadata
+    console.log(`[DropboxSync] Upload verified! Updating status...`);
     await supabase
       .from("dropbox_sync_status")
       .update({
         sync_status: "completed",
         dropbox_path: uploadResult.path_display || dropboxPath,
-        dropbox_file_id: uploadResult.id,
-        file_size_bytes: fileSize,
+        dropbox_file_id: verification.fileId || uploadResult.id,
+        file_size_bytes: verification.size || fileSize,
         completed_at: new Date().toISOString(),
         error_message: null,
       })
@@ -1438,14 +1531,15 @@ async function handleSync(
       .eq("user_id", userId)
       .eq("provider", "dropbox");
 
-    console.log(`[DropboxSync] Successfully synced session ${sessionId} to ${dropboxPath}`);
+    console.log(`[DropboxSync] Successfully synced and VERIFIED session ${sessionId} to ${dropboxPath}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         path: uploadResult.path_display,
-        fileId: uploadResult.id,
-        size: fileSize,
+        fileId: verification.fileId || uploadResult.id,
+        size: verification.size || fileSize,
+        verified: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
