@@ -507,6 +507,12 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
   const handleDebugUploadFirst = async () => {
     if (!user) return;
 
+    // Prevent double-clicks by checking if already uploading
+    if (debugUploading) {
+      console.log("[DebugUpload] Already uploading, ignoring click");
+      return;
+    }
+
     setDebugUploading(true);
     setDebugLog(null);
 
@@ -543,6 +549,43 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
       log(`Title: "${session.title}"`);
       log(`Created: ${session.created_at}`);
 
+      // ===== IDEMPOTENCY CHECK: Check current sync status before proceeding =====
+      const { data: existingStatus } = await supabase
+        .from("dropbox_sync_status")
+        .select("sync_status, dropbox_file_id, dropbox_path, started_at")
+        .eq("session_id", session.id)
+        .single();
+
+      if (existingStatus) {
+        // Already synced and verified
+        if (existingStatus.sync_status === "completed" && existingStatus.dropbox_file_id) {
+          log(`✓ Already synced: ${existingStatus.dropbox_path}`);
+          log(`  dropbox_file_id: ${existingStatus.dropbox_file_id}`);
+          toast.info("Already synced to Dropbox", {
+            description: existingStatus.dropbox_path || "File exists",
+          });
+          return;
+        }
+
+        // Currently syncing - check if stale
+        if (existingStatus.sync_status === "syncing" && existingStatus.started_at) {
+          const startedAt = new Date(existingStatus.started_at).getTime();
+          const elapsedMs = Date.now() - startedAt;
+          const elapsedSecs = Math.round(elapsedMs / 1000);
+
+          if (elapsedMs < 5 * 60 * 1000) { // 5 minutes
+            log(`⏳ Upload already in progress (started ${elapsedSecs}s ago)`);
+            toast.info("Upload already in progress", {
+              description: `Started ${elapsedSecs} seconds ago`,
+            });
+            return;
+          } else {
+            log(`⚠ Found stale lock (${elapsedSecs}s old) - will retry`);
+          }
+        }
+      }
+      // ===== END IDEMPOTENCY CHECK =====
+
       // Get video asset info
       const { data: asset, error: assetError } = await supabase
         .from("video_assets")
@@ -560,25 +603,6 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
       log(`Storage URL: ${asset.storage_url ? "(present)" : "(none)"}`);
       log(`File size: ${asset.file_size_bytes ? `${(asset.file_size_bytes / 1024 / 1024).toFixed(2)} MB` : "(unknown)"}`);
       log(`Asset status: ${asset.status}`);
-
-      // Create/update sync status to pending
-      log("Creating sync status record...");
-      const { error: upsertError } = await supabase
-        .from("dropbox_sync_status")
-        .upsert({
-          session_id: session.id,
-          user_id: user.id,
-          sync_status: "pending",
-          error_message: null,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: "session_id",
-        });
-
-      if (upsertError) {
-        log(`ERROR: Failed to create sync status: ${upsertError.message}`);
-        return;
-      }
 
       log("Triggering SYNCHRONOUS Dropbox sync (waiting for completion)...");
       log("Using /sync endpoint (not /sync/auto)...");
@@ -606,6 +630,32 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
       const data = response.data;
       log("─── DROPBOX SYNC RESULT ───");
       log(`success: ${data?.success ?? false}`);
+      
+      // Handle idempotency responses
+      if (data?.already_synced) {
+        log(`already_synced: true`);
+        log(`target_path: ${data?.target_path ?? "(none)"}`);
+        log(`dropbox_file_id: ${data?.dropbox_file_id ?? "(none)"}`);
+        log("───────────────────────────");
+        log("✓ File was already synced to Dropbox");
+        toast.info("Already synced", {
+          description: data.target_path || "File already exists in Dropbox",
+        });
+        await fetchSyncStats();
+        return;
+      }
+      
+      if (data?.in_progress) {
+        log(`in_progress: true`);
+        log(`started_seconds_ago: ${data?.started_seconds_ago ?? "(unknown)"}`);
+        log("───────────────────────────");
+        log("⏳ Upload already in progress");
+        toast.info("Upload in progress", {
+          description: `Started ${data.started_seconds_ago || "recently"}s ago`,
+        });
+        return;
+      }
+      
       log(`method_used: ${data?.method_used ?? "(none)"}`);
       log(`target_path: ${data?.target_path ?? "(none)"}`);
       log(`dropbox_file_id: ${data?.dropbox_file_id ?? "(none)"}`);
