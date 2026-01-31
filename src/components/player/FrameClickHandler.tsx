@@ -9,6 +9,7 @@ interface FrameClickHandlerProps {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 export function FrameClickHandler({
@@ -18,6 +19,7 @@ export function FrameClickHandler({
   children,
   className,
   disabled = false,
+  onClick,
 }: FrameClickHandlerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showCursor, setShowCursor] = useState(false);
@@ -42,6 +44,9 @@ export function FrameClickHandler({
   }, []);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
+    // Call parent onClick first (for stopPropagation etc.)
+    onClick?.(e);
+    
     if (!isEnabled || !containerRef.current) return;
     
     const rect = containerRef.current.getBoundingClientRect();
@@ -56,7 +61,7 @@ export function FrameClickHandler({
     const endTime = selection.type === "range" ? selection.rangeEnd : undefined;
     
     onFrameClick?.(clampedX, clampedY, time, endTime);
-  }, [isEnabled, selection, currentTime, onFrameClick]);
+  }, [isEnabled, selection, currentTime, onFrameClick, onClick]);
 
   return (
     <div
