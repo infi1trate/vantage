@@ -1304,6 +1304,70 @@ async function clearUploadSessionState(supabase: any, sessionId: string): Promis
 }
 
 /**
+ * Signed URL expiry detection - refresh if fetch returns 403 or similar
+ */
+function isSignedUrlExpired(status: number, errorText?: string): boolean {
+  // 403 Forbidden - common when signed URL expires
+  if (status === 403) return true;
+  // 401 Unauthorized - sometimes returned for expired URLs
+  if (status === 401) return true;
+  // 400 with specific message about signature
+  if (status === 400 && errorText?.toLowerCase().includes("signature")) return true;
+  return false;
+}
+
+/**
+ * Fetch a chunk with automatic signed URL refresh on expiry
+ * Returns the chunk data and potentially a new signed URL
+ */
+async function fetchChunkWithRefresh(
+  currentSignedUrl: string,
+  offset: number,
+  chunkEnd: number,
+  storagePath: string,
+  supabase: any
+): Promise<{ chunk: ArrayBuffer | null; newSignedUrl: string; error?: string }> {
+  let signedUrl = currentSignedUrl;
+  
+  // Try with current URL
+  let response = await fetch(signedUrl, {
+    headers: { "Range": `bytes=${offset}-${chunkEnd}` }
+  });
+  
+  // Check if URL expired
+  if (isSignedUrlExpired(response.status)) {
+    console.log(`[DropboxSync] Signed URL expired (${response.status}), regenerating...`);
+    
+    // Generate fresh signed URL with 1 hour expiry
+    const { signedUrl: freshUrl, error: urlError } = await getSignedUrl(supabase, storagePath, 3600);
+    
+    if (!freshUrl) {
+      return { chunk: null, newSignedUrl: signedUrl, error: `Failed to refresh signed URL: ${urlError}` };
+    }
+    
+    signedUrl = freshUrl;
+    console.log(`[DropboxSync] Got fresh signed URL, retrying fetch...`);
+    
+    // Retry with new URL
+    response = await fetch(signedUrl, {
+      headers: { "Range": `bytes=${offset}-${chunkEnd}` }
+    });
+  }
+  
+  // Check if successful
+  if (!response.ok && response.status !== 206) {
+    return { 
+      chunk: null, 
+      newSignedUrl: signedUrl, 
+      error: `Failed to fetch chunk: ${response.status}` 
+    };
+  }
+  
+  const chunk = await response.arrayBuffer();
+  return { chunk, newSignedUrl: signedUrl };
+}
+
+/**
  * Stream upload a file to Dropbox using chunked upload sessions
  * Fetches chunks from a signed URL and uploads directly to avoid memory issues
  * 
@@ -1312,10 +1376,11 @@ async function clearUploadSessionState(supabase: any, sessionId: string): Promis
  * - Fetches one chunk at a time using Range requests
  * - Uploads each chunk immediately then frees memory
  * - RESUMABLE: Stores session state in DB and can resume from last successful chunk
+ * - AUTO-REFRESH: Regenerates signed URLs if they expire mid-upload
  */
 async function streamUploadToDropbox(
   accessToken: string,
-  signedUrl: string,
+  initialSignedUrl: string,
   totalSize: number,
   dropboxPath: string,
   supabase?: any,
@@ -1324,15 +1389,18 @@ async function streamUploadToDropbox(
     upload_session_id: string | null;
     upload_offset: number | null;
     upload_session_started_at: string | null;
-  }
+  },
+  storagePath?: string
 ): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string; resumed?: boolean }> {
   const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
   const canPersist = supabase && captureSessionId;
+  const canRefreshUrl = supabase && storagePath;
   
   let dropboxSessionId: string | null = null;
   let offset = 0;
   let chunkIndex = 0;
   let resumed = false;
+  let currentSignedUrl = initialSignedUrl;
   
   console.log(`[DropboxSync] Starting streaming upload: ${totalSize} bytes, ${totalChunks} chunks of ${CHUNK_SIZE} bytes`);
   
@@ -1400,15 +1468,27 @@ async function streamUploadToDropbox(
       console.log(`[DropboxSync] Fetching chunk 1/${totalChunks}...`);
       const firstChunkEnd = Math.min(CHUNK_SIZE, totalSize) - 1;
       
-      const firstChunkResponse = await fetch(signedUrl, {
-        headers: { "Range": `bytes=0-${firstChunkEnd}` }
-      });
-      
-      if (!firstChunkResponse.ok && firstChunkResponse.status !== 206) {
-        return { success: false, error: `Failed to fetch first chunk: ${firstChunkResponse.status}` };
+      // Use fetchChunkWithRefresh if we can refresh URLs, otherwise direct fetch
+      let firstChunk: ArrayBuffer;
+      if (canRefreshUrl) {
+        const fetchResult = await fetchChunkWithRefresh(
+          currentSignedUrl, 0, firstChunkEnd, storagePath!, supabase
+        );
+        if (!fetchResult.chunk) {
+          return { success: false, error: fetchResult.error || "Failed to fetch first chunk" };
+        }
+        firstChunk = fetchResult.chunk;
+        currentSignedUrl = fetchResult.newSignedUrl; // Update if refreshed
+      } else {
+        const firstChunkResponse = await fetch(currentSignedUrl, {
+          headers: { "Range": `bytes=0-${firstChunkEnd}` }
+        });
+        if (!firstChunkResponse.ok && firstChunkResponse.status !== 206) {
+          return { success: false, error: `Failed to fetch first chunk: ${firstChunkResponse.status}` };
+        }
+        firstChunk = await firstChunkResponse.arrayBuffer();
       }
       
-      const firstChunk = await firstChunkResponse.arrayBuffer();
       const isLastChunk = totalSize <= CHUNK_SIZE;
       
       console.log(`[DropboxSync] Starting upload session with ${firstChunk.byteLength} bytes...`);
@@ -1459,17 +1539,28 @@ async function streamUploadToDropbox(
       
       console.log(`[DropboxSync] Fetching chunk ${chunkIndex + 1}/${totalChunks} (bytes ${offset}-${chunkEnd})...`);
       
-      const chunkResponse = await fetch(signedUrl, {
-        headers: { "Range": `bytes=${offset}-${chunkEnd}` }
-      });
-      
-      if (!chunkResponse.ok && chunkResponse.status !== 206) {
-        // Don't clear session state on fetch failure - can retry
-        return { success: false, error: `Failed to fetch chunk ${chunkIndex + 1}: ${chunkResponse.status}`, resumed };
+      // Fetch chunk with automatic URL refresh on expiry
+      let chunk: ArrayBuffer;
+      if (canRefreshUrl) {
+        const fetchResult = await fetchChunkWithRefresh(
+          currentSignedUrl, offset, chunkEnd, storagePath!, supabase
+        );
+        if (!fetchResult.chunk) {
+          // Don't clear session state on fetch failure - can retry
+          return { success: false, error: fetchResult.error || `Failed to fetch chunk ${chunkIndex + 1}`, resumed };
+        }
+        chunk = fetchResult.chunk;
+        currentSignedUrl = fetchResult.newSignedUrl; // Update if refreshed
+      } else {
+        const chunkResponse = await fetch(currentSignedUrl, {
+          headers: { "Range": `bytes=${offset}-${chunkEnd}` }
+        });
+        if (!chunkResponse.ok && chunkResponse.status !== 206) {
+          // Don't clear session state on fetch failure - can retry
+          return { success: false, error: `Failed to fetch chunk ${chunkIndex + 1}: ${chunkResponse.status}`, resumed };
+        }
+        chunk = await chunkResponse.arrayBuffer();
       }
-      
-      const chunk = await chunkResponse.arrayBuffer();
-      
       console.log(`[DropboxSync] Uploading chunk ${chunkIndex + 1}/${totalChunks}: ${chunk.byteLength} bytes, isLast=${isLast}`);
       
       const appendResponse = await fetch(DROPBOX_UPLOAD_SESSION_APPEND_URL, {
@@ -1659,6 +1750,7 @@ async function getSignedUrl(
  * Upload a file to Dropbox using streaming - automatically chooses method based on file size
  * Uses signed URL and Range requests to avoid loading entire file into memory
  * Supports resumable uploads by persisting session state in the database
+ * Auto-refreshes signed URLs if they expire during upload
  */
 async function uploadToDropboxStreaming(
   accessToken: string,
@@ -1671,7 +1763,8 @@ async function uploadToDropboxStreaming(
     upload_session_id: string | null;
     upload_offset: number | null;
     upload_session_started_at: string | null;
-  }
+  },
+  storagePath?: string
 ): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string; resumed?: boolean }> {
   // Use streaming for files > 8MB (one chunk), simple for smaller files
   const useStreaming = fileSize > CHUNK_SIZE;
@@ -1685,7 +1778,8 @@ async function uploadToDropboxStreaming(
       dropboxPath,
       supabase,
       captureSessionId,
-      existingSessionState
+      existingSessionState,
+      storagePath
     );
   }
   
@@ -1845,7 +1939,8 @@ async function executeAutoSync(
         upload_session_id: existingStatus.upload_session_id,
         upload_offset: existingStatus.upload_offset,
         upload_session_started_at: existingStatus.upload_session_started_at,
-      } : undefined
+      } : undefined,
+      asset.storage_path // Pass storage path for URL refresh
     );
     
     if (uploadResult.resumed) {
@@ -2173,7 +2268,8 @@ async function handleSync(
         upload_session_id: existingStatus.upload_session_id,
         upload_offset: existingStatus.upload_offset,
         upload_session_started_at: existingStatus.upload_session_started_at,
-      } : undefined
+      } : undefined,
+      asset.storage_path // Pass storage path for URL refresh
     );
     
     if (uploadResult.resumed) {
