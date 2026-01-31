@@ -416,10 +416,14 @@ serve(async (req) => {
       return handleRetryProvisioning(req, userId, supabase);
     }
 
+    if (path === "/test" && req.method === "POST") {
+      return handleTestSync(userId, supabase);
+    }
+
     // Default route - show available endpoints
     return new Response(JSON.stringify({ 
       error: "Not found",
-      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/sync/auto", "/status", "/disconnect", "/provision/retry"],
+      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/sync/auto", "/status", "/disconnect", "/provision/retry", "/test"],
       receivedPath: path,
     }), {
       status: 404,
@@ -1085,4 +1089,67 @@ async function handleDisconnect(
     JSON.stringify({ success: true }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
+}
+
+/**
+ * Test Dropbox sync by uploading a small test file
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleTestSync(userId: string, supabase: any): Promise<Response> {
+  console.log(`[DropboxSync] Testing sync for user ${userId}`);
+
+  // Get valid access token
+  const tokenResult = await getValidAccessToken(userId, supabase);
+  if (!tokenResult.accessToken) {
+    return new Response(
+      JSON.stringify({ success: false, error: tokenResult.error || "No valid token" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const content = `Vantage sync test: ${timestamp}`;
+    const encoder = new TextEncoder();
+    const body = encoder.encode(content);
+
+    const response = await fetch(DROPBOX_UPLOAD_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${tokenResult.accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          path: "/Apps/Vantage/.vantage_sync_test.txt",
+          mode: "overwrite",
+          autorename: false,
+          mute: true,
+        }),
+      },
+      body,
+    });
+
+    if (response.ok) {
+      console.log(`[DropboxSync] Test sync succeeded for user ${userId}`);
+      return new Response(
+        JSON.stringify({ success: true, timestamp }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const errorText = await response.text();
+    console.error("[DropboxSync] Test sync upload failed:", errorText);
+    return new Response(
+      JSON.stringify({ success: false, error: `Upload failed: ${response.status}` }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("[DropboxSync] Test sync error:", error);
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Network error" 
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 }
