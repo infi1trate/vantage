@@ -213,7 +213,7 @@ export function FacecamPreview({
         className
       )}
     >
-      {/* Hidden video element for source (always needed) */}
+      {/* Hidden video element for source (always needed) - kept rectangular for clean segmentation */}
       <video
         ref={videoRef}
         autoPlay
@@ -223,20 +223,18 @@ export function FacecamPreview({
         className={cn(
           "w-full h-full object-cover transition-transform duration-150 ease-out",
           flipCamera && "scale-x-[-1]",
-          frameShape === "circle" && "rounded-full",
           // Hide video when showing canvas with background removal
           showCanvas && "opacity-0 absolute inset-0"
         )}
       />
       
-      {/* Canvas with background removal effect */}
+      {/* Canvas with background removal effect - kept rectangular, container handles clipping */}
       {needsBackgroundRemoval && (
         <canvas
           ref={canvasRef}
           className={cn(
             "w-full h-full object-cover transition-opacity duration-300",
             flipCamera && "scale-x-[-1]",
-            frameShape === "circle" && "rounded-full",
             // Only show canvas when model is loaded and processing
             showCanvas ? "opacity-100" : "opacity-0 absolute inset-0"
           )}
