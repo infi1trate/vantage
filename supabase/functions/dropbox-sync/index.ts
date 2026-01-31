@@ -20,6 +20,10 @@ const ENCRYPTION_KEY = SUPABASE_SERVICE_ROLE_KEY?.substring(0, 32) || "default-e
 const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
 const DROPBOX_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload";
 const DROPBOX_CREATE_FOLDER_URL = "https://api.dropboxapi.com/2/files/create_folder_v2";
+const DROPBOX_LIST_FOLDER_URL = "https://api.dropboxapi.com/2/files/list_folder";
+const DROPBOX_MOVE_URL = "https://api.dropboxapi.com/2/files/move_v2";
+const DROPBOX_DELETE_URL = "https://api.dropboxapi.com/2/files/delete_v2";
+const DROPBOX_GET_METADATA_URL = "https://api.dropboxapi.com/2/files/get_metadata";
 
 // Dropbox path constants
 // NOTE: Dropbox "App folder" access automatically maps to /Apps/[AppName]/ in the UI.
@@ -28,6 +32,10 @@ const VANTAGE_ROOT = "/Vantage";
 const RECORDINGS_PATH = `${VANTAGE_ROOT}/Recordings`;
 const VALIDATION_FILE_PATH = `${VANTAGE_ROOT}/.vantage_connected.txt`;
 const TEST_SYNC_FILE_PATH = `${VANTAGE_ROOT}/.vantage_sync_test.txt`;
+
+// Legacy incorrect path that may exist for some users
+const LEGACY_NESTED_PATH = "/Vantage/Apps/Vantage";
+const LEGACY_APPS_FOLDER = "/Vantage/Apps";
 
 interface DropboxTokenResponse {
   access_token: string;
@@ -218,11 +226,15 @@ async function getValidAccessToken(
 
 /**
  * Provision Dropbox storage by creating folder structure and validation file
+ * Also handles migration from legacy incorrect folder structure
  */
 async function provisionDropboxStorage(accessToken: string, userEmail?: string): Promise<ProvisioningResult> {
   console.log("[DropboxSync] Starting storage provisioning...");
   
   try {
+    // Step 0: Check for and migrate legacy folder structure
+    await migrateLegacyFolderStructure(accessToken);
+
     // Step 1: Create /Vantage folder (maps to /Apps/Vantage in Dropbox UI)
     const vantageFolder = await createDropboxFolder(accessToken, VANTAGE_ROOT);
     if (!vantageFolder.success && !vantageFolder.alreadyExists) {
@@ -251,6 +263,253 @@ async function provisionDropboxStorage(accessToken: string, userEmail?: string):
       success: false, 
       error: error instanceof Error ? error.message : "Unknown provisioning error" 
     };
+  }
+}
+
+/**
+ * Migrate legacy folder structure: /Vantage/Apps/Vantage → /Vantage
+ * This handles users who had the incorrect nested path from the previous bug
+ */
+async function migrateLegacyFolderStructure(accessToken: string): Promise<void> {
+  console.log("[DropboxSync] Checking for legacy folder structure...");
+  
+  try {
+    // Check if the legacy nested path exists
+    const legacyExists = await checkFolderExists(accessToken, LEGACY_NESTED_PATH);
+    
+    if (!legacyExists) {
+      console.log("[DropboxSync] No legacy folder structure found, skipping migration");
+      return;
+    }
+    
+    console.log("[DropboxSync] Legacy folder structure detected, starting migration...");
+    
+    // List all contents of the legacy folder
+    const contents = await listFolderContents(accessToken, LEGACY_NESTED_PATH);
+    
+    if (!contents || contents.length === 0) {
+      console.log("[DropboxSync] Legacy folder is empty, cleaning up...");
+      await deleteEmptyFolder(accessToken, LEGACY_NESTED_PATH);
+      await deleteEmptyFolder(accessToken, LEGACY_APPS_FOLDER);
+      return;
+    }
+    
+    console.log(`[DropboxSync] Found ${contents.length} items to migrate`);
+    
+    // Move each item from legacy path to correct path
+    let movedCount = 0;
+    let skippedCount = 0;
+    
+    for (const entry of contents) {
+      const sourcePath = entry.path_lower || entry.path_display;
+      const fileName = entry.name;
+      const destPath = `${VANTAGE_ROOT}/${fileName}`;
+      
+      // Check if destination already exists
+      const destExists = await checkPathExists(accessToken, destPath);
+      
+      if (destExists) {
+        console.log(`[DropboxSync] Skipping ${fileName} - already exists at destination`);
+        skippedCount++;
+        continue;
+      }
+      
+      // Move the file/folder
+      const moveResult = await moveDropboxItem(accessToken, sourcePath, destPath);
+      
+      if (moveResult.success) {
+        console.log(`[DropboxSync] Migrated: ${fileName}`);
+        movedCount++;
+      } else {
+        console.warn(`[DropboxSync] Failed to migrate ${fileName}: ${moveResult.error}`);
+      }
+    }
+    
+    console.log(`[DropboxSync] Migration complete: ${movedCount} moved, ${skippedCount} skipped`);
+    
+    // Clean up empty legacy folders
+    await cleanupLegacyFolders(accessToken);
+    
+  } catch (error) {
+    // Migration errors should not block provisioning
+    console.error("[DropboxSync] Migration error (non-blocking):", error);
+  }
+}
+
+/**
+ * Check if a folder exists in Dropbox
+ */
+async function checkFolderExists(accessToken: string, path: string): Promise<boolean> {
+  try {
+    const response = await fetch(DROPBOX_GET_METADATA_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data[".tag"] === "folder";
+    }
+    
+    // Consume response body to prevent resource leak
+    await response.text();
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a path (file or folder) exists in Dropbox
+ */
+async function checkPathExists(accessToken: string, path: string): Promise<boolean> {
+  try {
+    const response = await fetch(DROPBOX_GET_METADATA_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+    });
+    
+    if (response.ok) {
+      return true;
+    }
+    
+    // Consume response body to prevent resource leak
+    await response.text();
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List contents of a Dropbox folder
+ */
+async function listFolderContents(accessToken: string, path: string): Promise<any[] | null> {
+  try {
+    const response = await fetch(DROPBOX_LIST_FOLDER_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        path,
+        recursive: false,
+        include_deleted: false,
+      }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data.entries || [];
+    }
+    
+    const errorText = await response.text();
+    console.error(`[DropboxSync] List folder ${path} failed:`, errorText);
+    return null;
+  } catch (error) {
+    console.error(`[DropboxSync] List folder ${path} error:`, error);
+    return null;
+  }
+}
+
+/**
+ * Move a file or folder in Dropbox
+ */
+async function moveDropboxItem(
+  accessToken: string,
+  fromPath: string,
+  toPath: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch(DROPBOX_MOVE_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from_path: fromPath,
+        to_path: toPath,
+        autorename: false,
+        allow_ownership_transfer: false,
+      }),
+    });
+    
+    if (response.ok) {
+      return { success: true };
+    }
+    
+    const errorData = await response.json();
+    return {
+      success: false,
+      error: errorData?.error_summary || `Move failed: ${response.status}`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Network error",
+    };
+  }
+}
+
+/**
+ * Delete an empty folder in Dropbox
+ */
+async function deleteEmptyFolder(accessToken: string, path: string): Promise<boolean> {
+  try {
+    // First check if folder is empty
+    const contents = await listFolderContents(accessToken, path);
+    
+    if (contents && contents.length > 0) {
+      console.log(`[DropboxSync] Cannot delete ${path} - folder is not empty`);
+      return false;
+    }
+    
+    const response = await fetch(DROPBOX_DELETE_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+    });
+    
+    if (response.ok) {
+      console.log(`[DropboxSync] Deleted empty folder: ${path}`);
+      return true;
+    }
+    
+    const errorText = await response.text();
+    console.warn(`[DropboxSync] Delete folder ${path} failed:`, errorText);
+    return false;
+  } catch (error) {
+    console.warn(`[DropboxSync] Delete folder ${path} error:`, error);
+    return false;
+  }
+}
+
+/**
+ * Clean up legacy folder structure after migration
+ * Only deletes folders if they are empty
+ */
+async function cleanupLegacyFolders(accessToken: string): Promise<void> {
+  console.log("[DropboxSync] Cleaning up legacy folders...");
+  
+  // Try to delete /Vantage/Apps/Vantage first (innermost)
+  const nestedDeleted = await deleteEmptyFolder(accessToken, LEGACY_NESTED_PATH);
+  
+  if (nestedDeleted) {
+    // If nested folder was deleted, try to delete /Vantage/Apps
+    await deleteEmptyFolder(accessToken, LEGACY_APPS_FOLDER);
   }
 }
 
