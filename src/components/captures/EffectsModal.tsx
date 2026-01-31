@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import {
   Check,
   Camera,
@@ -16,6 +17,9 @@ import {
   ImagePlus,
   X,
   FlipHorizontal,
+  Sparkles,
+  ChevronDown,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -25,6 +29,8 @@ import {
   type CameraSize, 
   type BackgroundColorId 
 } from "@/components/capture/FacecamPreview";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 export interface EffectsConfig {
   includeFacecam: boolean;
@@ -57,6 +63,11 @@ export function EffectsModal({
   const [backgroundColor, setBackgroundColor] = useState<BackgroundColorId>(config.backgroundColor);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(config.backgroundImage);
   const [flipCamera, setFlipCamera] = useState(config.flipCamera);
+  
+  // AI Background state
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   // Sync local state when modal opens
   useEffect(() => {
@@ -67,6 +78,8 @@ export function EffectsModal({
       setBackgroundColor(config.backgroundColor);
       setBackgroundImage(config.backgroundImage);
       setFlipCamera(config.flipCamera);
+      setAiExpanded(false);
+      setAiPrompt("");
     }
   }, [open, config]);
 
@@ -83,6 +96,40 @@ export function EffectsModal({
       setBackgroundImage(event.target?.result as string);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim() || aiGenerating) return;
+    
+    setAiGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-background", {
+        body: { prompt: aiPrompt.trim() },
+      });
+      
+      if (error) throw error;
+      
+      if (data?.imageUrl) {
+        setBackgroundImage(data.imageUrl);
+        setAiExpanded(false);
+        setAiPrompt("");
+        toast({
+          title: "Background generated",
+          description: "AI background applied to your preview",
+        });
+      } else if (data?.error) {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      console.error("AI background generation error:", err);
+      toast({
+        title: "Generation failed",
+        description: err.message || "Could not generate background. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setAiGenerating(false);
+    }
   };
 
   const handleSave = () => {
@@ -366,6 +413,66 @@ export function EffectsModal({
                           </p>
                         </div>
                       </label>
+                    )}
+                    
+                    {/* AI Background - Collapsible secondary option */}
+                    {!backgroundImage && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setAiExpanded(!aiExpanded)}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-all duration-150",
+                            aiExpanded 
+                              ? "bg-primary/10 text-primary" 
+                              : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/20"
+                          )}
+                          disabled={disabled}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>Generate with AI</span>
+                          <ChevronDown className={cn(
+                            "h-3 w-3 ml-auto transition-transform duration-150",
+                            aiExpanded && "rotate-180"
+                          )} />
+                        </button>
+                        
+                        {aiExpanded && (
+                          <div className="mt-2 p-3 bg-muted/10 rounded-lg border border-border/20 space-y-2">
+                            <Input
+                              placeholder="e.g. cozy gaming room, neon city..."
+                              value={aiPrompt}
+                              onChange={(e) => setAiPrompt(e.target.value)}
+                              className="h-9 text-sm bg-background/50"
+                              disabled={disabled || aiGenerating}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleAiGenerate();
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              onClick={handleAiGenerate}
+                              disabled={disabled || aiGenerating || !aiPrompt.trim()}
+                              className="w-full h-8 text-xs"
+                            >
+                              {aiGenerating ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="h-3 w-3 mr-1.5" />
+                                  Generate Background
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
