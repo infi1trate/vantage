@@ -11,7 +11,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { subscribeToStats, LiveStats, logPerformanceSummary, resetMetrics } from "@/lib/performanceMetrics";
-import { Activity, AlertTriangle, Image, ChevronDown, ChevronUp, RotateCcw, FileText } from "lucide-react";
+import { checkBudgets, getLongTaskCount, logBudgetReport } from "@/lib/performanceBudget";
+import { Activity, AlertTriangle, Image, ChevronDown, ChevronUp, RotateCcw, FileText, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Only render in development
@@ -187,6 +188,34 @@ export function DevPerfOverlay({ className }: DevPerfOverlayProps) {
             </div>
           )}
           
+          {/* Budget Violations */}
+          {(() => {
+            const violations = checkBudgets();
+            const longTasks = getLongTaskCount();
+            if (violations.length === 0 && longTasks === 0) return null;
+            
+            return (
+              <div className="space-y-1">
+                <div className="text-red-400/80 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <Target className="h-3 w-3" />
+                  Budget Violations ({violations.length})
+                </div>
+                <div className="max-h-16 overflow-y-auto space-y-0.5">
+                  {violations.slice(0, 3).map((v, i) => (
+                    <div key={i} className="text-red-300/70 text-[10px] truncate">
+                      {v.budget.name}: {v.actual.toFixed(0)}ms &gt; {v.threshold}ms
+                    </div>
+                  ))}
+                  {longTasks > 0 && (
+                    <div className="text-yellow-300/70 text-[10px]">
+                      Long tasks: {longTasks}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1 border-t border-white/10">
             <button
@@ -195,6 +224,13 @@ export function DevPerfOverlay({ className }: DevPerfOverlayProps) {
             >
               <FileText className="h-3 w-3" />
               Log Summary
+            </button>
+            <button
+              onClick={() => logBudgetReport()}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-white/70 hover:text-white bg-white/5 hover:bg-white/10 rounded transition-colors"
+            >
+              <Target className="h-3 w-3" />
+              Budgets
             </button>
             <button
               onClick={handleReset}
