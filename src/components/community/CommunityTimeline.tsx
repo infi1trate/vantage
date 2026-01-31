@@ -238,14 +238,18 @@ function ReactionClusterMarker({
       <TooltipTrigger asChild>
         <button
           onClick={handleClick}
-          className="absolute -top-5 -translate-x-1/2 flex flex-col items-center transition-all hover:scale-110 active:scale-95 z-10 group"
+          className={cn(
+            // Outer touch target: 44px minimum for accessibility
+            "absolute -top-6 -translate-x-1/2 w-11 h-11 flex flex-col items-center justify-center transition-all z-10 group",
+            "touch-manipulation"
+          )}
           style={{ 
             left: `${position}%`,
           }}
         >
-          {/* Emoji stack with subtle glow */}
+          {/* Visual indicator - smaller than touch target */}
           <div 
-            className="flex -space-x-1.5 px-1.5 py-0.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/40 shadow-sm transition-all group-hover:shadow-lg"
+            className="flex -space-x-1.5 px-1.5 py-0.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/40 shadow-sm transition-all group-hover:shadow-lg group-hover:scale-110 group-active:scale-95"
             style={{
               boxShadow: `0 0 ${glowIntensity}px rgba(var(--primary-rgb), 0.3)`,
             }}

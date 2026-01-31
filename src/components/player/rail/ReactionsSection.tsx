@@ -134,17 +134,19 @@ const ReactionRow = memo(function ReactionRow({
                 <button
                   onClick={handleVisibilityToggle}
                   className={cn(
-                    "p-0.5 rounded transition-colors",
+                    // Ensure 44px minimum touch target for accessibility
+                    "p-2 -m-1.5 rounded-lg transition-colors",
+                    "touch-manipulation",
                     item.isPublic 
-                      ? "text-primary hover:text-primary/80" 
-                      : "text-muted-foreground/50 hover:text-muted-foreground"
+                      ? "text-primary hover:text-primary/80 hover:bg-primary/10" 
+                      : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30"
                   )}
                   aria-label={item.isPublic ? "Public - click to make private" : "Private - click to make public"}
                 >
                   {item.isPublic ? (
-                    <Globe className="h-3 w-3" />
+                    <Globe className="h-4 w-4" />
                   ) : (
-                    <Lock className="h-3 w-3" />
+                    <Lock className="h-4 w-4" />
                   )}
                 </button>
               </TooltipTrigger>
@@ -244,11 +246,11 @@ const QuickReactionBar = memo(function QuickReactionBar({
             Cancel
           </Button>
         </div>
-        <div className="flex flex-wrap gap-2 justify-center">
+        <div className="flex flex-wrap gap-1.5 justify-center">
           {QUICK_EMOJIS.map((emoji) => (
             <button
               key={emoji}
-              className="w-11 h-11 text-xl rounded-lg hover:bg-muted/50 active:scale-95 transition-all flex items-center justify-center"
+              className="w-11 h-11 min-w-11 text-xl rounded-lg hover:bg-muted/50 active:scale-95 transition-all flex items-center justify-center touch-manipulation"
               onClick={() => handleEmojiSelect(emoji)}
             >
               {emoji}

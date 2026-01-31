@@ -139,7 +139,7 @@ export const SessionRightRail = memo(function SessionRightRail({
       >
         <div className="shrink-0 border-b border-border/30 px-2 pt-2">
           <TabsList className={cn(
-            "grid w-full h-9",
+            "grid w-full min-h-11",
             commentsEnabled ? "grid-cols-4" : "grid-cols-3"
           )}>
             {tabs.map((tab) => {
@@ -148,12 +148,15 @@ export const SessionRightRail = memo(function SessionRightRail({
                 <TabsTrigger 
                   key={tab.id}
                   value={tab.id} 
-                  className="text-xs gap-1 px-2 data-[state=active]:bg-background"
+                  className={cn(
+                    "text-xs gap-1 px-1.5 min-h-11 touch-manipulation",
+                    "data-[state=active]:bg-background"
+                  )}
                 >
                   {tab.badge === "loading" ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Icon className="h-3 w-3" />
+                    <Icon className="h-3.5 w-3.5" />
                   )}
                   <span className="hidden sm:inline">{tab.label}</span>
                   {(tab.count !== undefined && tab.count > 0) && (

@@ -178,12 +178,16 @@ function AnnotationItem({
       <div className="flex items-start gap-2">
         <button
           onClick={() => onSeek(annotation.timestamp_seconds)}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono shrink-0 hover:bg-primary/20 transition-colors"
+          className={cn(
+            // Ensure minimum touch target 44px
+            "flex items-center gap-1 px-2 py-1.5 min-h-[44px] rounded bg-primary/10 text-primary text-xs font-mono shrink-0",
+            "hover:bg-primary/20 active:scale-95 transition-all touch-manipulation"
+          )}
         >
-          <Clock className="h-2.5 w-2.5" />
+          <Clock className="h-3 w-3" />
           {formatTimestamp(annotation.timestamp_seconds)}
         </button>
-        <p className="text-sm flex-1">{annotation.content}</p>
+        <p className="text-sm flex-1 pt-2">{annotation.content}</p>
         {canDelete && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
