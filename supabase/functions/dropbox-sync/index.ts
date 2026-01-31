@@ -21,6 +21,14 @@ const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
 const DROPBOX_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload";
 const DROPBOX_CREATE_FOLDER_URL = "https://api.dropboxapi.com/2/files/create_folder_v2";
 
+// Dropbox path constants
+// NOTE: Dropbox "App folder" access automatically maps to /Apps/[AppName]/ in the UI.
+// All paths here are relative to the app sandbox root - do NOT prefix with "/Apps/Vantage".
+const VANTAGE_ROOT = "/Vantage";
+const RECORDINGS_PATH = `${VANTAGE_ROOT}/Recordings`;
+const VALIDATION_FILE_PATH = `${VANTAGE_ROOT}/.vantage_connected.txt`;
+const TEST_SYNC_FILE_PATH = `${VANTAGE_ROOT}/.vantage_sync_test.txt`;
+
 interface DropboxTokenResponse {
   access_token: string;
   token_type: string;
@@ -215,19 +223,19 @@ async function provisionDropboxStorage(accessToken: string, userEmail?: string):
   console.log("[DropboxSync] Starting storage provisioning...");
   
   try {
-    // Step 1: Create /Apps/Vantage folder
-    const vantageFolder = await createDropboxFolder(accessToken, "/Apps/Vantage");
+    // Step 1: Create /Vantage folder (maps to /Apps/Vantage in Dropbox UI)
+    const vantageFolder = await createDropboxFolder(accessToken, VANTAGE_ROOT);
     if (!vantageFolder.success && !vantageFolder.alreadyExists) {
       return { success: false, error: vantageFolder.error || "Failed to create Vantage folder" };
     }
-    console.log("[DropboxSync] Created /Apps/Vantage folder");
+    console.log(`[DropboxSync] Created ${VANTAGE_ROOT} folder`);
 
-    // Step 2: Create /Apps/Vantage/Recordings subfolder
-    const recordingsFolder = await createDropboxFolder(accessToken, "/Apps/Vantage/Recordings");
+    // Step 2: Create /Vantage/Recordings subfolder
+    const recordingsFolder = await createDropboxFolder(accessToken, RECORDINGS_PATH);
     if (!recordingsFolder.success && !recordingsFolder.alreadyExists) {
       return { success: false, error: recordingsFolder.error || "Failed to create Recordings folder" };
     }
-    console.log("[DropboxSync] Created /Apps/Vantage/Recordings folder");
+    console.log(`[DropboxSync] Created ${RECORDINGS_PATH} folder`);
 
     // Step 3: Upload validation file with user info
     const validationFile = await uploadValidationFile(accessToken, userEmail);
@@ -311,7 +319,7 @@ async function uploadValidationFile(
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/octet-stream",
         "Dropbox-API-Arg": JSON.stringify({
-          path: "/Apps/Vantage/.vantage_connected.txt",
+          path: VALIDATION_FILE_PATH,
           mode: "overwrite",
           autorename: false,
           mute: true,
@@ -751,7 +759,7 @@ async function executeAutoSync(
 
     // Build Dropbox path with human-readable filename
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
-    const dropboxPath = `/Apps/Vantage/Recordings/${filename}.webm`;
+    const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
     // Download video from storage
     console.log(`[DropboxSync] Downloading video for auto-sync`);
@@ -909,7 +917,7 @@ async function handleSync(
 
   // Build Dropbox path with human-readable filename
   const filename = sanitizeFilename(session?.title || "Recording", sessionId);
-  const dropboxPath = `/Apps/Vantage/Recordings/${filename}.webm`;
+  const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
   try {
     // Download video from storage
@@ -1119,7 +1127,7 @@ async function handleTestSync(userId: string, supabase: any): Promise<Response> 
         "Authorization": `Bearer ${tokenResult.accessToken}`,
         "Content-Type": "application/octet-stream",
         "Dropbox-API-Arg": JSON.stringify({
-          path: "/Apps/Vantage/.vantage_sync_test.txt",
+          path: TEST_SYNC_FILE_PATH,
           mode: "overwrite",
           autorename: false,
           mute: true,
