@@ -110,6 +110,9 @@ export function EffectsModal({
       if (error) throw error;
       
       if (data?.imageUrl) {
+        // AI backgrounds use identical pipeline as uploaded images:
+        // → backgroundImage prop → useBackgroundRemoval hook → same compositing
+        // Subject segmentation, alpha matte, and frame clipping all apply automatically
         setBackgroundImage(data.imageUrl);
         setAiExpanded(false);
         setAiPrompt("");
