@@ -132,7 +132,8 @@ export interface SessionWithAssets {
   annotation_count: number;
   voice_note_count: number;
   // Dropbox sync status
-  dropbox_synced: boolean;
+  dropbox_sync_status: "pending" | "synced" | "failed" | null;
+  dropbox_synced_at: string | null;
 }
 
 export async function getSessionsWithAssets(userId: string): Promise<SessionWithAssets[]> {
@@ -156,7 +157,7 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
     supabase.from("facecam_tracks").select("session_id").in("session_id", sessionIds),
     supabase.from("annotations").select("session_id").in("session_id", sessionIds),
     supabase.from("voice_notes").select("session_id").in("session_id", sessionIds),
-    supabase.from("dropbox_sync_status").select("session_id, sync_status").in("session_id", sessionIds),
+    supabase.from("dropbox_sync_status").select("session_id, sync_status, completed_at").in("session_id", sessionIds),
   ]);
 
   // Build lookup maps
@@ -166,10 +167,26 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
   );
   const facecamSessionIds = new Set(facecamTracks.data?.map(f => f.session_id) || []);
   
-  // Only include sessions with completed Dropbox sync
-  const dropboxSyncedSessionIds = new Set(
-    dropboxSyncs.data?.filter(d => d.sync_status === "completed").map(d => d.session_id) || []
-  );
+  // Build Dropbox sync status lookup map
+  const dropboxStatusMap: Record<string, { 
+    status: "pending" | "synced" | "failed"; 
+    syncedAt: string | null;
+  }> = {};
+  
+  dropboxSyncs.data?.forEach(d => {
+    let status: "pending" | "synced" | "failed";
+    if (d.sync_status === "completed") {
+      status = "synced";
+    } else if (d.sync_status === "failed") {
+      status = "failed";
+    } else {
+      status = "pending";
+    }
+    dropboxStatusMap[d.session_id] = {
+      status,
+      syncedAt: d.completed_at || null,
+    };
+  });
   
   const annotationCounts: Record<string, number> = {};
   annotations.data?.forEach(a => {
@@ -199,6 +216,7 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
     has_facecam: facecamSessionIds.has(session.id),
     annotation_count: annotationCounts[session.id] || 0,
     voice_note_count: voiceNoteCounts[session.id] || 0,
-    dropbox_synced: dropboxSyncedSessionIds.has(session.id),
+    dropbox_sync_status: dropboxStatusMap[session.id]?.status || null,
+    dropbox_synced_at: dropboxStatusMap[session.id]?.syncedAt || null,
   }));
 }

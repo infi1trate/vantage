@@ -42,7 +42,8 @@ import {
   Globe,
   Link as LinkIcon,
   Loader2,
-  CloudIcon
+  CloudIcon,
+  CloudOff
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Link } from "react-router-dom";
@@ -133,13 +134,28 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                 </div>
               )}
               <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1.5">
-                {session.dropbox_synced && (
+                {session.dropbox_sync_status && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <CloudIcon className="h-3 w-3 text-muted-foreground/70" />
+                      <span className={
+                        session.dropbox_sync_status === "synced" ? "text-vantage-success" :
+                        session.dropbox_sync_status === "pending" ? "text-vantage-warning" :
+                        "text-destructive"
+                      }>
+                        {session.dropbox_sync_status === "synced" && <CloudIcon className="h-3 w-3" />}
+                        {session.dropbox_sync_status === "pending" && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {session.dropbox_sync_status === "failed" && <CloudOff className="h-3 w-3" />}
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
-                      Backed up to Dropbox
+                      {session.dropbox_sync_status === "synced" && session.dropbox_synced_at && (
+                        <>Backed up to Dropbox {formatDistanceToNow(new Date(session.dropbox_synced_at), { addSuffix: true })}</>
+                      )}
+                      {session.dropbox_sync_status === "synced" && !session.dropbox_synced_at && (
+                        <>Backed up to Dropbox</>
+                      )}
+                      {session.dropbox_sync_status === "pending" && <>Backup in progress...</>}
+                      {session.dropbox_sync_status === "failed" && <>Dropbox backup failed</>}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -321,13 +337,28 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
 
             {/* Duration badge with Dropbox indicator */}
             <div className="absolute bottom-2 right-2 px-2 py-1 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1.5">
-              {session.dropbox_synced && (
+              {session.dropbox_sync_status && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <CloudIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
+                    <span className={
+                      session.dropbox_sync_status === "synced" ? "text-vantage-success" :
+                      session.dropbox_sync_status === "pending" ? "text-vantage-warning" :
+                      "text-destructive"
+                    }>
+                      {session.dropbox_sync_status === "synced" && <CloudIcon className="h-3.5 w-3.5" />}
+                      {session.dropbox_sync_status === "pending" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {session.dropbox_sync_status === "failed" && <CloudOff className="h-3.5 w-3.5" />}
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
-                    Backed up to Dropbox
+                    {session.dropbox_sync_status === "synced" && session.dropbox_synced_at && (
+                      <>Backed up to Dropbox {formatDistanceToNow(new Date(session.dropbox_synced_at), { addSuffix: true })}</>
+                    )}
+                    {session.dropbox_sync_status === "synced" && !session.dropbox_synced_at && (
+                      <>Backed up to Dropbox</>
+                    )}
+                    {session.dropbox_sync_status === "pending" && <>Backup in progress...</>}
+                    {session.dropbox_sync_status === "failed" && <>Dropbox backup failed</>}
                   </TooltipContent>
                 </Tooltip>
               )}
