@@ -92,8 +92,8 @@ export function useBackgroundRemoval({
             delegate: "GPU",
           },
           runningMode: "VIDEO",
-          outputCategoryMask: true,
-          outputConfidenceMasks: false,
+          outputCategoryMask: false,
+          outputConfidenceMasks: true, // Use confidence for smooth edges
         });
 
         if (isMounted) {
@@ -183,11 +183,12 @@ export function useBackgroundRemoval({
       // Run segmentation
       const result = segmenter.segmentForVideo(video, startTimeMs);
       
-      if (result.categoryMask) {
-        const mask = result.categoryMask;
-        const maskData = mask.getAsUint8Array();
-        const maskWidth = mask.width;
-        const maskHeight = mask.height;
+      // Use confidence mask for smooth edges (index 0 is person confidence for selfie segmenter)
+      if (result.confidenceMasks && result.confidenceMasks.length > 0) {
+        const personMask = result.confidenceMasks[0]; // Person confidence mask
+        const maskData = personMask.getAsFloat32Array();
+        const maskWidth = personMask.width;
+        const maskHeight = personMask.height;
 
         // Draw background first
         if (bgImageRef.current) {
@@ -218,11 +219,11 @@ export function useBackgroundRemoval({
           const bgImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const bgPixels = bgImageData.data;
 
-          // Composite: where mask is person (value > 0), use video pixels
+          // Composite: FINAL = (subject * alpha) + (background * (1 - alpha))
+          // Where alpha = person confidence (1 = person, 0 = background)
           const scaleX = maskWidth / canvas.width;
           const scaleY = maskHeight / canvas.height;
 
-          // Optimized loop - process in chunks for better cache locality
           const canvasWidth = canvas.width;
           const canvasHeight = canvas.height;
           
@@ -232,25 +233,30 @@ export function useBackgroundRemoval({
             
             for (let x = 0; x < canvasWidth; x++) {
               const maskX = Math.floor(x * scaleX);
-              const maskValue = maskData[maskY + maskX];
-
-              if (maskValue > 0) {
+              // Confidence value: 0.0 = background, 1.0 = person
+              const personConfidence = maskData[maskY + maskX];
+              
+              // Apply slight threshold for cleaner edges
+              const alpha = Math.max(0, Math.min(1, personConfidence * 1.2));
+              
+              if (alpha > 0.01) {
                 const canvasIdx = rowOffset + x * 4;
-                const alpha = Math.min(maskValue * 0.00588235294, 1); // 1.5 / 255 ≈ 0.00588
                 const invAlpha = 1 - alpha;
                 
+                // Blend: person (video) over background
                 bgPixels[canvasIdx] = (videoPixels[canvasIdx] * alpha + bgPixels[canvasIdx] * invAlpha) | 0;
                 bgPixels[canvasIdx + 1] = (videoPixels[canvasIdx + 1] * alpha + bgPixels[canvasIdx + 1] * invAlpha) | 0;
                 bgPixels[canvasIdx + 2] = (videoPixels[canvasIdx + 2] * alpha + bgPixels[canvasIdx + 2] * invAlpha) | 0;
                 bgPixels[canvasIdx + 3] = 255;
               }
+              // Where alpha ≈ 0, bgPixels remains as background color/image
             }
           }
 
           ctx.putImageData(bgImageData, 0, 0);
         }
 
-        mask.close();
+        personMask.close();
         
         // Record frame processing time (non-blocking)
         const frameDuration = performance.now() - startTimeMs;
