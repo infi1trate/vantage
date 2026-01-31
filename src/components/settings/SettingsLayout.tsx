@@ -1,58 +1,158 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ProfileSection } from "./sections/ProfileSection";
 import { AccountSection } from "./sections/AccountSection";
-import { PreferencesSection } from "./sections/PreferencesSection";
+import { SecuritySection } from "./sections/SecuritySection";
+import { CameraSection } from "./sections/CameraSection";
 import { PrivacySection } from "./sections/PrivacySection";
 import { SessionsSection } from "./sections/SessionsSection";
+import { ConnectedAccountsSection } from "./sections/ConnectedAccountsSection";
+import { useAuth } from "@/contexts/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   User, 
   Shield, 
-  Settings2, 
+  Camera,
   Lock, 
   Laptop,
+  Link2,
+  ChevronLeft,
   ChevronRight
 } from "lucide-react";
+import { useRef, useEffect } from "react";
 
-type SettingsTab = "profile" | "account" | "preferences" | "privacy" | "sessions";
+type SettingsTab = "account" | "security" | "camera" | "privacy" | "sessions" | "connected";
 
-const tabs: { id: SettingsTab; label: string; icon: React.ElementType; description: string }[] = [
-  { id: "profile", label: "Profile", icon: User, description: "Your public identity" },
-  { id: "account", label: "Account", icon: Lock, description: "Email & password" },
-  { id: "preferences", label: "Preferences", icon: Settings2, description: "Recording & display" },
-  { id: "privacy", label: "Privacy", icon: Shield, description: "Blocked users & data" },
-  { id: "sessions", label: "Sessions", icon: Laptop, description: "Active devices" },
+const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
+  { id: "account", label: "Account", icon: User },
+  { id: "security", label: "Security", icon: Shield },
+  { id: "camera", label: "Camera", icon: Camera },
+  { id: "privacy", label: "Privacy", icon: Lock },
+  { id: "sessions", label: "Sessions", icon: Laptop },
+  { id: "connected", label: "Connected Accounts", icon: Link2 },
 ];
 
 export function SettingsLayout() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
-  const [showMobileNav, setShowMobileNav] = useState(true);
+  const { loading } = useAuth();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("account");
+  const tabsContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
 
-  const handleTabChange = (tab: SettingsTab) => {
-    setActiveTab(tab);
-    setShowMobileNav(false);
+  // Check scroll position for mobile tab arrows
+  useEffect(() => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+
+    const checkScroll = () => {
+      setShowLeftArrow(container.scrollLeft > 0);
+      setShowRightArrow(
+        container.scrollLeft < container.scrollWidth - container.clientWidth - 1
+      );
+    };
+
+    checkScroll();
+    container.addEventListener("scroll", checkScroll);
+    window.addEventListener("resize", checkScroll);
+
+    return () => {
+      container.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, []);
+
+  const scrollTabs = (direction: "left" | "right") => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    const scrollAmount = 150;
+    container.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
   };
 
-  const handleBackToNav = () => {
-    setShowMobileNav(true);
-  };
+  if (loading) {
+    return <SettingsLoadingSkeleton />;
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
       {/* Page Header */}
-      <div className="mb-6 sm:mb-8">
-        <h1 className="font-barlow text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-wide text-foreground">
-          Account Settings
-        </h1>
-        <p className="mt-1 text-sm sm:text-base text-muted-foreground">
-          Manage your profile, preferences, and security settings
-        </p>
+      <div className="mb-6 sm:mb-8 flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+        <div>
+          <h1 className="font-barlow text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-wide text-foreground">
+            Settings
+          </h1>
+          <p className="mt-1 text-sm sm:text-base text-muted-foreground">
+            Manage your account, privacy, and integrations.
+          </p>
+        </div>
+        {/* Plan pill - visible on xl+ */}
+        <div className="hidden xl:flex items-center">
+          <div className="px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm font-medium text-primary">
+            Vantage — Standard
+          </div>
+        </div>
       </div>
 
-      {/* Desktop Layout - Side by Side */}
-      <div className="hidden md:grid md:grid-cols-[240px_1fr] lg:grid-cols-[280px_1fr] gap-6 lg:gap-8">
+      {/* Mobile/Tablet: Horizontal scrollable tabs */}
+      <div className="lg:hidden sticky top-14 z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-background/95 backdrop-blur-sm border-b border-border/50 mb-6">
+        <div className="relative">
+          {/* Left scroll arrow */}
+          {showLeftArrow && (
+            <button
+              onClick={() => scrollTabs("left")}
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-1.5 bg-background/90 border border-border/50 rounded-full shadow-md"
+              aria-label="Scroll tabs left"
+            >
+              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
+
+          {/* Tabs container */}
+          <div
+            ref={tabsContainerRef}
+            className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth px-1"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all shrink-0",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    isActive 
+                      ? "bg-primary text-primary-foreground" 
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right scroll arrow */}
+          {showRightArrow && (
+            <button
+              onClick={() => scrollTabs("right")}
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1.5 bg-background/90 border border-border/50 rounded-full shadow-md"
+              aria-label="Scroll tabs right"
+            >
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Desktop Layout: Sidebar + Content */}
+      <div className="lg:grid lg:grid-cols-[240px_1fr] xl:grid-cols-[280px_1fr] lg:gap-8">
         {/* Desktop Sidebar */}
-        <nav className="space-y-1">
+        <nav className="hidden lg:block space-y-1 sticky top-24 self-start">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -65,76 +165,25 @@ export function SettingsLayout() {
                   "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   isActive 
                     ? "bg-primary/10 text-primary border border-primary/20" 
-                    : "text-muted-foreground border border-transparent"
+                    : "text-muted-foreground border border-transparent hover:text-foreground"
                 )}
               >
                 <Icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "")} />
-                <div className="min-w-0">
-                  <span className={cn(
-                    "block text-sm font-medium truncate",
-                    isActive ? "text-primary" : "text-foreground"
-                  )}>
-                    {tab.label}
-                  </span>
-                  <span className="block text-xs text-muted-foreground truncate">
-                    {tab.description}
-                  </span>
-                </div>
+                <span className={cn(
+                  "text-sm font-medium",
+                  isActive ? "text-primary" : "text-foreground"
+                )}>
+                  {tab.label}
+                </span>
               </button>
             );
           })}
         </nav>
 
-        {/* Desktop Content */}
-        <div className="min-w-0">
+        {/* Content Area */}
+        <div className="min-w-0 max-w-3xl lg:max-w-none">
           <SettingsContent activeTab={activeTab} />
         </div>
-      </div>
-
-      {/* Mobile Layout - Stack with back navigation */}
-      <div className="md:hidden">
-        {showMobileNav ? (
-          <nav className="space-y-2">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabChange(tab.id)}
-                  className={cn(
-                    "w-full flex items-center justify-between gap-3 px-4 py-4 rounded-lg",
-                    "bg-card border border-border/50 hover:border-primary/30 hover:bg-muted/30",
-                    "transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  )}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Icon className="h-5 w-5 shrink-0 text-primary" />
-                    <div className="text-left min-w-0">
-                      <span className="block text-sm font-medium text-foreground">
-                        {tab.label}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate">
-                        {tab.description}
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                </button>
-              );
-            })}
-          </nav>
-        ) : (
-          <div>
-            <button
-              onClick={handleBackToNav}
-              className="mb-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ChevronRight className="h-4 w-4 rotate-180" />
-              <span>Back to Settings</span>
-            </button>
-            <SettingsContent activeTab={activeTab} />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -142,17 +191,66 @@ export function SettingsLayout() {
 
 function SettingsContent({ activeTab }: { activeTab: SettingsTab }) {
   switch (activeTab) {
-    case "profile":
-      return <ProfileSection />;
     case "account":
       return <AccountSection />;
-    case "preferences":
-      return <PreferencesSection />;
+    case "security":
+      return <SecuritySection />;
+    case "camera":
+      return <CameraSection />;
     case "privacy":
       return <PrivacySection />;
     case "sessions":
       return <SessionsSection />;
+    case "connected":
+      return <ConnectedAccountsSection />;
     default:
       return null;
   }
+}
+
+function SettingsLoadingSkeleton() {
+  return (
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
+      {/* Header skeleton */}
+      <div className="mb-6 sm:mb-8">
+        <Skeleton className="h-9 w-40 mb-2" />
+        <Skeleton className="h-5 w-72" />
+      </div>
+
+      {/* Tabs skeleton (mobile) */}
+      <div className="lg:hidden mb-6">
+        <div className="flex gap-2 overflow-hidden">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-10 w-28 rounded-lg shrink-0" />
+          ))}
+        </div>
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[240px_1fr] lg:gap-8">
+        {/* Sidebar skeleton (desktop) */}
+        <div className="hidden lg:block space-y-2">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
+
+        {/* Content skeleton */}
+        <div className="space-y-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-lg border border-border/50 bg-card/50 overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-border/30">
+                <Skeleton className="h-6 w-32 mb-2" />
+                <Skeleton className="h-4 w-48" />
+              </div>
+              <div className="px-4 sm:px-6 py-5 space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }

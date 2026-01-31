@@ -13,27 +13,19 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Video, Mic, Volume2, Eye } from "lucide-react";
 
 interface UserPreferences {
   id: string;
   user_id: string;
-  theme: string | null;
-  default_playback_speed: number | null;
   record_facecam: boolean | null;
   record_microphone: boolean | null;
   record_game_audio: boolean | null;
   default_session_visibility: string | null;
-  allow_ai_analysis: boolean | null;
-  show_ai_insights: boolean | null;
-  notify_on_share: boolean | null;
-  notify_on_comment: boolean | null;
-  notify_on_analysis_complete: boolean | null;
-  auto_skip_dead_time: boolean | null;
-  sidebar_collapsed: boolean | null;
-  timeline_zoom: number | null;
+  default_playback_speed: number | null;
 }
 
-export function PreferencesSection() {
+export function CameraSection() {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +43,7 @@ export function PreferencesSection() {
     try {
       const { data, error } = await supabase
         .from("user_preferences")
-        .select("*")
+        .select("id, user_id, record_facecam, record_microphone, record_game_audio, default_session_visibility, default_playback_speed")
         .eq("user_id", user.id)
         .single();
 
@@ -66,7 +58,7 @@ export function PreferencesSection() {
         const { data: newPrefs, error: createError } = await supabase
           .from("user_preferences")
           .insert({ user_id: user.id })
-          .select()
+          .select("id, user_id, record_facecam, record_microphone, record_game_audio, default_session_visibility, default_playback_speed")
           .single();
 
         if (createError) throw createError;
@@ -119,114 +111,66 @@ export function PreferencesSection() {
       {/* Recording Defaults */}
       <SettingsCard 
         title="Recording Defaults" 
-        description="Default settings for new captures"
+        description="Default settings for new capture sessions"
       >
-        <div className="space-y-4">
+        <div className="space-y-1">
           <PreferenceToggle
+            icon={Video}
             label="Record Facecam"
-            description="Enable webcam by default"
+            description="Enable webcam recording by default"
             checked={preferences?.record_facecam ?? true}
             onCheckedChange={(v) => updatePreference("record_facecam", v)}
             saving={saving === "record_facecam"}
           />
           <PreferenceToggle
+            icon={Mic}
             label="Record Microphone"
-            description="Enable microphone by default"
+            description="Enable microphone recording by default"
             checked={preferences?.record_microphone ?? true}
             onCheckedChange={(v) => updatePreference("record_microphone", v)}
             saving={saving === "record_microphone"}
           />
           <PreferenceToggle
+            icon={Volume2}
             label="Record Game Audio"
-            description="Capture system/game audio"
+            description="Capture system and game audio"
             checked={preferences?.record_game_audio ?? true}
             onCheckedChange={(v) => updatePreference("record_game_audio", v)}
             saving={saving === "record_game_audio"}
           />
-          
-          <div className="py-3 border-b border-border/20 last:border-0">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        </div>
+      </SettingsCard>
+
+      {/* Session Defaults */}
+      <SettingsCard 
+        title="Session Defaults" 
+        description="Default settings for new sessions"
+      >
+        <div className="space-y-4 py-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Eye className="h-5 w-5 text-muted-foreground shrink-0" />
               <div>
                 <Label className="text-sm font-medium text-foreground">Default Visibility</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Who can see your sessions by default
                 </p>
               </div>
-              <Select
-                value={preferences?.default_session_visibility || "private"}
-                onValueChange={(v) => updatePreference("default_session_visibility", v)}
-              >
-                <SelectTrigger className="w-full sm:w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="private">Private</SelectItem>
-                  <SelectItem value="unlisted">Unlisted</SelectItem>
-                  <SelectItem value="public">Public</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
+            <Select
+              value={preferences?.default_session_visibility || "private"}
+              onValueChange={(v) => updatePreference("default_session_visibility", v)}
+            >
+              <SelectTrigger className="w-full sm:w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private">Private</SelectItem>
+                <SelectItem value="unlisted">Unlisted</SelectItem>
+                <SelectItem value="public">Public</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </div>
-      </SettingsCard>
-
-      {/* AI & Analysis */}
-      <SettingsCard 
-        title="AI & Analysis" 
-        description="Control AI-powered features"
-      >
-        <div className="space-y-4">
-          <PreferenceToggle
-            label="Allow AI Analysis"
-            description="Let AI analyze your gameplay"
-            checked={preferences?.allow_ai_analysis ?? true}
-            onCheckedChange={(v) => updatePreference("allow_ai_analysis", v)}
-            saving={saving === "allow_ai_analysis"}
-          />
-          <PreferenceToggle
-            label="Show AI Insights"
-            description="Display AI suggestions during review"
-            checked={preferences?.show_ai_insights ?? true}
-            onCheckedChange={(v) => updatePreference("show_ai_insights", v)}
-            saving={saving === "show_ai_insights"}
-          />
-          <PreferenceToggle
-            label="Auto-skip Dead Time"
-            description="Skip low-activity sections automatically"
-            checked={preferences?.auto_skip_dead_time ?? false}
-            onCheckedChange={(v) => updatePreference("auto_skip_dead_time", v)}
-            saving={saving === "auto_skip_dead_time"}
-          />
-        </div>
-      </SettingsCard>
-
-      {/* Notifications */}
-      <SettingsCard 
-        title="Notifications" 
-        description="Choose what notifications you receive"
-      >
-        <div className="space-y-4">
-          <PreferenceToggle
-            label="Share Notifications"
-            description="When someone shares a session with you"
-            checked={preferences?.notify_on_share ?? true}
-            onCheckedChange={(v) => updatePreference("notify_on_share", v)}
-            saving={saving === "notify_on_share"}
-          />
-          <PreferenceToggle
-            label="Comment Notifications"
-            description="When someone comments on your content"
-            checked={preferences?.notify_on_comment ?? true}
-            onCheckedChange={(v) => updatePreference("notify_on_comment", v)}
-            saving={saving === "notify_on_comment"}
-          />
-          <PreferenceToggle
-            label="Analysis Complete"
-            description="When AI analysis finishes processing"
-            checked={preferences?.notify_on_analysis_complete ?? true}
-            onCheckedChange={(v) => updatePreference("notify_on_analysis_complete", v)}
-            saving={saving === "notify_on_analysis_complete"}
-          />
         </div>
       </SettingsCard>
 
@@ -235,12 +179,12 @@ export function PreferencesSection() {
         title="Playback" 
         description="Video player preferences"
       >
-        <div className="py-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="py-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <Label className="text-sm font-medium text-foreground">Default Playback Speed</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Starting speed for video playback
+                Starting speed when reviewing sessions
               </p>
             </div>
             <Select
@@ -267,6 +211,7 @@ export function PreferencesSection() {
 }
 
 interface PreferenceToggleProps {
+  icon: React.ElementType;
   label: string;
   description: string;
   checked: boolean;
@@ -275,6 +220,7 @@ interface PreferenceToggleProps {
 }
 
 function PreferenceToggle({
+  icon: Icon,
   label,
   description,
   checked,
@@ -284,9 +230,12 @@ function PreferenceToggle({
   return (
     <div className="py-3 border-b border-border/20 last:border-0">
       <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <Label className="text-sm font-medium text-foreground">{label}</Label>
-          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <Icon className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <Label className="text-sm font-medium text-foreground">{label}</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+          </div>
         </div>
         <Switch
           checked={checked}

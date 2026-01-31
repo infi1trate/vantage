@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { SettingsCard, SettingsCardSkeleton } from "../SettingsCard";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { UserX, Trash2, Loader2, Search, Ban } from "lucide-react";
+import { UserX, Trash2, Loader2, Search, Ban, Brain, Bell, Download, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BlockedUser {
@@ -19,39 +21,56 @@ interface BlockedUser {
   };
 }
 
+interface UserPreferences {
+  allow_ai_analysis: boolean | null;
+  show_ai_insights: boolean | null;
+  notify_on_share: boolean | null;
+  notify_on_comment: boolean | null;
+  notify_on_analysis_complete: boolean | null;
+}
+
 export function PrivacySection() {
   const { user } = useAuth();
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [unblocking, setUnblocking] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
-      fetchBlockedUsers();
+      fetchData();
     }
   }, [user]);
 
-  const fetchBlockedUsers = async () => {
+  const fetchData = async () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      // Fetch preferences
+      const { data: prefsData } = await supabase
+        .from("user_preferences")
+        .select("allow_ai_analysis, show_ai_insights, notify_on_share, notify_on_comment, notify_on_analysis_complete")
+        .eq("user_id", user.id)
+        .single();
+
+      if (prefsData) {
+        setPreferences(prefsData);
+      }
+
+      // Fetch blocked users
+      const { data: blockedData, error } = await supabase
         .from("blocked_users")
-        .select(`
-          id,
-          blocked_user_id,
-          reason,
-          created_at
-        `)
+        .select("id, blocked_user_id, reason, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
       // Fetch profiles for blocked users
-      if (data && data.length > 0) {
-        const blockedIds = data.map(b => b.blocked_user_id);
+      if (blockedData && blockedData.length > 0) {
+        const blockedIds = blockedData.map(b => b.blocked_user_id);
         const { data: profiles } = await supabase
           .from("profiles")
           .select("user_id, display_name, username")
@@ -59,7 +78,7 @@ export function PrivacySection() {
 
         const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
         
-        setBlockedUsers(data.map(b => ({
+        setBlockedUsers(blockedData.map(b => ({
           ...b,
           profile: profileMap.get(b.blocked_user_id)
         })));
@@ -67,10 +86,31 @@ export function PrivacySection() {
         setBlockedUsers([]);
       }
     } catch (error) {
-      console.error("Error fetching blocked users:", error);
-      toast.error("Failed to load blocked users");
+      console.error("Error fetching privacy data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const updatePreference = async (key: keyof UserPreferences, value: boolean) => {
+    if (!user) return;
+
+    setSaving(key);
+    try {
+      const { error } = await supabase
+        .from("user_preferences")
+        .update({ [key]: value })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      setPreferences((prev) => (prev ? { ...prev, [key]: value } : null));
+      toast.success("Preference saved");
+    } catch (error) {
+      console.error("Error updating preference:", error);
+      toast.error("Failed to save preference");
+    } finally {
+      setSaving(null);
     }
   };
 
@@ -107,11 +147,75 @@ export function PrivacySection() {
   });
 
   if (loading) {
-    return <SettingsCardSkeleton />;
+    return (
+      <div className="space-y-6">
+        <SettingsCardSkeleton />
+        <SettingsCardSkeleton />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
+      {/* AI & Analysis */}
+      <SettingsCard 
+        title="AI & Analysis" 
+        description="Control how AI features work with your content"
+      >
+        <div className="space-y-1">
+          <PreferenceToggle
+            icon={Brain}
+            label="Allow AI Analysis"
+            description="Let AI analyze your gameplay for insights"
+            checked={preferences?.allow_ai_analysis ?? true}
+            onCheckedChange={(v) => updatePreference("allow_ai_analysis", v)}
+            saving={saving === "allow_ai_analysis"}
+          />
+          <PreferenceToggle
+            icon={Brain}
+            label="Show AI Insights"
+            description="Display AI suggestions during session review"
+            checked={preferences?.show_ai_insights ?? true}
+            onCheckedChange={(v) => updatePreference("show_ai_insights", v)}
+            saving={saving === "show_ai_insights"}
+          />
+        </div>
+      </SettingsCard>
+
+      {/* Notifications */}
+      <SettingsCard 
+        title="Notifications" 
+        description="Choose what notifications you receive"
+      >
+        <div className="space-y-1">
+          <PreferenceToggle
+            icon={Bell}
+            label="Share Notifications"
+            description="When someone shares a session with you"
+            checked={preferences?.notify_on_share ?? true}
+            onCheckedChange={(v) => updatePreference("notify_on_share", v)}
+            saving={saving === "notify_on_share"}
+          />
+          <PreferenceToggle
+            icon={Bell}
+            label="Comment Notifications"
+            description="When someone comments on your content"
+            checked={preferences?.notify_on_comment ?? true}
+            onCheckedChange={(v) => updatePreference("notify_on_comment", v)}
+            saving={saving === "notify_on_comment"}
+          />
+          <PreferenceToggle
+            icon={Bell}
+            label="Analysis Complete"
+            description="When AI analysis finishes processing"
+            checked={preferences?.notify_on_analysis_complete ?? true}
+            onCheckedChange={(v) => updatePreference("notify_on_analysis_complete", v)}
+            saving={saving === "notify_on_analysis_complete"}
+          />
+        </div>
+      </SettingsCard>
+
+      {/* Blocked Users */}
       <SettingsCard 
         title="Blocked Users" 
         description="Users you've blocked can't interact with your content"
@@ -159,9 +263,6 @@ export function PrivacySection() {
                         @{blocked.profile.username}
                       </p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-0.5 ml-6">
-                      Blocked {new Date(blocked.created_at).toLocaleDateString()}
-                    </p>
                   </div>
                   <Button
                     variant="ghost"
@@ -195,16 +296,19 @@ export function PrivacySection() {
       {/* Data & Privacy */}
       <SettingsCard 
         title="Data & Privacy" 
-        description="Manage your data and privacy settings"
+        description="Manage your data"
       >
-        <div className="space-y-4">
-          <div className="py-3 border-b border-border/20">
+        <div className="space-y-1">
+          <div className="py-3 border-b border-border/20 last:border-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Export Your Data</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Download a copy of all your data
-                </p>
+              <div className="flex items-center gap-3">
+                <Download className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Export Your Data</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Download a copy of all your data
+                  </p>
+                </div>
               </div>
               <Button
                 variant="outline"
@@ -218,11 +322,14 @@ export function PrivacySection() {
           </div>
           <div className="py-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Clear Watch History</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Remove your viewing activity
-                </p>
+              <div className="flex items-center gap-3">
+                <History className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Clear Watch History</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Remove your viewing activity
+                  </p>
+                </div>
               </div>
               <Button
                 variant="outline"
@@ -236,6 +343,44 @@ export function PrivacySection() {
           </div>
         </div>
       </SettingsCard>
+    </div>
+  );
+}
+
+interface PreferenceToggleProps {
+  icon: React.ElementType;
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  saving?: boolean;
+}
+
+function PreferenceToggle({
+  icon: Icon,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  saving,
+}: PreferenceToggleProps) {
+  return (
+    <div className="py-3 border-b border-border/20 last:border-0">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <Icon className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <Label className="text-sm font-medium text-foreground">{label}</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+          </div>
+        </div>
+        <Switch
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          disabled={saving}
+          className={cn(saving && "opacity-50")}
+        />
+      </div>
     </div>
   );
 }
