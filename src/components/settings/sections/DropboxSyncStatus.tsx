@@ -457,13 +457,15 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         return;
       }
 
-      log("Triggering Dropbox sync via edge function...");
+      log("Triggering SYNCHRONOUS Dropbox sync (waiting for completion)...");
+      log("Using /sync endpoint (not /sync/auto)...");
       
-      // Call the sync endpoint directly with more detail
+      // Use synchronous /sync endpoint instead of /sync/auto
+      // This waits for the actual upload to complete before returning
       const startTime = Date.now();
       const response = await supabase.functions.invoke("dropbox-sync", {
         body: { sessionId: session.id },
-        headers: { "x-custom-path": "/sync/auto" },
+        headers: { "x-custom-path": "/sync" },
       });
 
       const elapsed = Date.now() - startTime;
@@ -477,34 +479,58 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         return;
       }
 
-      log(`Response: ${JSON.stringify(response.data)}`);
+      // Log the structured response from edge function
+      const data = response.data;
+      log("─── DROPBOX SYNC RESULT ───");
+      log(`success: ${data?.success ?? false}`);
+      log(`method_used: ${data?.method_used ?? "(none)"}`);
+      log(`target_path: ${data?.target_path ?? "(none)"}`);
+      log(`dropbox_file_id: ${data?.dropbox_file_id ?? "(none)"}`);
+      log(`dropbox_rev: ${data?.dropbox_rev ?? "(none)"}`);
+      log(`size_bytes: ${data?.size_bytes ? `${(data.size_bytes / 1024 / 1024).toFixed(2)} MB` : "(none)"}`);
+      log(`verified_exists: ${data?.verified_exists ?? false}`);
+      if (data?.error) {
+        log(`error: ${data.error}`);
+      }
+      log("───────────────────────────");
 
-      // Check final sync status
+      // Check database sync status for confirmation
       const { data: finalStatus } = await supabase
         .from("dropbox_sync_status")
-        .select("sync_status, dropbox_path, error_message, file_size_bytes")
+        .select("sync_status, dropbox_path, dropbox_file_id, error_message, file_size_bytes")
         .eq("session_id", session.id)
         .single();
 
       if (finalStatus) {
-        log(`Final status: ${finalStatus.sync_status}`);
-        if (finalStatus.dropbox_path) {
-          log(`Dropbox path: ${finalStatus.dropbox_path}`);
-        }
-        if (finalStatus.file_size_bytes) {
-          log(`Uploaded size: ${(finalStatus.file_size_bytes / 1024 / 1024).toFixed(2)} MB`);
-        }
+        log("─── DATABASE SYNC STATUS ───");
+        log(`sync_status: ${finalStatus.sync_status}`);
+        log(`dropbox_path: ${finalStatus.dropbox_path || "(not set)"}`);
+        log(`dropbox_file_id: ${finalStatus.dropbox_file_id || "(not set)"}`);
+        log(`file_size_bytes: ${finalStatus.file_size_bytes ? `${(finalStatus.file_size_bytes / 1024 / 1024).toFixed(2)} MB` : "(not set)"}`);
         if (finalStatus.error_message) {
-          log(`Error: ${finalStatus.error_message}`);
+          log(`error_message: ${finalStatus.error_message}`);
         }
+        log("────────────────────────────");
       }
 
-      if (response.data?.success || finalStatus?.sync_status === "completed") {
-        log("SUCCESS: Upload completed!");
-        toast.success("Debug upload succeeded");
+      // Verify success based on actual data
+      const isVerifiedSuccess = data?.verified_exists === true && data?.dropbox_file_id;
+      
+      if (isVerifiedSuccess) {
+        log("✓ SUCCESS: File uploaded and VERIFIED in Dropbox!");
+        toast.success("Debug upload succeeded", {
+          description: `File verified at ${data.target_path}`,
+        });
+      } else if (data?.success && !data?.verified_exists) {
+        log("⚠ WARNING: Upload returned success but file NOT verified");
+        toast.warning("Upload status unclear", {
+          description: "Upload completed but verification failed",
+        });
       } else {
-        log("Upload may still be processing in background...");
-        toast.info("Upload triggered - check logs for result");
+        log("✗ FAILED: Upload did not complete successfully");
+        toast.error("Debug upload failed", {
+          description: data?.error || "Upload verification failed",
+        });
       }
 
       // Refresh stats

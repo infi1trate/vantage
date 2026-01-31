@@ -1670,32 +1670,48 @@ async function handleSync(
 
     console.log(`[DropboxSync] Successfully synced and VERIFIED session ${sessionId} to ${dropboxPath}`);
 
+    // Determine upload method used based on file size
+    const methodUsed = fileSize > 50 * 1024 * 1024 ? "upload_session" : "stream_upload";
+
     return new Response(
       JSON.stringify({
         success: true,
-        path: uploadResult.uploadResult?.path_display || dropboxPath,
-        fileId: verification.fileId || uploadResult.uploadResult?.id,
-        size: verification.size || fileSize,
-        verified: true,
+        method_used: methodUsed,
+        target_path: uploadResult.uploadResult?.path_display || dropboxPath,
+        dropbox_file_id: verification.fileId || uploadResult.uploadResult?.id,
+        dropbox_rev: verification.rev,
+        size_bytes: verification.size || fileSize,
+        verified_exists: true,
+        error: null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
     console.error("[DropboxSync] Sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Update sync status to failed
     await supabase
       .from("dropbox_sync_status")
       .update({
         sync_status: "failed",
-        error_message: error instanceof Error ? error.message : "Unknown error",
+        error_message: errorMessage,
         updated_at: new Date().toISOString(),
       })
       .eq("session_id", sessionId);
 
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Sync failed" }),
+      JSON.stringify({ 
+        success: false,
+        method_used: null,
+        target_path: null,
+        dropbox_file_id: null,
+        dropbox_rev: null,
+        size_bytes: null,
+        verified_exists: false,
+        error: errorMessage,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
