@@ -480,34 +480,43 @@ export type Database = {
         Row: {
           connected_at: string
           display_handle: string | null
+          encrypted_access_token: string | null
+          encrypted_refresh_token: string | null
           id: string
           last_used_at: string | null
           provider: string
           provider_account_id: string
           provider_email: string | null
           provisioning_status: string | null
+          token_expires_at: string | null
           user_id: string
         }
         Insert: {
           connected_at?: string
           display_handle?: string | null
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
           id?: string
           last_used_at?: string | null
           provider: string
           provider_account_id: string
           provider_email?: string | null
           provisioning_status?: string | null
+          token_expires_at?: string | null
           user_id: string
         }
         Update: {
           connected_at?: string
           display_handle?: string | null
+          encrypted_access_token?: string | null
+          encrypted_refresh_token?: string | null
           id?: string
           last_used_at?: string | null
           provider?: string
           provider_account_id?: string
           provider_email?: string | null
           provisioning_status?: string | null
+          token_expires_at?: string | null
           user_id?: string
         }
         Relationships: []

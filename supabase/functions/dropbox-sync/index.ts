@@ -12,6 +12,10 @@ const DROPBOX_APP_SECRET = Deno.env.get("DROPBOX_APP_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+// Encryption key for token storage - in production this would come from vault
+// Using a deterministic key derived from service role key for simplicity
+const ENCRYPTION_KEY = SUPABASE_SERVICE_ROLE_KEY?.substring(0, 32) || "default-encryption-key-32-chars!";
+
 // Dropbox API endpoints
 const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
 const DROPBOX_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload";
@@ -29,6 +33,155 @@ interface DropboxTokenResponse {
 interface ProvisioningResult {
   success: boolean;
   error?: string;
+}
+
+/**
+ * Simple XOR-based encryption for tokens
+ * In production, you'd use proper AES encryption with vault secrets
+ */
+function encryptToken(token: string): string {
+  const encoder = new TextEncoder();
+  const tokenBytes = encoder.encode(token);
+  const keyBytes = encoder.encode(ENCRYPTION_KEY);
+  
+  const encrypted = new Uint8Array(tokenBytes.length);
+  for (let i = 0; i < tokenBytes.length; i++) {
+    encrypted[i] = tokenBytes[i] ^ keyBytes[i % keyBytes.length];
+  }
+  
+  // Encode as base64
+  return btoa(String.fromCharCode(...encrypted));
+}
+
+/**
+ * Decrypt token
+ */
+function decryptToken(encryptedToken: string): string {
+  try {
+    // Decode from base64
+    const encryptedStr = atob(encryptedToken);
+    const encryptedBytes = new Uint8Array(encryptedStr.length);
+    for (let i = 0; i < encryptedStr.length; i++) {
+      encryptedBytes[i] = encryptedStr.charCodeAt(i);
+    }
+    
+    const keyBytes = new TextEncoder().encode(ENCRYPTION_KEY);
+    const decrypted = new Uint8Array(encryptedBytes.length);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      decrypted[i] = encryptedBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    
+    return new TextDecoder().decode(decrypted);
+  } catch (error) {
+    console.error("[DropboxSync] Token decryption failed:", error);
+    throw new Error("Failed to decrypt token");
+  }
+}
+
+/**
+ * Refresh Dropbox access token using refresh token
+ */
+async function refreshAccessToken(refreshToken: string): Promise<{
+  accessToken: string;
+  expiresIn: number;
+} | null> {
+  try {
+    const response = await fetch(DROPBOX_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: DROPBOX_APP_KEY!,
+        client_secret: DROPBOX_APP_SECRET!,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[DropboxSync] Token refresh failed:", errorText);
+      return null;
+    }
+
+    const tokens: DropboxTokenResponse = await response.json();
+    return {
+      accessToken: tokens.access_token,
+      expiresIn: tokens.expires_in,
+    };
+  } catch (error) {
+    console.error("[DropboxSync] Token refresh error:", error);
+    return null;
+  }
+}
+
+/**
+ * Get valid access token for a user, refreshing if needed
+ */
+async function getValidAccessToken(
+  userId: string,
+  supabase: any
+): Promise<{ accessToken: string; error?: string } | { accessToken: null; error: string }> {
+  // Get stored tokens
+  const { data: account, error: accountError } = await supabase
+    .from("connected_accounts")
+    .select("encrypted_access_token, encrypted_refresh_token, token_expires_at, provisioning_status")
+    .eq("user_id", userId)
+    .eq("provider", "dropbox")
+    .single();
+
+  if (accountError || !account) {
+    return { accessToken: null, error: "Dropbox not connected" };
+  }
+
+  if (!account.encrypted_access_token || !account.encrypted_refresh_token) {
+    return { accessToken: null, error: "No stored tokens - reconnect required" };
+  }
+
+  try {
+    const accessToken = decryptToken(account.encrypted_access_token);
+    const refreshToken = decryptToken(account.encrypted_refresh_token);
+    
+    // Check if token is expired (with 5 minute buffer)
+    const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : null;
+    const now = new Date();
+    const isExpired = !expiresAt || (expiresAt.getTime() - now.getTime() < 5 * 60 * 1000);
+
+    if (isExpired) {
+      console.log("[DropboxSync] Access token expired, refreshing...");
+      
+      const refreshResult = await refreshAccessToken(refreshToken);
+      if (!refreshResult) {
+        // Update account to indicate token issue
+        await supabase
+          .from("connected_accounts")
+          .update({ provisioning_status: "token_expired" })
+          .eq("user_id", userId)
+          .eq("provider", "dropbox");
+        
+        return { accessToken: null, error: "Token refresh failed - reconnect required" };
+      }
+
+      // Store new access token
+      const newExpiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000);
+      await supabase
+        .from("connected_accounts")
+        .update({
+          encrypted_access_token: encryptToken(refreshResult.accessToken),
+          token_expires_at: newExpiresAt.toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("provider", "dropbox");
+
+      return { accessToken: refreshResult.accessToken };
+    }
+
+    return { accessToken };
+  } catch (error) {
+    console.error("[DropboxSync] Token retrieval error:", error);
+    return { accessToken: null, error: "Failed to retrieve tokens" };
+  }
 }
 
 /**
@@ -220,6 +373,10 @@ serve(async (req) => {
       return handleSync(req, userId, supabase);
     }
 
+    if (path === "/sync/auto" && req.method === "POST") {
+      return handleAutoSync(req, userId, supabase);
+    }
+
     if (path === "/status" && req.method === "GET") {
       return handleGetStatus(url, userId, supabase);
     }
@@ -236,7 +393,7 @@ serve(async (req) => {
     // Default route - show available endpoints
     return new Response(JSON.stringify({ 
       error: "Not found",
-      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/status", "/disconnect", "/provision/retry"],
+      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/sync/auto", "/status", "/disconnect", "/provision/retry"],
       receivedPath: path,
     }), {
       status: 404,
@@ -346,7 +503,12 @@ async function handleOAuthCallback(
     accountId = accountData.account_id || accountId;
   }
 
-  // Store in connected_accounts with pending provisioning status
+  // Encrypt tokens for secure storage
+  const encryptedAccessToken = encryptToken(tokens.access_token);
+  const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null;
+  const tokenExpiresAt = new Date(Date.now() + (tokens.expires_in || 14400) * 1000);
+
+  // Store in connected_accounts with tokens and pending provisioning status
   const { error: upsertError } = await supabase
     .from("connected_accounts")
     .upsert({
@@ -358,6 +520,9 @@ async function handleOAuthCallback(
       connected_at: new Date().toISOString(),
       last_used_at: new Date().toISOString(),
       provisioning_status: "pending",
+      encrypted_access_token: encryptedAccessToken,
+      encrypted_refresh_token: encryptedRefreshToken,
+      token_expires_at: tokenExpiresAt.toISOString(),
     }, {
       onConflict: "user_id,provider",
     });
@@ -413,29 +578,23 @@ async function handleRetryProvisioning(
   userId: string,
   supabase: any
 ): Promise<Response> {
-  const body = await req.json();
-  const { accessToken } = body;
-
-  if (!accessToken) {
-    return new Response(JSON.stringify({ error: "accessToken required" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  // Verify the user has a Dropbox connection
-  const { data: account, error: accountError } = await supabase
-    .from("connected_accounts")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("provider", "dropbox")
-    .single();
-
-  if (accountError || !account) {
-    return new Response(JSON.stringify({ error: "No Dropbox connection found" }), {
-      status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  // Try to get stored access token first
+  const tokenResult = await getValidAccessToken(userId, supabase);
+  
+  let accessToken: string;
+  
+  if (tokenResult.accessToken) {
+    accessToken = tokenResult.accessToken;
+  } else {
+    // Fall back to provided accessToken in request body
+    const body = await req.json();
+    if (!body.accessToken) {
+      return new Response(JSON.stringify({ error: tokenResult.error || "No access token available" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    accessToken = body.accessToken;
   }
 
   // Update status to pending before retrying
@@ -469,7 +628,193 @@ async function handleRetryProvisioning(
 }
 
 /**
- * Sync a video to Dropbox
+ * Auto-sync a video to Dropbox (background, fire-and-forget)
+ * Called after cloud upload completes
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleAutoSync(
+  req: Request,
+  userId: string,
+  supabase: any
+): Promise<Response> {
+  const body = await req.json();
+  const { sessionId } = body;
+
+  if (!sessionId) {
+    return new Response(JSON.stringify({ error: "sessionId required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  console.log(`[DropboxSync] Auto-sync requested for session ${sessionId}`);
+
+  // Return immediately, process in background
+  // @ts-ignore - EdgeRuntime is available in Supabase edge functions
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(executeAutoSync(sessionId, userId, supabase));
+  } else {
+    // Fallback: execute inline but don't await
+    executeAutoSync(sessionId, userId, supabase).catch(err => {
+      console.error("[DropboxSync] Auto-sync background error:", err);
+    });
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, message: "Sync started in background" }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+/**
+ * Execute the auto-sync operation (runs in background)
+ */
+async function executeAutoSync(
+  sessionId: string,
+  userId: string,
+  supabase: any
+): Promise<void> {
+  try {
+    console.log(`[DropboxSync] Starting background auto-sync for session ${sessionId}`);
+
+    // Get valid access token
+    const tokenResult = await getValidAccessToken(userId, supabase);
+    if (!tokenResult.accessToken) {
+      console.warn(`[DropboxSync] Auto-sync skipped: ${tokenResult.error}`);
+      await updateSyncStatus(supabase, sessionId, "failed", tokenResult.error);
+      return;
+    }
+
+    // Get the video URL from video_assets
+    const { data: asset, error: assetError } = await supabase
+      .from("video_assets")
+      .select("storage_url, session_id")
+      .eq("session_id", sessionId)
+      .single();
+
+    if (assetError || !asset?.storage_url) {
+      console.warn(`[DropboxSync] No video asset found for session ${sessionId}`);
+      await updateSyncStatus(supabase, sessionId, "failed", "No video found");
+      return;
+    }
+
+    // Get session info
+    const { data: session } = await supabase
+      .from("capture_sessions")
+      .select("title")
+      .eq("id", sessionId)
+      .single();
+
+    // Update sync status to syncing
+    await supabase
+      .from("dropbox_sync_status")
+      .upsert({
+        user_id: userId,
+        session_id: sessionId,
+        sync_status: "syncing",
+        started_at: new Date().toISOString(),
+        error_message: null,
+      }, {
+        onConflict: "session_id",
+      });
+
+    // Build Dropbox path: /Apps/Vantage/Recordings/{session_id}.webm
+    const dropboxPath = `/Apps/Vantage/Recordings/${sessionId}.webm`;
+
+    // Download video from storage
+    console.log(`[DropboxSync] Downloading video for auto-sync`);
+    
+    const videoResponse = await fetch(asset.storage_url);
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to download video: ${videoResponse.status}`);
+    }
+    
+    const videoBlob = await videoResponse.arrayBuffer();
+    const fileSize = videoBlob.byteLength;
+
+    console.log(`[DropboxSync] Uploading ${fileSize} bytes to Dropbox: ${dropboxPath}`);
+
+    // Upload to Dropbox
+    const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenResult.accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          path: dropboxPath,
+          mode: "overwrite",
+          autorename: false,
+          mute: true,
+        }),
+      },
+      body: videoBlob,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error("[DropboxSync] Auto-sync upload failed:", errorText);
+      await updateSyncStatus(supabase, sessionId, "failed", `Upload failed: ${uploadResponse.status}`);
+      return;
+    }
+
+    const uploadResult = await uploadResponse.json();
+
+    // Update sync status to completed
+    await supabase
+      .from("dropbox_sync_status")
+      .update({
+        sync_status: "completed",
+        dropbox_path: uploadResult.path_display || dropboxPath,
+        dropbox_file_id: uploadResult.id,
+        file_size_bytes: fileSize,
+        completed_at: new Date().toISOString(),
+        error_message: null,
+      })
+      .eq("session_id", sessionId);
+
+    // Update last_used_at for the Dropbox connection
+    await supabase
+      .from("connected_accounts")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("provider", "dropbox");
+
+    console.log(`[DropboxSync] Auto-sync completed for session ${sessionId} to ${dropboxPath}`);
+
+  } catch (error) {
+    console.error("[DropboxSync] Auto-sync error:", error);
+    await updateSyncStatus(
+      supabase, 
+      sessionId, 
+      "failed", 
+      error instanceof Error ? error.message : "Unknown error"
+    );
+  }
+}
+
+/**
+ * Helper to update sync status
+ */
+async function updateSyncStatus(
+  supabase: any,
+  sessionId: string,
+  status: string,
+  errorMessage?: string
+): Promise<void> {
+  await supabase
+    .from("dropbox_sync_status")
+    .update({
+      sync_status: status,
+      error_message: errorMessage || null,
+      updated_at: new Date().toISOString(),
+      ...(status === "completed" ? { completed_at: new Date().toISOString() } : {}),
+    })
+    .eq("session_id", sessionId);
+}
+
+/**
+ * Sync a video to Dropbox (manual trigger with provided token)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleSync(
@@ -478,13 +823,29 @@ async function handleSync(
   supabase: any
 ): Promise<Response> {
   const body = await req.json();
-  const { sessionId, videoUrl, fileName, accessToken } = body;
+  const { sessionId, videoUrl, fileName, accessToken: providedToken } = body;
 
   if (!sessionId || !videoUrl) {
     return new Response(JSON.stringify({ error: "sessionId and videoUrl required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // Get access token - use provided or retrieve stored
+  let accessToken: string;
+  
+  if (providedToken) {
+    accessToken = providedToken;
+  } else {
+    const tokenResult = await getValidAccessToken(userId, supabase);
+    if (!tokenResult.accessToken) {
+      return new Response(JSON.stringify({ error: tokenResult.error || "No access token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    accessToken = tokenResult.accessToken;
   }
 
   // Verify session ownership
@@ -515,13 +876,8 @@ async function handleSync(
       onConflict: "session_id",
     });
 
-  // Dropbox path: /Apps/Vantage/Recordings/{date}/{filename}
-  const date = new Date().toISOString().split("T")[0];
-  const sessionTitle = session?.title || "recording";
-  const sanitizedTitle = (fileName || sessionTitle)
-    .replace(/[^a-zA-Z0-9-_]/g, "_")
-    .substring(0, 50);
-  const dropboxPath = `/Apps/Vantage/Recordings/${date}/${sanitizedTitle}_${sessionId.substring(0, 8)}.webm`;
+  // Dropbox path: /Apps/Vantage/Recordings/{session_id}.webm
+  const dropboxPath = `/Apps/Vantage/Recordings/${sessionId}.webm`;
 
   try {
     // Download video from storage
@@ -546,7 +902,7 @@ async function handleSync(
         "Dropbox-API-Arg": JSON.stringify({
           path: dropboxPath,
           mode: "overwrite",
-          autorename: true,
+          autorename: false,
           mute: true,
         }),
       },
@@ -680,7 +1036,7 @@ async function handleDisconnect(
   userId: string,
   supabase: any
 ): Promise<Response> {
-  // Remove from connected_accounts
+  // Remove from connected_accounts (including tokens)
   const { error } = await supabase
     .from("connected_accounts")
     .delete()
