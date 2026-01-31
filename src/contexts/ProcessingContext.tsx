@@ -7,7 +7,6 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { ProcessingJob, loadProcessingJobs, dismissProcessingJob } from "@/lib/processingJobs";
 import { processingManager } from "@/lib/processingManager";
 import { toast } from "@/hooks/use-toast";
@@ -69,21 +68,10 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
   // Track which jobs we've already shown completion notifications for
   const notifiedJobIds = useRef<Set<string>>(new Set());
   
-  // Use a ref for navigation to avoid re-creating callbacks
-  const navigateRef = useRef<((path: string) => void) | null>(null);
-  
   // Show completion toast and browser notification
   const showCompletionNotification = useCallback((job: ProcessingJob) => {
-    // Navigate function for click handlers
-    const navigateTo = (path: string) => {
-      if (navigateRef.current) {
-        navigateRef.current(path);
-      } else {
-        window.location.href = path;
-      }
-    };
-    
-    // Toast notification with action button
+    // Toast notification with action button - use window.location for navigation
+    // since ProcessingProvider is outside RouterProvider
     toast({
       title: "Video ready",
       description: job.sessionTitle,
@@ -92,7 +80,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
           variant="default"
           size="sm"
           className="h-7 px-3"
-          onClick={() => navigateTo(`/session/${job.sessionId}`)}
+          onClick={() => { window.location.href = `/session/${job.sessionId}`; }}
         >
           <Eye className="h-3.5 w-3.5 mr-1.5" />
           View & Annotate
@@ -104,7 +92,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
     // Browser notification (if permission granted)
     if (getNotificationPermission() === "granted") {
       showVideoReadyNotification(job.sessionTitle, () => {
-        navigateTo(`/session/${job.sessionId}`);
+        window.location.href = `/session/${job.sessionId}`;
       });
     }
   }, []);
@@ -222,30 +210,11 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
         setFooterExpanded,
         isFooterVisible,
       }}
-    >
-      <NavigateInjector navigateRef={navigateRef} />
-      {children}
-    </ProcessingContext.Provider>
-  );
-}
-
-// Helper component to inject navigate function into ref (avoids hook rules issues)
-function NavigateInjector({ 
-  navigateRef 
-}: { 
-  navigateRef: React.MutableRefObject<((path: string) => void) | null> 
-}) {
-  const navigate = useNavigate();
-  
-  useEffect(() => {
-    navigateRef.current = navigate;
-    return () => {
-      navigateRef.current = null;
-    };
-  }, [navigate, navigateRef]);
-  
-  return null;
-}
+      >
+        {children}
+      </ProcessingContext.Provider>
+    );
+  }
 
 export function useProcessing() {
   const context = useContext(ProcessingContext);
