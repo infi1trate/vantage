@@ -131,6 +131,8 @@ export interface SessionWithAssets {
   has_facecam: boolean;
   annotation_count: number;
   voice_note_count: number;
+  // Dropbox sync status
+  dropbox_synced: boolean;
 }
 
 export async function getSessionsWithAssets(userId: string): Promise<SessionWithAssets[]> {
@@ -147,13 +149,14 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
 
   const sessionIds = sessions.map(s => s.id);
 
-  // Get asset counts in parallel
-  const [videoAssets, audioTracks, facecamTracks, annotations, voiceNotes] = await Promise.all([
+  // Get asset counts in parallel (including Dropbox sync status)
+  const [videoAssets, audioTracks, facecamTracks, annotations, voiceNotes, dropboxSyncs] = await Promise.all([
     supabase.from("video_assets").select("session_id").in("session_id", sessionIds),
     supabase.from("audio_tracks").select("session_id, track_type").in("session_id", sessionIds),
     supabase.from("facecam_tracks").select("session_id").in("session_id", sessionIds),
     supabase.from("annotations").select("session_id").in("session_id", sessionIds),
     supabase.from("voice_notes").select("session_id").in("session_id", sessionIds),
+    supabase.from("dropbox_sync_status").select("session_id, sync_status").in("session_id", sessionIds),
   ]);
 
   // Build lookup maps
@@ -162,6 +165,11 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
     audioTracks.data?.filter(a => a.track_type === "microphone").map(a => a.session_id) || []
   );
   const facecamSessionIds = new Set(facecamTracks.data?.map(f => f.session_id) || []);
+  
+  // Only include sessions with completed Dropbox sync
+  const dropboxSyncedSessionIds = new Set(
+    dropboxSyncs.data?.filter(d => d.sync_status === "completed").map(d => d.session_id) || []
+  );
   
   const annotationCounts: Record<string, number> = {};
   annotations.data?.forEach(a => {
@@ -191,5 +199,6 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
     has_facecam: facecamSessionIds.has(session.id),
     annotation_count: annotationCounts[session.id] || 0,
     voice_note_count: voiceNoteCounts[session.id] || 0,
+    dropbox_synced: dropboxSyncedSessionIds.has(session.id),
   }));
 }
