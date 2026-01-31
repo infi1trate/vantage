@@ -103,19 +103,35 @@ export default function SessionLibrary() {
     
     const checkBackupStatus = async () => {
       try {
-        const { data, error } = await supabase
+        // Check connection status
+        const { data: accountData, error: accountError } = await supabase
           .from("connected_accounts")
           .select("provisioning_status")
           .eq("user_id", user.id)
           .eq("provider", "dropbox")
           .single();
         
-        if (error || !data) {
+        if (accountError || !accountData) {
           setBackupStatus(null); // Not connected
-        } else if (data.provisioning_status === "completed") {
-          setBackupStatus("active");
-        } else {
+          return;
+        }
+        
+        if (accountData.provisioning_status !== "completed") {
           setBackupStatus("needs_attention");
+          return;
+        }
+        
+        // Connected and provisioned - check for failed syncs
+        const { count: failedCount } = await supabase
+          .from("dropbox_sync_status")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("sync_status", "failed");
+        
+        if (failedCount && failedCount > 0) {
+          setBackupStatus("needs_attention");
+        } else {
+          setBackupStatus("active");
         }
       } catch {
         setBackupStatus(null);
