@@ -42,17 +42,11 @@ const ProcessingJobItem = memo(function ProcessingJobItem({
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
   
-  // Calculate progress based on stages
-  const progress = useMemo(() => {
-    if (job.currentStageIndex < 0) return 0;
-    const stageProgress = ((job.currentStageIndex + 1) / job.stages.length) * 100;
-    return Math.min(stageProgress, 100);
-  }, [job.currentStageIndex, job.stages.length]);
+  // Use direct progress from job (set by ProcessingManager)
+  const progress = job.progress;
   
-  const currentStageLabel = useMemo(() => {
-    if (job.currentStageIndex < 0) return "Queued";
-    return job.stages[job.currentStageIndex]?.label || "Processing";
-  }, [job.currentStageIndex, job.stages]);
+  // Use step label from job
+  const currentStageLabel = job.step || (job.status === "queued" ? "Queued" : "Processing");
   
   const statusIcon = useMemo(() => {
     switch (job.status) {
