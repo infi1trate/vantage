@@ -223,10 +223,10 @@ export default function SessionReview() {
         getFacecamTracks(sessionId!).catch(() => []),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
-        // Fetch Dropbox sync status
+        // Fetch Dropbox sync status with file verification
         supabase
           .from("dropbox_sync_status")
-          .select("sync_status")
+          .select("sync_status, dropbox_file_id, dropbox_path")
           .eq("session_id", sessionId!)
           .maybeSingle()
           .then(({ data }) => data),
@@ -239,11 +239,14 @@ export default function SessionReview() {
       setAnnotations(annotationsData);
       setVoiceNotes(voiceNotesData);
       
-      // Map Dropbox sync status
+      // Map Dropbox sync status - only "synced" if file was actually uploaded
       if (dropboxSyncData) {
-        if (dropboxSyncData.sync_status === "completed") {
+        const hasVerifiedUpload = !!(dropboxSyncData.dropbox_file_id || dropboxSyncData.dropbox_path);
+        
+        if (dropboxSyncData.sync_status === "completed" && hasVerifiedUpload) {
           setDropboxSyncStatus("synced");
-        } else if (dropboxSyncData.sync_status === "failed") {
+        } else if (dropboxSyncData.sync_status === "failed" || 
+                   (dropboxSyncData.sync_status === "completed" && !hasVerifiedUpload)) {
           setDropboxSyncStatus("failed");
         } else {
           setDropboxSyncStatus("pending");

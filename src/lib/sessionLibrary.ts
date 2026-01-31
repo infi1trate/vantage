@@ -151,13 +151,14 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
   const sessionIds = sessions.map(s => s.id);
 
   // Get asset counts in parallel (including Dropbox sync status)
+  // Include dropbox_file_id to verify file was actually uploaded
   const [videoAssets, audioTracks, facecamTracks, annotations, voiceNotes, dropboxSyncs] = await Promise.all([
     supabase.from("video_assets").select("session_id").in("session_id", sessionIds),
     supabase.from("audio_tracks").select("session_id, track_type").in("session_id", sessionIds),
     supabase.from("facecam_tracks").select("session_id").in("session_id", sessionIds),
     supabase.from("annotations").select("session_id").in("session_id", sessionIds),
     supabase.from("voice_notes").select("session_id").in("session_id", sessionIds),
-    supabase.from("dropbox_sync_status").select("session_id, sync_status, completed_at").in("session_id", sessionIds),
+    supabase.from("dropbox_sync_status").select("session_id, sync_status, completed_at, dropbox_file_id, dropbox_path").in("session_id", sessionIds),
   ]);
 
   // Build lookup maps
@@ -175,9 +176,14 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
   
   dropboxSyncs.data?.forEach(d => {
     let status: "pending" | "synced" | "failed";
-    if (d.sync_status === "completed") {
+    // Only mark as "synced" if status is completed AND file was actually uploaded
+    // (verified by presence of dropbox_file_id or dropbox_path)
+    if (d.sync_status === "completed" && (d.dropbox_file_id || d.dropbox_path)) {
       status = "synced";
     } else if (d.sync_status === "failed") {
+      status = "failed";
+    } else if (d.sync_status === "completed" && !d.dropbox_file_id && !d.dropbox_path) {
+      // Completed but no file ID = treat as failed (upload didn't actually happen)
       status = "failed";
     } else {
       status = "pending";
