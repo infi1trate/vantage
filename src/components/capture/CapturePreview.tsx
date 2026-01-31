@@ -1,10 +1,17 @@
-import { useEffect, useRef, memo } from "react";
+import { useEffect, useRef, memo, useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
-import { Mic, Shield, Circle, Pause } from "lucide-react";
+import { Mic, MicOff, Shield, Circle, Pause, AlertTriangle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CapturePreviewProps {
   screenStream: MediaStream | null;
   facecamStream: MediaStream | null;
+  microphoneStream: MediaStream | null;
   isRecording: boolean;
   isPaused?: boolean;
   microphoneLevel: number;
@@ -16,9 +23,17 @@ interface CapturePreviewProps {
   };
 }
 
+/** Clipping threshold (0-1) - levels above this trigger warning */
+const CLIPPING_THRESHOLD = 0.92;
+/** How long to show clipping warning after level drops */
+const CLIPPING_PERSIST_MS = 1500;
+
+type MicState = "active" | "muted" | "unavailable";
+
 export const CapturePreview = memo(function CapturePreview({
   screenStream,
   facecamStream,
+  microphoneStream,
   isRecording,
   isPaused = false,
   microphoneLevel,
@@ -26,6 +41,10 @@ export const CapturePreview = memo(function CapturePreview({
 }: CapturePreviewProps) {
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const facecamVideoRef = useRef<HTMLVideoElement>(null);
+  
+  // Clipping detection state
+  const [isClipping, setIsClipping] = useState(false);
+  const clippingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (screenVideoRef.current && screenStream) {
@@ -38,6 +57,55 @@ export const CapturePreview = memo(function CapturePreview({
       facecamVideoRef.current.srcObject = facecamStream;
     }
   }, [facecamStream]);
+
+  // Detect clipping (mic level near max)
+  useEffect(() => {
+    if (microphoneLevel >= CLIPPING_THRESHOLD) {
+      setIsClipping(true);
+      
+      // Clear any existing timeout
+      if (clippingTimeoutRef.current) {
+        clearTimeout(clippingTimeoutRef.current);
+      }
+      
+      // Set timeout to hide clipping warning after level drops
+      clippingTimeoutRef.current = setTimeout(() => {
+        setIsClipping(false);
+      }, CLIPPING_PERSIST_MS);
+    }
+    
+    return () => {
+      if (clippingTimeoutRef.current) {
+        clearTimeout(clippingTimeoutRef.current);
+      }
+    };
+  }, [microphoneLevel]);
+
+  // Determine mic state based on stream and track status
+  const micState: MicState = useMemo(() => {
+    if (!microphoneStream) {
+      return "unavailable";
+    }
+    
+    const audioTracks = microphoneStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      return "unavailable";
+    }
+    
+    const track = audioTracks[0];
+    
+    // Check if track has ended
+    if (track.readyState === "ended") {
+      return "unavailable";
+    }
+    
+    // Check if track is muted/disabled
+    if (!track.enabled || track.muted) {
+      return "muted";
+    }
+    
+    return "active";
+  }, [microphoneStream]);
 
   // Determine status indicator
   const getStatusIndicator = () => {
@@ -64,6 +132,76 @@ export const CapturePreview = memo(function CapturePreview({
       <div className="flex items-center gap-2 bg-vantage-success/90 rounded-full px-3 py-1.5">
         <span className="w-2 h-2 rounded-full bg-background" />
         <span className="text-xs font-bold text-background uppercase tracking-wider">READY</span>
+      </div>
+    );
+  };
+
+  // Render mic indicator based on state
+  const renderMicIndicator = () => {
+    // Unavailable state - warning with tooltip
+    if (micState === "unavailable") {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-destructive/20 border border-destructive/40 backdrop-blur-sm rounded-full px-3 py-1.5">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <span className="text-xs text-destructive font-medium uppercase tracking-wider">Mic unavailable</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs">
+              <p className="text-sm">Microphone is not available. Check your device permissions or reconnect.</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    
+    // Muted state - show muted icon, no level bar
+    if (micState === "muted") {
+      return (
+        <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-3 py-1.5">
+          <MicOff className="h-4 w-4 text-muted-foreground" />
+          <div className="w-24 h-2 bg-muted/30 rounded-full" />
+          <span className="text-xs text-muted-foreground uppercase tracking-wider">Muted</span>
+        </div>
+      );
+    }
+    
+    // Active state - show animated level bar
+    return (
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-3 py-1.5">
+        <Mic 
+          className={`h-4 w-4 transition-colors duration-100 ${
+            isClipping 
+              ? "text-destructive" 
+              : microphoneLevel > 0.05 
+                ? "text-primary" 
+                : "text-muted-foreground"
+          }`} 
+        />
+        <div className="w-24 h-2 bg-muted/50 rounded-full overflow-hidden relative">
+          {/* Level bar */}
+          <div 
+            className={`h-full rounded-full ${isClipping ? "bg-destructive" : "bg-primary"}`}
+            style={{ 
+              width: `${Math.min(microphoneLevel * 100, 100)}%`,
+              transition: 'width 50ms ease-out',
+            }}
+          />
+          {/* Clipping threshold marker */}
+          <div 
+            className="absolute top-0 bottom-0 w-px bg-destructive/50"
+            style={{ left: `${CLIPPING_THRESHOLD * 100}%` }}
+          />
+        </div>
+        {isClipping ? (
+          <span className="text-xs text-destructive font-medium uppercase tracking-wider animate-pulse">
+            Clipping
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground uppercase tracking-wider">Mic</span>
+        )}
       </div>
     );
   };
@@ -117,20 +255,8 @@ export const CapturePreview = memo(function CapturePreview({
         </div>
       </div>
 
-      {/* Microphone level indicator - reacts live to voice */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-3 py-1.5">
-        <Mic className={`h-4 w-4 transition-colors duration-100 ${microphoneLevel > 0.05 ? "text-primary" : "text-muted-foreground"}`} />
-        <div className="w-24 h-2 bg-muted/50 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-primary rounded-full"
-            style={{ 
-              width: `${Math.min(microphoneLevel * 100, 100)}%`,
-              transition: 'width 50ms ease-out',
-            }}
-          />
-        </div>
-        <span className="text-xs text-muted-foreground uppercase tracking-wider">Mic</span>
-      </div>
+      {/* Microphone level indicator */}
+      {renderMicIndicator()}
     </Card>
   );
 });

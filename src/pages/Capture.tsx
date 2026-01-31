@@ -553,6 +553,7 @@ export default function CapturePage() {
           <CapturePreview
             screenStream={capture.screenStream}
             facecamStream={capture.facecamStream}
+            microphoneStream={capture.microphoneStream}
             isRecording={isRecording}
             isPaused={isPaused}
             microphoneLevel={capture.microphoneLevel}
