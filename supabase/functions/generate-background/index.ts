@@ -5,6 +5,71 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Background-safety constraints for prompt generation
+// Each retry level adds increasingly strict constraints
+const CONSTRAINT_LEVELS = [
+  // Level 0: Standard constraints
+  {
+    prefix: "A softly lit, wide-angle",
+    suffix: "environment with subtle depth and low contrast. Blurred background plate aesthetic with soft gradients and environmental textures. Absolutely no people, no faces, no human figures, no text, no logos, no readable objects, no strong focal points. Designed as a clean video call background with gentle ambient lighting and muted tones.",
+  },
+  // Level 1: Stricter - emphasize emptiness
+  {
+    prefix: "An empty, softly blurred, wide-angle",
+    suffix: "scene with very soft gradients and gentle depth blur. Abstract environmental texture only. CRITICAL: Zero people, zero faces, zero text, zero logos, zero focal subjects, zero high-frequency detail in center. Ultra-soft lighting, muted colors, background plate only.",
+  },
+  // Level 2: Maximum strictness - abstract only
+  {
+    prefix: "An abstract, defocused, minimal",
+    suffix: "atmospheric gradient with extremely soft environmental tones. Purely abstract shapes and colors. ABSOLUTELY NO: people, faces, figures, text, logos, objects, focal points, sharp details. Only soft color gradients and gentle lighting for video background use.",
+  },
+];
+
+const MAX_RETRIES = 3;
+
+async function generateImage(apiKey: string, prompt: string): Promise<{ imageUrl?: string; error?: string; status?: number }> {
+  try {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-image",
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        modalities: ["image", "text"],
+      }),
+    });
+
+    if (!response.ok) {
+      return { error: "API error", status: response.status };
+    }
+
+    const data = await response.json();
+    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    
+    if (!imageUrl) {
+      return { error: "No image generated" };
+    }
+
+    return { imageUrl };
+  } catch (err) {
+    console.error("[generate-background] Generation attempt failed:", err);
+    return { error: "Generation failed" };
+  }
+}
+
+function buildPrompt(userInput: string, level: number): string {
+  const constraints = CONSTRAINT_LEVELS[Math.min(level, CONSTRAINT_LEVELS.length - 1)];
+  return `${constraints.prefix} ${userInput.toLowerCase().trim()} ${constraints.suffix}`;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -25,71 +90,55 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Normalize user input into an optimized background prompt
-    // Rules: wide DOF, soft lighting, no focal subjects, no text/logos, background plate aesthetic
-    const normalizedPrompt = `A softly lit, wide-angle ${prompt.toLowerCase().trim()} environment with subtle depth and low contrast. Blurred background plate aesthetic, no people, no faces, no text, no logos, no readable objects, no focal subjects. Designed as a clean video call background with gentle ambient lighting and muted tones.`;
-    
     console.log("[generate-background] User input:", prompt);
-    console.log("[generate-background] Normalized prompt:", normalizedPrompt);
 
-    // Generate a background image using the image generation model
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
-        messages: [
-          {
-            role: "user",
-            content: normalizedPrompt,
-          },
-        ],
-        modalities: ["image", "text"],
-      }),
-    });
+    // Try generation with increasingly strict constraints
+    // Silent retries - user never sees intermediate failures
+    let lastError: string | undefined;
+    
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const normalizedPrompt = buildPrompt(prompt, attempt);
+      console.log(`[generate-background] Attempt ${attempt + 1}/${MAX_RETRIES}, constraint level ${attempt}`);
+      console.log("[generate-background] Prompt:", normalizedPrompt);
 
-    if (!response.ok) {
-      if (response.status === 429) {
+      const result = await generateImage(LOVABLE_API_KEY, normalizedPrompt);
+
+      // Handle rate limit and payment errors immediately (don't retry)
+      if (result.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (result.status === 402) {
         return new Response(
           JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: "Failed to generate background" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+
+      // Success - return the image
+      if (result.imageUrl) {
+        console.log(`[generate-background] Success on attempt ${attempt + 1}`);
+        return new Response(
+          JSON.stringify({ imageUrl: result.imageUrl }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Failed - silently retry with stricter constraints
+      lastError = result.error;
+      console.log(`[generate-background] Attempt ${attempt + 1} failed, retrying with stricter constraints...`);
     }
 
-    const data = await response.json();
-    
-    // Extract the generated image URL from the response
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    
-    if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ error: "No image was generated" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    // All retries exhausted
+    console.error("[generate-background] All attempts failed:", lastError);
     return new Response(
-      JSON.stringify({ imageUrl }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Failed to generate background. Please try a different description." }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("generate-background error:", error);
+    console.error("[generate-background] Error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
