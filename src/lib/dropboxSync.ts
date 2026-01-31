@@ -83,7 +83,7 @@ export async function getSessionSyncStatus(sessionId: string): Promise<DropboxSy
 }
 
 /**
- * Queue a session for Dropbox sync (background operation)
+ * Queue a session for Dropbox sync and trigger background upload
  * This is called after successful cloud upload in the ProcessingManager
  */
 export async function queueDropboxSync(
@@ -104,10 +104,6 @@ export async function queueDropboxSync(
       console.warn("[DropboxSync] No auth session");
       return { success: false, error: "Not authenticated" };
     }
-
-    // For now, we need the user to have connected Dropbox via OAuth
-    // The actual token exchange happens in the edge function
-    // This is a simplified flow - in production you'd retrieve stored tokens
 
     console.log(`[DropboxSync] Queueing sync for session ${sessionId}`);
 
@@ -130,8 +126,10 @@ export async function queueDropboxSync(
       return { success: false, error: insertError.message };
     }
 
-    // The actual sync will be triggered by a background job or user action
-    // For MVP, we mark as pending and the user can manually trigger from settings
+    // Trigger background sync (fire-and-forget)
+    triggerAutoSync(sessionId).catch(err => {
+      console.warn("[DropboxSync] Auto-sync trigger failed:", err);
+    });
 
     return { success: true };
   } catch (error) {
@@ -140,6 +138,39 @@ export async function queueDropboxSync(
       success: false, 
       error: error instanceof Error ? error.message : "Unknown error" 
     };
+  }
+}
+
+/**
+ * Trigger background auto-sync via edge function
+ * This is fire-and-forget - errors are logged but not propagated
+ */
+export async function triggerAutoSync(sessionId: string): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.log("[DropboxSync] No auth session for auto-sync");
+      return;
+    }
+
+    console.log(`[DropboxSync] Triggering auto-sync for session ${sessionId}`);
+
+    // Fire-and-forget call to edge function
+    const response = await supabase.functions.invoke("dropbox-sync", {
+      body: { sessionId },
+      headers: {
+        "x-custom-path": "/sync/auto",
+      },
+    });
+
+    if (response.error) {
+      console.warn("[DropboxSync] Auto-sync invoke error:", response.error);
+    } else {
+      console.log("[DropboxSync] Auto-sync triggered successfully");
+    }
+  } catch (error) {
+    // Silently log - this is background work
+    console.warn("[DropboxSync] Auto-sync trigger error:", error);
   }
 }
 
