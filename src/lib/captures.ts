@@ -714,6 +714,27 @@ export async function deleteAnnotation(annotationId: string) {
   if (error) throw error;
 }
 
+/**
+ * Update the visibility of an annotation/reaction
+ * @param annotationId - The annotation ID
+ * @param isPublic - Whether the reaction should be publicly visible
+ */
+export async function updateAnnotationVisibility(annotationId: string, isPublic: boolean) {
+  const visibility = isPublic ? "public" : "owner";
+  const { data, error } = await supabase
+    .from("annotations")
+    .update({ 
+      visibility,
+      is_private: !isPublic,
+    })
+    .eq("id", annotationId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Annotation;
+}
+
 // Draw Annotations
 export async function createDrawAnnotation(data: Omit<DrawAnnotation, "id" | "created_at" | "updated_at">) {
   const { data: annotation, error } = await supabase
