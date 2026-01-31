@@ -5,6 +5,7 @@ import { useFacecamCapture } from "./useFacecamCapture";
 import { useCompositeRecorder } from "./useCompositeRecorder";
 import { tryRecordWithFallback, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
 import { type CaptureError, type CaptureErrorCode, type RecorderErrorDiagnostics, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
+import { startMemoryMonitoring, stopMemoryMonitoring, onMemoryPressure } from "@/lib/memoryGuard";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -198,6 +199,14 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   // Full cleanup of all recorders and streams
   const fullCleanup = useCallback(() => {
     console.log("[Capture] Running full cleanup");
+    
+    // Stop memory monitoring
+    stopMemoryMonitoring();
+    
+    // Unsubscribe from memory pressure if we have a recorder
+    if (compositeRecorderRef.current && (compositeRecorderRef.current as any).__memoryUnsubscribe) {
+      (compositeRecorderRef.current as any).__memoryUnsubscribe();
+    }
     
     // Stop duration timer
     if (durationIntervalRef.current) {
@@ -584,6 +593,21 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     startTimeRef.current = Date.now();
     setDuration(0);
     isRecordingRef.current = true;
+    
+    // Start memory monitoring for long recordings
+    startMemoryMonitoring();
+    
+    // Subscribe to memory pressure to log warnings (no UI changes)
+    const unsubscribePressure = onMemoryPressure((level, stats) => {
+      if (level === "elevated") {
+        console.log(`[Capture] Memory pressure elevated: ${stats.usedHeapMB.toFixed(0)}MB used`);
+      } else if (level === "critical") {
+        console.warn(`[Capture] Memory pressure CRITICAL: ${stats.usedHeapMB.toFixed(0)}MB/${stats.limitHeapMB.toFixed(0)}MB`);
+      }
+    });
+    
+    // Store unsubscribe for cleanup (using a ref-based approach in fullCleanup)
+    (compositeRecorderRef.current as any).__memoryUnsubscribe = unsubscribePressure;
     
     // Debounced duration update - only update every 1 second instead of 100ms
     // This reduces React re-renders during recording
