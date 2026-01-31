@@ -40,6 +40,8 @@ interface SessionRightRailProps {
   // Reactions
   onCreateReaction?: (type: "emoji" | "text" | "voice", content: string, timestamp: number) => void;
   onOpenVoice?: () => void;
+  onReactionVisibilityChange?: (id: string, isPublic: boolean) => void;
+  isSessionShared?: boolean;
 }
 
 export const SessionRightRail = memo(function SessionRightRail({
@@ -61,6 +63,8 @@ export const SessionRightRail = memo(function SessionRightRail({
   onSeekTo,
   onCreateReaction,
   onOpenVoice,
+  onReactionVisibilityChange,
+  isSessionShared = false,
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
@@ -195,6 +199,8 @@ export const SessionRightRail = memo(function SessionRightRail({
             onAnnotationDelete={onAnnotationDelete}
             onCreateReaction={onCreateReaction}
             onOpenVoice={onOpenVoice}
+            onVisibilityChange={onReactionVisibilityChange}
+            isSessionShared={isSessionShared}
           />
         </TabsContent>
 

@@ -9,11 +9,16 @@ import {
   Mic,
   ChevronRight,
   Trash2,
-  Plus,
   Lock,
+  Globe,
   Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ReactionsSectionProps {
   annotations: Annotation[];
@@ -25,6 +30,8 @@ interface ReactionsSectionProps {
   onAnnotationDelete?: (annotationId: string) => void;
   onCreateReaction?: (type: "emoji" | "text" | "voice", content: string, timestamp: number) => void;
   onOpenVoice?: () => void;
+  onVisibilityChange?: (id: string, isPublic: boolean) => void;
+  isSessionShared?: boolean;
 }
 
 // Quick emoji palette - playful but not overwhelming
@@ -58,6 +65,7 @@ type ReactionItem = {
   endTime?: number;
   reactionType: "emoji" | "text" | "voice";
   content: string;
+  isPublic: boolean;
   data: Annotation | VoiceNote;
 };
 
@@ -67,15 +75,24 @@ const ReactionRow = memo(function ReactionRow({
   isActive,
   onClick,
   onDelete,
+  onVisibilityToggle,
+  showVisibilityControl,
 }: {
   item: ReactionItem;
   isActive: boolean;
   onClick: () => void;
   onDelete?: () => void;
+  onVisibilityToggle?: (isPublic: boolean) => void;
+  showVisibilityControl?: boolean;
 }) {
   const config = REACTION_CONFIG[item.reactionType] || REACTION_CONFIG.text;
   const Icon = config.icon;
   const isEmoji = item.reactionType === "emoji";
+  
+  const handleVisibilityToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onVisibilityToggle?.(!item.isPublic);
+  }, [item.isPublic, onVisibilityToggle]);
   
   return (
     <button
@@ -110,7 +127,34 @@ const ReactionRow = memo(function ReactionRow({
           <span className="text-xs font-mono tabular-nums text-muted-foreground">
             {formatTime(item.time)}
           </span>
-          <Lock className="h-3 w-3 text-muted-foreground/50" aria-label="Private" />
+          {/* Visibility indicator/toggle */}
+          {showVisibilityControl && onVisibilityToggle ? (
+            <Tooltip delayDuration={300}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleVisibilityToggle}
+                  className={cn(
+                    "p-0.5 rounded transition-colors",
+                    item.isPublic 
+                      ? "text-primary hover:text-primary/80" 
+                      : "text-muted-foreground/50 hover:text-muted-foreground"
+                  )}
+                  aria-label={item.isPublic ? "Public - click to make private" : "Private - click to make public"}
+                >
+                  {item.isPublic ? (
+                    <Globe className="h-3 w-3" />
+                  ) : (
+                    <Lock className="h-3 w-3" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {item.isPublic ? "Public – visible in Community" : "Private – only you can see"}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Lock className="h-3 w-3 text-muted-foreground/50" aria-label="Private" />
+          )}
         </div>
         {!isEmoji && item.content && (
           <p className={cn(
@@ -300,6 +344,8 @@ export const ReactionsSection = memo(function ReactionsSection({
   onAnnotationDelete,
   onCreateReaction,
   onOpenVoice,
+  onVisibilityChange,
+  isSessionShared = false,
 }: ReactionsSectionProps) {
   // Convert annotations and voice notes to reaction items
   const reactions = useMemo<ReactionItem[]>(() => {
@@ -324,6 +370,7 @@ export const ReactionsSection = memo(function ReactionsSection({
         endTime: a.end_timestamp_seconds || undefined,
         reactionType,
         content,
+        isPublic: a.visibility === "public",
         data: a,
       });
     });
@@ -336,12 +383,19 @@ export const ReactionsSection = memo(function ReactionsSection({
         time: v.timestamp_seconds,
         reactionType: "voice",
         content: v.transcription || "Voice reaction",
+        isPublic: !v.is_private,
         data: v,
       });
     });
     
     return items.sort((a, b) => a.time - b.time);
   }, [annotations, voiceNotes]);
+  
+  // Count public reactions
+  const publicCount = useMemo(() => 
+    reactions.filter(r => r.isPublic).length, 
+    [reactions]
+  );
 
   // Find active reaction based on current playback time
   const activeReactionId = useMemo(() => {
@@ -365,6 +419,10 @@ export const ReactionsSection = memo(function ReactionsSection({
     }
   }, [onAnnotationClick, onVoiceNoteClick, onMarkerClick]);
 
+  const handleVisibilityChange = useCallback((itemId: string, isPublic: boolean) => {
+    onVisibilityChange?.(itemId, isPublic);
+  }, [onVisibilityChange]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Reactions list */}
@@ -379,16 +437,28 @@ export const ReactionsSection = memo(function ReactionsSection({
           </p>
           <div className="flex items-center gap-1 text-xs text-muted-foreground/70">
             <Lock className="h-3 w-3" />
-            <span>All reactions are private</span>
+            <span>All reactions are private by default</span>
           </div>
         </div>
       ) : (
         <ScrollArea className="flex-1">
           <div className="p-2">
-            {/* Privacy indicator */}
-            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/60 py-2 mb-1">
-              <Lock className="h-3 w-3" />
-              <span>Your private reactions</span>
+            {/* Privacy status indicator */}
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/60 py-2 mb-1">
+              {isSessionShared && publicCount > 0 ? (
+                <>
+                  <Globe className="h-3 w-3 text-primary/60" />
+                  <span>{publicCount} public</span>
+                  <span className="text-border">•</span>
+                  <Lock className="h-3 w-3" />
+                  <span>{reactions.length - publicCount} private</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3 w-3" />
+                  <span>Your private reactions</span>
+                </>
+              )}
             </div>
             
             <div className="space-y-1">
@@ -399,6 +469,12 @@ export const ReactionsSection = memo(function ReactionsSection({
                   isActive={item.id === activeReactionId}
                   onClick={() => handleReactionClick(item)}
                   onDelete={onAnnotationDelete ? () => onAnnotationDelete(item.id) : undefined}
+                  onVisibilityToggle={
+                    isSessionShared && onVisibilityChange 
+                      ? (isPublic) => handleVisibilityChange(item.id, isPublic) 
+                      : undefined
+                  }
+                  showVisibilityControl={isSessionShared}
                 />
               ))}
             </div>
