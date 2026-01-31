@@ -3,11 +3,22 @@
  * 
  * Provides React bindings for the ProcessingManager singleton.
  * Manages background video processing jobs with persistence.
+ * Shows toast + browser notifications on job completion.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { ProcessingJob, loadProcessingJobs, dismissProcessingJob } from "@/lib/processingJobs";
 import { processingManager } from "@/lib/processingManager";
+import { toast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Eye } from "lucide-react";
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  showVideoReadyNotification,
+  shouldRequestPermission,
+} from "@/lib/browserNotifications";
 
 interface ProcessingContextValue {
   jobs: ProcessingJob[];
@@ -40,6 +51,9 @@ interface ProcessingContextValue {
   // Capture state - pauses heavy processing during recording
   setCapturing: (isCapturing: boolean) => void;
   
+  // Notification permission
+  requestNotifications: () => Promise<boolean>;
+  
   // UI state
   isFooterExpanded: boolean;
   setFooterExpanded: (expanded: boolean) => void;
@@ -52,12 +66,59 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [isFooterExpanded, setFooterExpanded] = useState(false);
   
+  // Track which jobs we've already shown completion notifications for
+  const notifiedJobIds = useRef<Set<string>>(new Set());
+  
+  // Use a ref for navigation to avoid re-creating callbacks
+  const navigateRef = useRef<((path: string) => void) | null>(null);
+  
+  // Show completion toast and browser notification
+  const showCompletionNotification = useCallback((job: ProcessingJob) => {
+    // Navigate function for click handlers
+    const navigateTo = (path: string) => {
+      if (navigateRef.current) {
+        navigateRef.current(path);
+      } else {
+        window.location.href = path;
+      }
+    };
+    
+    // Toast notification with action button
+    toast({
+      title: "Video ready",
+      description: job.sessionTitle,
+      action: (
+        <Button
+          variant="default"
+          size="sm"
+          className="h-7 px-3"
+          onClick={() => navigateTo(`/session/${job.sessionId}`)}
+        >
+          <Eye className="h-3.5 w-3.5 mr-1.5" />
+          View & Annotate
+        </Button>
+      ),
+      duration: 8000,
+    });
+    
+    // Browser notification (if permission granted)
+    if (getNotificationPermission() === "granted") {
+      showVideoReadyNotification(job.sessionTitle, () => {
+        navigateTo(`/session/${job.sessionId}`);
+      });
+    }
+  }, []);
+  
   // Start the processing manager on mount
   useEffect(() => {
     processingManager.start();
     
-    // Load initial jobs
-    setJobs(loadProcessingJobs());
+    // Load initial jobs and mark existing completed ones as "already notified"
+    const initialJobs = loadProcessingJobs();
+    initialJobs
+      .filter(j => j.status === "completed")
+      .forEach(j => notifiedJobIds.current.add(j.id));
+    setJobs(initialJobs);
     
     // Subscribe to job updates from the manager
     const unsubscribe = processingManager.subscribe((updatedJob) => {
@@ -68,6 +129,12 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
         next[index] = updatedJob;
         return next;
       });
+      
+      // Check if this job just completed (transition to "completed")
+      if (updatedJob.status === "completed" && !notifiedJobIds.current.has(updatedJob.id)) {
+        notifiedJobIds.current.add(updatedJob.id);
+        showCompletionNotification(updatedJob);
+      }
     });
     
     // Sync from storage periodically (multi-tab support)
@@ -79,7 +146,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
       unsubscribe();
       clearInterval(interval);
     };
-  }, []);
+  }, [showCompletionNotification]);
   
   const queueProcessing = useCallback((params: {
     sessionId: string;
@@ -122,6 +189,13 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
     processingManager.setCapturing(isCapturing);
   }, []);
   
+  const handleRequestNotifications = useCallback(async (): Promise<boolean> => {
+    if (!shouldRequestPermission()) {
+      return getNotificationPermission() === "granted";
+    }
+    return requestNotificationPermission();
+  }, []);
+  
   const activeJobs = jobs.filter(j => 
     j.status === "queued" || j.status === "processing" || j.status === "uploading"
   );
@@ -143,14 +217,34 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
         retryJob: handleRetry,
         dismissJob: handleDismiss,
         setCapturing,
+        requestNotifications: handleRequestNotifications,
         isFooterExpanded,
         setFooterExpanded,
         isFooterVisible,
       }}
     >
+      <NavigateInjector navigateRef={navigateRef} />
       {children}
     </ProcessingContext.Provider>
   );
+}
+
+// Helper component to inject navigate function into ref (avoids hook rules issues)
+function NavigateInjector({ 
+  navigateRef 
+}: { 
+  navigateRef: React.MutableRefObject<((path: string) => void) | null> 
+}) {
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    navigateRef.current = navigate;
+    return () => {
+      navigateRef.current = null;
+    };
+  }, [navigate, navigateRef]);
+  
+  return null;
 }
 
 export function useProcessing() {

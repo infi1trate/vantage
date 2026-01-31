@@ -48,7 +48,7 @@ export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
-  const { queueProcessing, setCapturing } = useProcessing();
+  const { queueProcessing, setCapturing, requestNotifications } = useProcessing();
   const navigate = useNavigate();
   
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -186,7 +186,12 @@ export default function CapturePage() {
       // Error is already set in capture.error for inline display
       // Don't show toast - the inline error is more informative
       console.log("[Capture] Start recording failed - showing inline error");
+      return;
     }
+    
+    // Request notification permission after user interaction (non-blocking)
+    // This is a good moment because user has explicitly started recording
+    requestNotifications().catch(() => {});
   };
 
   // Dismiss inline recording error (stays in preview_ready state)
