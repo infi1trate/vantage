@@ -4,9 +4,11 @@
  * Singleton service that manages video processing jobs with:
  * - Sequential processing (maxConcurrent = 1 by default)
  * - Capture-aware pausing (pauses heavy work during active recording)
- * - Progress milestones
+ * - Camera preview + CPU-aware pausing
+ * - Progress milestones with throttled UI updates (max 4/sec)
  * - Retry with exponential backoff
  * - Survives navigation, handles reload gracefully
+ * - Telemetry for key milestones
  */
 
 import {
@@ -24,6 +26,18 @@ import {
 } from "./processingJobs";
 import { saveLocalSession, LocalSession } from "./localSessionStorage";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  trackJobCreated,
+  trackLocalSaveComplete,
+  trackThumbnailReady,
+  trackCloudUploadStart,
+  trackCloudUploadEnd,
+  trackJobCompleted,
+  createThrottledUpdater,
+  cleanupThrottle,
+  shouldPauseHeavyProcessing,
+  isCameraPreview,
+} from "./processingTelemetry";
 
 // Progress milestones by step
 const PROGRESS_MILESTONES = {
@@ -286,6 +300,15 @@ class ProcessingManager {
         continue;
       }
       
+      // Wait if camera preview active AND CPU is high
+      if (shouldPauseHeavyProcessing()) {
+        if (import.meta.env.DEV) {
+          console.log("[ProcessingManager] Pausing for camera preview + high CPU");
+        }
+        await this.sleep(500);
+        continue;
+      }
+      
       // Check if we can process more jobs
       if (this.activeJobs.size >= this.maxConcurrent) {
         await this.sleep(500);
@@ -369,8 +392,12 @@ class ProcessingManager {
     const controller = new AbortController();
     this.activeJobs.set(job.id, controller);
     
+    // Track job creation for telemetry
+    trackJobCreated(job.id, job.sessionId);
+    
     try {
       await this.executeProcessing(job, blob, thumbnailBlob, thumbnailDataUrl, controller.signal);
+      trackJobCompleted(job.id, true);
     } catch (error: any) {
       if (error.name === "AbortError") {
         // Cancelled - already handled
@@ -386,8 +413,11 @@ class ProcessingManager {
         completedAt: new Date().toISOString(),
       });
       if (updated) this.notifyUpdate(updated);
+      
+      trackJobCompleted(job.id, false);
     } finally {
       this.activeJobs.delete(job.id);
+      cleanupThrottle(job.id);
     }
   }
   
@@ -398,38 +428,60 @@ class ProcessingManager {
     thumbnailDataUrl: string | null | undefined,
     signal: AbortSignal
   ): Promise<void> {
-    const updateProgress = (step: keyof typeof STEP_LABELS, progress: number, updates?: Partial<ProcessingJob>) => {
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      
+    // Create throttled progress updater (max 4 updates/sec)
+    const throttledUpdate = createThrottledUpdater(job.id, (progress, step) => {
       const updated = updateProcessingJob(job.id, {
         status: progress >= 80 ? "uploading" : "processing",
-        step: STEP_LABELS[step],
+        step,
         progress,
-        ...updates,
       });
       if (updated) this.notifyUpdate(updated);
+    });
+    
+    // Non-throttled update for important state changes
+    const updateProgress = (step: keyof typeof STEP_LABELS, progress: number, updates?: Partial<ProcessingJob>, force = false) => {
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      
+      if (force || updates) {
+        // Direct update for state changes
+        const updated = updateProcessingJob(job.id, {
+          status: progress >= 80 ? "uploading" : "processing",
+          step: STEP_LABELS[step],
+          progress,
+          ...updates,
+        });
+        if (updated) this.notifyUpdate(updated);
+      } else {
+        // Throttled update for progress only
+        throttledUpdate(progress, STEP_LABELS[step], force);
+      }
     };
     
     // Stage 1: Preparing - Store blob to IndexedDB for persistence
     updateProgress("preparing", PROGRESS_MILESTONES.preparing, { 
       startedAt: new Date().toISOString(),
       currentStageIndex: 0,
-    });
+    }, true);
     
     const { blobKey, thumbnailKey } = await storeProcessingBlob(job.id, blob, thumbnailBlob);
     updateProcessingJob(job.id, { blobKey, thumbnailKey });
     
+    // Track thumbnail ready
+    if (thumbnailBlob || thumbnailDataUrl) {
+      trackThumbnailReady(job.id);
+    }
+    
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
     
     // Stage 2: Validating
-    updateProgress("validating", 15, { currentStageIndex: 0 });
+    updateProgress("validating", 15, { currentStageIndex: 0 }, true);
     
     if (!blob || blob.size === 0) {
       throw new Error("Recording data is empty or invalid");
     }
     
     // Stage 3: Saving locally
-    updateProgress("saving", 25, { currentStageIndex: 1 });
+    updateProgress("saving", 25, { currentStageIndex: 1 }, true);
     
     const localSession: LocalSession = {
       id: job.sessionId,
@@ -452,12 +504,15 @@ class ProcessingManager {
     
     const saveResult = await saveLocalSession(localSession, blob, thumbnailBlob || null);
     
+    // Track local save completion
+    trackLocalSaveComplete(job.id);
+    
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
     
     updateProgress("encoding", PROGRESS_MILESTONES.encoding, {
       currentStageIndex: 2,
       localSaveSuccess: saveResult.success,
-    });
+    }, true);
     
     // Stage 4: "Encoding" - Generate/process thumbnail
     // (We already have the thumbnail, so this is quick)
@@ -466,15 +521,22 @@ class ProcessingManager {
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
     
     // Stage 5: Uploading to cloud (if user is logged in)
-    updateProgress("uploading", PROGRESS_MILESTONES.uploading, { currentStageIndex: 3 });
+    updateProgress("uploading", PROGRESS_MILESTONES.uploading, { currentStageIndex: 3 }, true);
     
     let cloudUploadSuccess = false;
     let videoAssetId: string | undefined;
     
     if (job.userId) {
+      trackCloudUploadStart(job.id);
+      
       try {
         // Pause during active capture
         while (this.isCapturing && !signal.aborted) {
+          await this.sleep(500);
+        }
+        
+        // Also pause if camera preview active and CPU is high
+        while (shouldPauseHeavyProcessing() && !signal.aborted) {
           await this.sleep(500);
         }
         
@@ -533,6 +595,8 @@ class ProcessingManager {
         if (import.meta.env.DEV) {
           console.warn("[ProcessingManager] Cloud upload failed:", uploadError);
         }
+      } finally {
+        trackCloudUploadEnd(job.id);
       }
     }
     

@@ -9,6 +9,7 @@ import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { SessionWithAssets } from "@/lib/sessionLibrary";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
+import { markLibraryRendered } from "@/lib/processingTelemetry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -83,6 +84,11 @@ export default function SessionLibrary() {
       (job.status === "queued" || job.status === "processing" || job.status === "uploading" || job.status === "failed")
     );
   }, [activeJobs, localSessions]);
+
+  // Mark library rendered for telemetry (measures Stop -> Library time)
+  useEffect(() => {
+    markLibraryRendered();
+  }, []);
 
   useEffect(() => {
     loadLocalSessions();

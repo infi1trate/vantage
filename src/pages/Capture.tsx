@@ -15,6 +15,7 @@ import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { StorageRecoveryScreen } from "@/components/capture/StorageRecoveryScreen";
 import { saveLocalSession, LocalSession, type SaveSessionResult, formatBytes } from "@/lib/localSessionStorage";
 import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
+import { markCaptureStop, setCameraPreviewActive, recordFrameTime } from "@/lib/processingTelemetry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ArrowLeft, Pause, Bug, Eye, Chrome, ExternalLink } from "lucide-react";
@@ -92,11 +93,23 @@ export default function CapturePage() {
     capture.captureState === "recording" || 
     capture.captureState === "paused" || 
     capture.captureState === "finalizing";
+  
+  // Check if camera preview is active (for CPU-aware processing pause)
+  const isCameraPreviewActiveNow = 
+    capture.captureState === "preview_ready" || 
+    capture.captureState === "recording" || 
+    capture.captureState === "paused";
 
   // Notify ProcessingManager of capture state to pause heavy processing during recording
   useEffect(() => {
     setCapturing(isRecordingOrFinalizing);
   }, [isRecordingOrFinalizing, setCapturing]);
+  
+  // Track camera preview state for CPU-aware processing pause
+  useEffect(() => {
+    setCameraPreviewActive(isCameraPreviewActiveNow);
+    return () => setCameraPreviewActive(false);
+  }, [isCameraPreviewActiveNow]);
 
   // Block navigation when recording
   const blocker = useBlocker(
@@ -208,6 +221,9 @@ export default function CapturePage() {
       console.warn("handleEndCapture called but not in recording/paused state");
       return;
     }
+
+    // Mark capture stop for telemetry (measures Stop -> Library time)
+    markCaptureStop();
 
     try {
       // Capture thumbnail BEFORE stopping (while canvas is still active)
