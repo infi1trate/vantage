@@ -222,6 +222,30 @@ export type Database = {
           },
         ]
       }
+      blocked_users: {
+        Row: {
+          blocked_user_id: string
+          created_at: string
+          id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          blocked_user_id: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          blocked_user_id?: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       capture_sessions: {
         Row: {
           created_at: string
@@ -451,6 +475,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      connected_accounts: {
+        Row: {
+          connected_at: string
+          id: string
+          last_used_at: string | null
+          provider: string
+          provider_account_id: string
+          provider_email: string | null
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          id?: string
+          last_used_at?: string | null
+          provider: string
+          provider_account_id: string
+          provider_email?: string | null
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          id?: string
+          last_used_at?: string | null
+          provider?: string
+          provider_account_id?: string
+          provider_email?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       draw_annotations: {
         Row: {
@@ -915,6 +969,39 @@ export type Database = {
           theme?: string | null
           timeline_zoom?: number | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_sessions: {
+        Row: {
+          created_at: string
+          device_info: string | null
+          id: string
+          ip_address: string | null
+          is_current: boolean | null
+          last_active_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_info?: string | null
+          id?: string
+          ip_address?: string | null
+          is_current?: boolean | null
+          last_active_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_info?: string | null
+          id?: string
+          ip_address?: string | null
+          is_current?: boolean | null
+          last_active_at?: string
+          user_agent?: string | null
           user_id?: string
         }
         Relationships: []

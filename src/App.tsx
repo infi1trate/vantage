@@ -25,6 +25,7 @@ const SessionLibrary = lazy(() => import("./pages/SessionLibrary"));
 const Insights = lazy(() => import("./pages/Insights"));
 const Community = lazy(() => import("./pages/Community"));
 const CommunityPost = lazy(() => import("./pages/CommunityPost"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 // Loading fallback for lazy routes
 function RouteLoader() {
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
   { path: "/community/p/:token", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
   { path: "/capture/:sessionId", element: withSuspense(Capture), errorElement: <RouteErrorFallback /> },
   { path: "/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
+  { path: "/settings", element: withSuspense(Settings), errorElement: <RouteErrorFallback /> },
   { path: "*", element: <NotFound /> },
 ]);
 
