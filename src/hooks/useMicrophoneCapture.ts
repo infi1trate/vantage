@@ -42,6 +42,8 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const smoothedLevelRef = useRef<number>(0);
+  const lastUpdateTimeRef = useRef<number>(0);
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -72,26 +74,68 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
 
   const startAudioLevelMonitoring = useCallback((mediaStream: MediaStream) => {
     try {
+      // Clean up any existing context first
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+      }
+      
       audioContextRef.current = new AudioContext();
       const source = audioContextRef.current.createMediaStreamSource(mediaStream);
       analyserRef.current = audioContextRef.current.createAnalyser();
+      
+      // Use smaller FFT for faster response, but we'll use time-domain data for RMS
       analyserRef.current.fftSize = 256;
+      analyserRef.current.smoothingTimeConstant = 0; // We'll do our own smoothing
+      
       source.connect(analyserRef.current);
 
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      // Use time-domain data for RMS calculation (better for voice levels)
+      const dataArray = new Float32Array(analyserRef.current.fftSize);
+      
+      // Smoothing factor: higher = smoother but slower response
+      // 0.15 gives responsive feel without jitter at ~60fps
+      const SMOOTHING_RISE = 0.25;  // Faster attack when voice gets louder
+      const SMOOTHING_FALL = 0.08;  // Slower decay for natural feel
+      
+      // Target ~45fps for level updates (every ~22ms)
+      const TARGET_INTERVAL_MS = 22;
 
-      const updateLevel = () => {
-        if (analyserRef.current) {
-          analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-          setAudioLevel(average / 255); // Normalize to 0-1
+      const updateLevel = (timestamp: number) => {
+        // Throttle updates to target interval
+        const elapsed = timestamp - lastUpdateTimeRef.current;
+        
+        if (elapsed >= TARGET_INTERVAL_MS && analyserRef.current) {
+          lastUpdateTimeRef.current = timestamp;
+          
+          // Get time-domain data for RMS calculation
+          analyserRef.current.getFloatTimeDomainData(dataArray);
+          
+          // Calculate RMS (Root Mean Square) for accurate volume level
+          let sumSquares = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sumSquares += dataArray[i] * dataArray[i];
+          }
+          const rms = Math.sqrt(sumSquares / dataArray.length);
+          
+          // Convert to 0-1 range with some headroom
+          // RMS of voice typically ranges 0.01-0.3, so scale accordingly
+          const rawLevel = Math.min(rms * 3, 1);
+          
+          // Exponential smoothing with different rise/fall rates
+          const smoothing = rawLevel > smoothedLevelRef.current ? SMOOTHING_RISE : SMOOTHING_FALL;
+          smoothedLevelRef.current = smoothedLevelRef.current + smoothing * (rawLevel - smoothedLevelRef.current);
+          
+          setAudioLevel(smoothedLevelRef.current);
         }
+        
         animationFrameRef.current = requestAnimationFrame(updateLevel);
       };
 
-      updateLevel();
+      // Start the loop
+      animationFrameRef.current = requestAnimationFrame(updateLevel);
+      console.log("[MicCapture] Audio level monitoring started");
     } catch (err) {
-      console.error("Error setting up audio monitoring:", err);
+      console.error("[MicCapture] Error setting up audio monitoring:", err);
     }
   }, []);
 
@@ -101,11 +145,14 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
       animationFrameRef.current = null;
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
     analyserRef.current = null;
+    smoothedLevelRef.current = 0;
+    lastUpdateTimeRef.current = 0;
     setAudioLevel(0);
+    console.log("[MicCapture] Audio level monitoring stopped");
   }, []);
 
   const startCapture = useCallback(async (options?: MicrophoneOptions): Promise<MediaStream | null> => {

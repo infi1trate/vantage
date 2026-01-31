@@ -109,12 +109,13 @@ export function ActiveCaptureIndicators({
                   )}
                 />
 
-                {/* Microphone level indicator */}
+                {/* Microphone level indicator - live voice feedback */}
                 {indicator.hasLevel && !isPaused && (
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-primary/50 rounded-b-lg transition-all duration-75"
+                    className="absolute bottom-0 left-0 right-0 bg-primary/50 rounded-b-lg"
                     style={{
                       height: `${Math.min(microphoneLevel * 100, 100)}%`,
+                      transition: 'height 50ms ease-out',
                     }}
                   />
                 )}
