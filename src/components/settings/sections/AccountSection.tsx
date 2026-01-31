@@ -1,3 +1,13 @@
+/**
+ * Account Section - Profile & Email Management
+ * 
+ * QA Checklist:
+ * - Display name validation: 2-32 chars
+ * - Email validation with proper error messages
+ * - Password re-auth for email change
+ * - Toast: "Profile updated.", "Email verification sent."
+ */
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";

@@ -1,12 +1,22 @@
+/**
+ * Privacy Section - Blocked Users Management
+ * 
+ * QA Checklist:
+ * - Prevent blocking self (handled by excluding current user from search)
+ * - Prevent duplicate blocks (handled by unique constraint and UI check)
+ * - Handle slow network with inline spinners on action buttons
+ */
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { SettingsCard, SettingsCardSkeleton } from "../SettingsCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Loader2, Search, Ban, X } from "lucide-react";
+import { Loader2, Search, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
@@ -161,6 +171,18 @@ export function PrivacySection() {
   const handleConfirmBlock = async () => {
     if (!user || !selectedUser) return;
 
+    // Prevent blocking self (extra safety check)
+    if (selectedUser.user_id === user.id) {
+      toast.error("You cannot block yourself.");
+      return;
+    }
+
+    // Prevent duplicate blocks
+    if (isUserBlocked(selectedUser.user_id)) {
+      toast.error("User is already blocked.");
+      return;
+    }
+
     setBlocking(true);
     try {
       const { error } = await supabase
@@ -170,7 +192,15 @@ export function PrivacySection() {
           blocked_user_id: selectedUser.user_id,
         });
 
-      if (error) throw error;
+      if (error) {
+        // Handle unique constraint violation
+        if (error.code === "23505") {
+          toast.error("User is already blocked.");
+        } else {
+          throw error;
+        }
+        return;
+      }
 
       // Add to list
       setBlockedUsers(prev => [{
@@ -184,7 +214,7 @@ export function PrivacySection() {
         }
       }, ...prev]);
 
-      toast.success(`Blocked @${selectedUser.username || selectedUser.display_name}`);
+      toast.success(`User blocked.`);
       
       // Reset form
       setSearchQuery("");
@@ -302,26 +332,37 @@ export function PrivacySection() {
           <div ref={searchRef} className="relative">
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="block-user-search" className="sr-only">
+                  Search username to block
+                </Label>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
+                  id="block-user-search"
                   type="text"
                   placeholder="Search username to block…"
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
                   className="pl-9"
+                  aria-describedby="block-search-hint"
+                  aria-autocomplete="list"
+                  aria-expanded={showResults && searchQuery.length >= 2}
                 />
                 {searching && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
                 )}
               </div>
               <Button
                 onClick={handleBlockClick}
                 disabled={!selectedUser || isUserBlocked(selectedUser.user_id)}
+                aria-label={selectedUser ? `Block ${selectedUser.username || selectedUser.display_name}` : "Block user"}
               >
                 {selectedUser && isUserBlocked(selectedUser.user_id) ? "Blocked" : "Block"}
               </Button>
             </div>
+            <p id="block-search-hint" className="sr-only">
+              Type at least 2 characters to search for users
+            </p>
 
             {/* Typeahead Results */}
             {showResults && searchQuery.length >= 2 && (
@@ -408,12 +449,12 @@ export function PrivacySection() {
             )}
           </div>
 
-          {/* Blocked List */}
+          {/* Blocked List - Empty State */}
           {blockedUsers.length === 0 ? (
             <div className="py-8 text-center">
-              <Ban className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+              <Ban className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" aria-hidden="true" />
               <p className="text-sm text-muted-foreground">
-                You haven't blocked anyone yet
+                You haven't blocked anyone.
               </p>
             </div>
           ) : (
@@ -445,9 +486,10 @@ export function PrivacySection() {
                     onClick={() => handleUnblock(blocked)}
                     disabled={unblocking === blocked.blocked_user_id}
                     className="shrink-0"
+                    aria-label={`Unblock ${blocked.profile?.username || blocked.profile?.display_name || "user"}`}
                   >
                     {unblocking === blocked.blocked_user_id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     ) : (
                       "Unblock"
                     )}

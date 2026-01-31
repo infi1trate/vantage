@@ -1,3 +1,12 @@
+/**
+ * Camera Section - Default Camera Settings
+ * 
+ * QA Checklist:
+ * - If device enumeration fails, default to "Use last selected device"
+ * - Handle slow network with inline spinners on save buttons
+ * - Proper toast messages: "Camera defaults saved."
+ */
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -187,11 +196,11 @@ export function CameraSection() {
         <div className="space-y-5">
           {/* Camera Device Dropdown */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">
+            <Label htmlFor="camera-device" className="text-sm font-medium text-foreground">
               Preferred camera device
             </Label>
             <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-              <SelectTrigger className="w-full bg-background">
+              <SelectTrigger id="camera-device" className="w-full bg-background">
                 <SelectValue placeholder="Select camera" />
               </SelectTrigger>
               <SelectContent className="bg-popover border border-border z-50">
@@ -214,7 +223,7 @@ export function CameraSection() {
             </Select>
             {!canEnumerateDevices && (
               <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <Info className="h-3 w-3 shrink-0 mt-0.5" />
+                <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
                 Camera access required to show available devices.
               </p>
             )}
@@ -223,7 +232,7 @@ export function CameraSection() {
           {/* Mirror Toggle */}
           <div className="flex items-center justify-between gap-4 py-2">
             <div>
-              <Label className="text-sm font-medium text-foreground">
+              <Label htmlFor="mirror-preview" className="text-sm font-medium text-foreground">
                 Mirror selfie preview
               </Label>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -231,10 +240,15 @@ export function CameraSection() {
               </p>
             </div>
             <Switch
+              id="mirror-preview"
               checked={mirrorPreview}
               onCheckedChange={setMirrorPreview}
+              aria-describedby="mirror-preview-desc"
             />
           </div>
+          <span id="mirror-preview-desc" className="sr-only">
+            When enabled, your camera preview will be flipped horizontally like a mirror
+          </span>
 
           {/* Save Button */}
           <div className="pt-2">
@@ -263,11 +277,11 @@ export function CameraSection() {
         <div className="space-y-5">
           {/* Resolution Dropdown */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">
+            <Label htmlFor="camera-resolution" className="text-sm font-medium text-foreground">
               Resolution
             </Label>
             <Select value={resolution} onValueChange={setResolution}>
-              <SelectTrigger className="w-full bg-background">
+              <SelectTrigger id="camera-resolution" className="w-full bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-popover border border-border z-50">
@@ -280,11 +294,11 @@ export function CameraSection() {
 
           {/* Frame Rate Dropdown */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">
+            <Label htmlFor="camera-fps" className="text-sm font-medium text-foreground">
               Frame rate
             </Label>
             <Select value={fps} onValueChange={setFps}>
-              <SelectTrigger className="w-full bg-background">
+              <SelectTrigger id="camera-fps" className="w-full bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-popover border border-border z-50">
@@ -302,7 +316,7 @@ export function CameraSection() {
 
           {/* Microcopy */}
           <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-            <Info className="h-3 w-3 shrink-0 mt-0.5" />
+            <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
             Auto adapts based on your device and current load.
           </p>
 

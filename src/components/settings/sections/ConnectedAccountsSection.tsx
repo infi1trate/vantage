@@ -1,7 +1,16 @@
+/**
+ * Connected Accounts Section - OAuth Provider Management
+ * 
+ * QA Checklist:
+ * - Show all providers with "Not connected" status when not linked
+ * - Handle slow network with inline spinners on connect/disconnect buttons
+ * - Proper toasts for success/error states
+ */
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { SettingsCard, SettingsCardSkeleton } from "../SettingsCard";
+import { SettingsCard } from "../SettingsCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -364,9 +373,10 @@ export function ConnectedAccountsSection() {
                               onClick={() => handleDisconnectClick(provider.id)}
                               disabled={isDisconnecting || isConfirmingDisconnect}
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              aria-label={`Disconnect ${provider.name}`}
                             >
                               {isDisconnecting ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
                                 "Disconnect"
                               )}
@@ -377,9 +387,10 @@ export function ConnectedAccountsSection() {
                               size="sm"
                               onClick={() => handleConnectClick(provider.id)}
                               disabled={isConnecting || isConfirmingConnect}
+                              aria-label={`Connect ${provider.name}`}
                             >
                               {isConnecting ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
                                 "Connect"
                               )}
@@ -393,7 +404,7 @@ export function ConnectedAccountsSection() {
                         <div className="pb-3 pl-13 sm:pl-13">
                           <div className="p-3 rounded-lg bg-muted/50 border border-border/50 ml-13">
                             <div className="flex items-start gap-2 mb-3">
-                              <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                              <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
                               <p className="text-sm text-foreground">
                                 You'll be redirected to {provider.name} to authorize Vantage.
                               </p>

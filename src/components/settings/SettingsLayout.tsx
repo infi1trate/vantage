@@ -1,4 +1,15 @@
-import { useState } from "react";
+/**
+ * Settings Layout Component
+ * 
+ * QA Checklist:
+ * - Test responsive breakpoints: xs, sm, md, lg, xl, 2xl
+ * - Verify no content overflows or clips at any size
+ * - Verify keyboard navigation works on tabs (arrow keys)
+ * - Verify focus states are visible on dark UI
+ * - Verify /settings doesn't impact capture flow beyond applying defaults at session start
+ */
+
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { AccountSection } from "./sections/AccountSection";
 import { SecuritySection } from "./sections/SecuritySection";
@@ -18,7 +29,6 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
-import { useRef, useEffect } from "react";
 
 type SettingsTab = "account" | "security" | "camera" | "privacy" | "sessions" | "connected";
 
@@ -35,6 +45,7 @@ export function SettingsLayout() {
   const { loading } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const tabsContainerRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Map<SettingsTab, HTMLButtonElement | null>>(new Map());
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
 
@@ -69,6 +80,31 @@ export function SettingsLayout() {
       behavior: "smooth",
     });
   };
+
+  // Keyboard navigation for tabs
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent, currentIndex: number) => {
+    let nextIndex = currentIndex;
+    
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      nextIndex = 0;
+    } else if (e.key === "End") {
+      e.preventDefault();
+      nextIndex = tabs.length - 1;
+    } else {
+      return;
+    }
+
+    const nextTab = tabs[nextIndex];
+    setActiveTab(nextTab.id);
+    tabRefs.current.get(nextTab.id)?.focus();
+  }, []);
 
   if (loading) {
     return <SettingsLoadingSkeleton />;
@@ -108,19 +144,29 @@ export function SettingsLayout() {
             </button>
           )}
 
-          {/* Tabs container */}
+          {/* Tabs container - uses tablist role for accessibility */}
           <div
             ref={tabsContainerRef}
+            role="tablist"
+            aria-label="Settings sections"
+            aria-orientation="horizontal"
             className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth px-1"
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
-            {tabs.map((tab) => {
+            {tabs.map((tab, index) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
+                  ref={(el) => tabRefs.current.set(tab.id, el)}
+                  role="tab"
+                  id={`tab-${tab.id}`}
+                  aria-selected={isActive}
+                  aria-controls={`panel-${tab.id}`}
+                  tabIndex={isActive ? 0 : -1}
                   onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={(e) => handleTabKeyDown(e, index)}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all shrink-0",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -129,7 +175,7 @@ export function SettingsLayout() {
                       : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-4 w-4" aria-hidden="true" />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -151,15 +197,27 @@ export function SettingsLayout() {
 
       {/* Desktop Layout: Sidebar + Content */}
       <div className="lg:grid lg:grid-cols-[240px_1fr] xl:grid-cols-[280px_1fr] lg:gap-8">
-        {/* Desktop Sidebar */}
-        <nav className="hidden lg:block space-y-1 sticky top-24 self-start">
-          {tabs.map((tab) => {
+        {/* Desktop Sidebar - uses tablist role for accessibility */}
+        <nav 
+          className="hidden lg:block space-y-1 sticky top-24 self-start"
+          role="tablist"
+          aria-label="Settings sections"
+          aria-orientation="vertical"
+        >
+          {tabs.map((tab, index) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                ref={(el) => tabRefs.current.set(tab.id, el)}
+                role="tab"
+                id={`tab-desktop-${tab.id}`}
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, index)}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all",
                   "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -168,7 +226,7 @@ export function SettingsLayout() {
                     : "text-muted-foreground border border-transparent hover:text-foreground"
                 )}
               >
-                <Icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "")} />
+                <Icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "")} aria-hidden="true" />
                 <span className={cn(
                   "text-sm font-medium",
                   isActive ? "text-primary" : "text-foreground"
@@ -180,8 +238,14 @@ export function SettingsLayout() {
           })}
         </nav>
 
-        {/* Content Area */}
-        <div className="min-w-0 max-w-3xl lg:max-w-none">
+        {/* Content Area - uses tabpanel role for accessibility */}
+        <div 
+          className="min-w-0 max-w-3xl lg:max-w-none"
+          role="tabpanel"
+          id={`panel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+          tabIndex={0}
+        >
           <SettingsContent activeTab={activeTab} />
         </div>
       </div>
