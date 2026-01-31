@@ -440,7 +440,7 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
               </div>
             )}
             {session.annotation_count > 0 && (
-              <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-muted/50" title="Annotations">
+              <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-muted/50" title="Moments">
                 <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">{session.annotation_count}</span>
               </div>

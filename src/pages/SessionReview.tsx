@@ -449,9 +449,9 @@ export default function SessionReview() {
       setAnnotations((prev) => [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
       // Remove suggestion after accepting
       setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-      toast.success("Annotation added from suggestion");
+      toast.success("Moment added from suggestion");
     } catch (error) {
-      toast.error("Failed to create annotation");
+      toast.error("Failed to create moment");
     }
   }, [user, isLocalSession, localSession?.id, session?.id]);
 

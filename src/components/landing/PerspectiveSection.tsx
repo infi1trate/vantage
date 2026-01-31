@@ -27,7 +27,7 @@ const layers = [
   {
     id: "annotations",
     icon: MapPin,
-    label: "Timeline Annotations",
+    label: "Timeline Moments",
     microcopy: "Pinned to intent, not clips",
     color: "vantage-success",
   },

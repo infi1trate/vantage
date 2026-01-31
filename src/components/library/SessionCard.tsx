@@ -700,7 +700,7 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
                 </div>
               )}
               {cloudSession && cloudSession.annotation_count > 0 && (
-                <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-muted/50" title="Annotations">
+                <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-muted/50" title="Moments">
                   <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">{cloudSession.annotation_count}</span>
                 </div>

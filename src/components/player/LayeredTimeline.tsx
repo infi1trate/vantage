@@ -168,7 +168,7 @@ export function LayeredTimeline({
     if (showTracks.annotations && annotations.length > 0) {
       result.push({
         id: "annotations",
-        name: "Annotations",
+        name: "Moments",
         type: "annotations",
         color: "hsl(var(--accent))",
         items: annotations.map((annotation) => ({

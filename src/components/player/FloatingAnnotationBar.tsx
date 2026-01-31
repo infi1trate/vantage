@@ -47,7 +47,7 @@ export function FloatingAnnotationBar({
         className
       )}
       role="toolbar"
-      aria-label="Annotation actions"
+      aria-label="Moment actions"
     >
       {/* Selection indicator */}
       <span className="px-2 py-1 text-xs font-mono text-muted-foreground tabular-nums bg-muted/30 rounded-md">

@@ -83,7 +83,7 @@ export function AnnotationPanel({
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} marker added`);
     } catch (error) {
       console.error("Error creating annotation:", error);
-      toast.error("Failed to create annotation");
+      toast.error("Failed to create moment");
     }
   };
 
@@ -103,14 +103,14 @@ export function AnnotationPanel({
         tags.length > 0 ? tags : undefined
       );
       onAnnotationCreated(annotation);
-      toast.success("Annotation added");
+      toast.success("Moment added");
       setShowAddForm(false);
       setTitle("");
       setContent("");
       setTags([]);
     } catch (error) {
       console.error("Error creating annotation:", error);
-      toast.error("Failed to create annotation");
+      toast.error("Failed to create moment");
     } finally {
       setLoading(false);
     }
@@ -124,7 +124,7 @@ export function AnnotationPanel({
     <Card className="flex flex-col h-full bg-card border-border/50">
       <div className="p-4 border-b border-border/50">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold">Annotations</h3>
+          <h3 className="font-semibold">Moments</h3>
           <span className="text-xs text-muted-foreground font-mono-data">
             @ {formatTime(currentTime)}
           </span>
@@ -176,7 +176,7 @@ export function AnnotationPanel({
         <div className="p-4 border-b border-border/50 bg-muted/30">
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">New annotation @ {formatTime(currentTime)}</span>
+              <span className="text-sm font-medium">New moment @ {formatTime(currentTime)}</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -226,7 +226,7 @@ export function AnnotationPanel({
             </div>
 
             <Button type="submit" size="sm" disabled={loading} className="w-full">
-              Add Annotation
+              Add Moment
             </Button>
           </form>
         </div>
@@ -238,7 +238,7 @@ export function AnnotationPanel({
           {annotations.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Bookmark className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No annotations yet</p>
+              <p className="text-sm">No moments yet</p>
               <p className="text-xs">Click markers above to add</p>
             </div>
           ) : (

@@ -205,7 +205,7 @@ export function AnnotationsList({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ListFilter className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-tight">Annotations</h2>
+            <h2 className="text-sm font-semibold tracking-tight">Moments</h2>
           </div>
           <div className="flex items-center gap-2">
             {/* Suggestions toggle button */}
@@ -371,7 +371,7 @@ export function AnnotationsList({
             <div className="text-center py-16 text-muted-foreground">
               <Bookmark className="h-10 w-10 mx-auto mb-3 opacity-20" />
               <p className="text-sm font-medium">
-                {activeFilter === "all" ? "No annotations yet" : `No ${activeFilter} annotations`}
+                {activeFilter === "all" ? "No moments yet" : `No ${activeFilter} moments`}
               </p>
               <p className="text-xs mt-1 opacity-70">
                 {activeFilter === "all" 

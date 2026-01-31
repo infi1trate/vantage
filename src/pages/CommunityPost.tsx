@@ -138,13 +138,13 @@ export default function CommunityPostPage() {
     setAnnotations((prev) => 
       [...prev, annotation].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds)
     );
-    toast.success("Annotation added");
+    toast.success("Note added");
   };
 
   const handleDeleteAnnotation = async (annotationId: string) => {
     await deleteCommunityAnnotation(annotationId);
     setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
-    toast.success("Annotation deleted");
+    toast.success("Note deleted");
   };
 
   const handleReact = useCallback(
