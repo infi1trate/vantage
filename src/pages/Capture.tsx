@@ -221,9 +221,9 @@ export default function CapturePage() {
         throw new Error("No composite recording data");
       }
 
-      // Queue background processing - this returns immediately
-      // Processing (local save, upload) happens in the background
-      await queueProcessing({
+      // Queue background processing - returns immediately (non-blocking)
+      // Blob storage and processing happen asynchronously after navigation
+      queueProcessing({
         sessionId: session.id,
         sessionTitle: session.title,
         blob: recordedData.compositeBlob,
@@ -241,7 +241,7 @@ export default function CapturePage() {
 
       toast.success("Recording complete! Processing in background...");
       
-      // Navigate to library immediately - don't wait for processing
+      // Navigate to library immediately - don't wait for blob storage or processing
       navigate("/library", { state: { highlightSession: session.id } });
     } catch (error: any) {
       console.error("Error ending capture:", error);
