@@ -211,7 +211,7 @@ async function getValidAccessToken(
 /**
  * Provision Dropbox storage by creating folder structure and validation file
  */
-async function provisionDropboxStorage(accessToken: string): Promise<ProvisioningResult> {
+async function provisionDropboxStorage(accessToken: string, userEmail?: string): Promise<ProvisioningResult> {
   console.log("[DropboxSync] Starting storage provisioning...");
   
   try {
@@ -229,8 +229,8 @@ async function provisionDropboxStorage(accessToken: string): Promise<Provisionin
     }
     console.log("[DropboxSync] Created /Apps/Vantage/Recordings folder");
 
-    // Step 3: Upload validation file
-    const validationFile = await uploadValidationFile(accessToken);
+    // Step 3: Upload validation file with user info
+    const validationFile = await uploadValidationFile(accessToken, userEmail);
     if (!validationFile.success) {
       return { success: false, error: validationFile.error || "Failed to upload validation file" };
     }
@@ -296,10 +296,12 @@ async function createDropboxFolder(
  * Upload the validation file to confirm write permissions
  */
 async function uploadValidationFile(
-  accessToken: string
+  accessToken: string,
+  userEmail?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const content = "Vantage connected successfully";
+    const timestamp = new Date().toISOString();
+    const content = `Vantage connected: ${userEmail || "unknown"} at ${timestamp}`;
     const encoder = new TextEncoder();
     const body = encoder.encode(content);
 
@@ -309,7 +311,7 @@ async function uploadValidationFile(
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/octet-stream",
         "Dropbox-API-Arg": JSON.stringify({
-          path: "/Apps/Vantage/.vantage_connected",
+          path: "/Apps/Vantage/.vantage_connected.txt",
           mode: "overwrite",
           autorename: false,
           mute: true,
@@ -562,7 +564,7 @@ async function handleOAuthCallback(
   console.log(`[DropboxSync] Connected Dropbox for user ${userId}: ${accountEmail}`);
 
   // Provision Dropbox storage (non-blocking on failure)
-  const provisionResult = await provisionDropboxStorage(tokens.access_token);
+  const provisionResult = await provisionDropboxStorage(tokens.access_token, accountEmail);
   
   // Update provisioning status based on result
   const provisioningStatus = provisionResult.success ? "completed" : "failed";

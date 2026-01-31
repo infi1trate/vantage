@@ -389,15 +389,23 @@ export function ConnectedAccountsSection() {
                               </span>
                               {connected && (
                                 <>
-                                  <span className="text-xs bg-vantage-success/20 text-vantage-success px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    <Check className="h-3 w-3" />
-                                    Connected
-                                  </span>
-                                  {/* Show warning if Dropbox provisioning failed or is pending (tokens may be missing) */}
-                                  {provider.id === "dropbox" && (account?.provisioning_status === "failed" || account?.provisioning_status === "pending") && (
-                                    <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                      <AlertTriangle className="h-3 w-3" />
-                                      {account?.provisioning_status === "pending" ? "Setup pending" : "Setup incomplete"}
+                                  {/* Dropbox shows different status based on provisioning */}
+                                  {provider.id === "dropbox" ? (
+                                    account?.provisioning_status === "completed" ? (
+                                      <span className="text-xs bg-vantage-success/20 text-vantage-success px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <Check className="h-3 w-3" />
+                                        Connected (Active)
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        Connected (Needs permission)
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-xs bg-vantage-success/20 text-vantage-success px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <Check className="h-3 w-3" />
+                                      Connected
                                     </span>
                                   )}
                                 </>
@@ -412,9 +420,9 @@ export function ConnectedAccountsSection() {
                                   </span>
                                 )}
                                 {/* Show provisioning issue hint for Dropbox */}
-                                {provider.id === "dropbox" && (account.provisioning_status === "failed" || account.provisioning_status === "pending") && (
+                                {provider.id === "dropbox" && account.provisioning_status !== "completed" && (
                                   <span className="hidden sm:inline ml-2 text-amber-500">
-                                    • Disconnect and reconnect to complete setup
+                                    • Reconnect to grant folder permissions
                                   </span>
                                 )}
                               </p>
