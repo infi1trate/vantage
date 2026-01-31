@@ -117,13 +117,16 @@ export const CapturePreview = memo(function CapturePreview({
         </div>
       </div>
 
-      {/* Microphone level indicator */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 rounded-full px-3 py-1.5">
-        <Mic className={`h-4 w-4 ${microphoneLevel > 0.1 ? "text-primary" : "text-muted-foreground"}`} />
+      {/* Microphone level indicator - reacts live to voice */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-3 py-1.5">
+        <Mic className={`h-4 w-4 transition-colors duration-100 ${microphoneLevel > 0.05 ? "text-primary" : "text-muted-foreground"}`} />
         <div className="w-24 h-2 bg-muted/50 rounded-full overflow-hidden">
           <div 
-            className="h-full bg-primary transition-all duration-75 rounded-full"
-            style={{ width: `${Math.min(microphoneLevel * 100 * 2, 100)}%` }}
+            className="h-full bg-primary rounded-full"
+            style={{ 
+              width: `${Math.min(microphoneLevel * 100, 100)}%`,
+              transition: 'width 50ms ease-out',
+            }}
           />
         </div>
         <span className="text-xs text-muted-foreground uppercase tracking-wider">Mic</span>
