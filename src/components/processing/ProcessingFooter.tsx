@@ -122,7 +122,7 @@ const ProcessingJobItem = memo(function ProcessingJobItem({
             >
               <Link to={`/session/${job.sessionId}`}>
                 <Eye className="h-3.5 w-3.5 mr-1" />
-                {!compact && <span>View & Annotate</span>}
+                {!compact && <span>View & Review</span>}
                 {compact && <span>View</span>}
               </Link>
             </Button>
@@ -406,7 +406,7 @@ export const ProcessingFooter = memo(function ProcessingFooter() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <Link to={`/session/${latestCompletedJob.sessionId}`}>
-                  View & Annotate
+                  View & Review
                 </Link>
               </Button>
             )}

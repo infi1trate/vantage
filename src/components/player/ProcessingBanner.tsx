@@ -135,7 +135,7 @@ export const ProcessingBanner = memo(function ProcessingBanner({
         <CheckCircle2 className="h-4 w-4" />
         <AlertTitle>Video Ready</AlertTitle>
         <AlertDescription>
-          Processing complete. You can now view and annotate your recording.
+          Processing complete. You can now view and review your recording.
         </AlertDescription>
       </Alert>
     );

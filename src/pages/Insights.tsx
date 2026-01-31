@@ -595,7 +595,7 @@ export default function Insights() {
               <h4 className="font-display text-xl tracking-wide mb-2">INSIGHT SUMMARY</h4>
               <p className="text-sm text-muted-foreground">
                 {totalSessions === 0 ? (
-                  "Start reviewing sessions to build your behavioral profile. The more you annotate and analyze, the more patterns we can identify."
+                  "Start reviewing sessions to build your behavioral profile. The more you mark and analyze, the more patterns we can identify."
                 ) : patterns.length === 0 ? (
                   `You've reviewed ${totalSessions} sessions. Run AI analysis on them to identify behavioral patterns and decision-making trends.`
                 ) : (

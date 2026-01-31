@@ -126,7 +126,7 @@ export function CoachPanel({
               </li>
               <li className="flex items-start gap-2">
                 <MessageSquare className="h-3 w-3 mt-0.5 text-primary shrink-0" />
-                References your annotations & voice notes
+                References your moments & voice notes
               </li>
             </ul>
             
@@ -194,7 +194,7 @@ export function CoachPanel({
               Reviewing your gameplay...
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Analyzing annotations and voice notes
+              Analyzing moments and voice notes
             </p>
           </div>
         </div>
