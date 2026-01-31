@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
 import { NotStoredLocallyCard } from "@/components/player/NotStoredLocallyCard";
+import { ProcessingBanner } from "@/components/player/ProcessingBanner";
+import { ProcessingPlaceholder } from "@/components/player/ProcessingPlaceholder";
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
 import { AnnotationDrawer, DrawerAnnotation } from "@/components/player/AnnotationDrawer";
 import { FramePin } from "@/components/player/FramePins";
@@ -61,6 +64,9 @@ export default function SessionReview() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { goBack } = useSafeBack("/library");
+  
+  // Processing context for detecting active jobs
+  const { jobs, retryJob } = useProcessing();
 
   // Session data
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -550,6 +556,26 @@ export default function SessionReview() {
     }
   }, [session, user, navigate]);
 
+  // Check if this session is currently being processed (must be before early returns)
+  const processingJob = useMemo(() => {
+    if (!sessionId) return null;
+    return jobs.find(j => 
+      j.sessionId === sessionId && 
+      (j.status === "queued" || j.status === "processing" || j.status === "uploading" || j.status === "failed")
+    ) || null;
+  }, [jobs, sessionId]);
+  
+  const isProcessing = processingJob && 
+    (processingJob.status === "queued" || processingJob.status === "processing" || processingJob.status === "uploading");
+  const isProcessingFailed = processingJob?.status === "failed";
+  
+  // Handler for retry (must be before early returns)
+  const handleRetryProcessing = useCallback(() => {
+    if (processingJob) {
+      retryJob(processingJob.id);
+    }
+  }, [processingJob, retryJob]);
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -558,22 +584,29 @@ export default function SessionReview() {
     );
   }
 
-  if (!session && !localSession) return null;
-
+  // If we have no session/localSession data but have a processing job, show processing state
+  if (!session && !localSession && !processingJob) return null;
+  
+  // Use processing job data as fallback when session data isn't loaded yet
   const isLocal = isLocalSession && localSession;
-  const displayTitle = isLocal ? localSession.title : session?.title || "Untitled";
+  const displayTitle = isLocal 
+    ? localSession.title 
+    : (session?.title || processingJob?.sessionTitle || "Untitled");
   const displayGame = isLocal ? localSession.gameName : session?.game_name;
   const displayDuration = isLocal 
     ? localSession.duration 
-    : (session?.duration_seconds || (videoAssets[0]?.duration_ms ? videoAssets[0].duration_ms / 1000 : 300));
+    : (session?.duration_seconds || processingJob?.duration || (videoAssets[0]?.duration_ms ? videoAssets[0].duration_ms / 1000 : 300));
   const displayCreatedAt = isLocal ? localSession.createdAt : session?.created_at;
-  const displaySessionId = isLocal ? localSession.id : session?.id;
+  const displaySessionId = isLocal ? localSession.id : (session?.id || processingJob?.sessionId);
   
   const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
   const videoUrl = isLocal ? localVideoUrl : (gameplayAsset?.storage_url || session?.video_url);
   
   // Check if this is a not_stored_locally session
   const isNotStoredLocally = isLocal && localSession?.status === "not_stored_locally";
+  
+  // Determine if we can show the player
+  const canShowPlayer = !isProcessing && !isProcessingFailed && !isNotStoredLocally && videoUrl;
 
   const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
     blobType: gameplayAsset.mime_type || null,
@@ -628,14 +661,25 @@ export default function SessionReview() {
                   {isLocal && (
                     <Badge variant="outline" className="text-[10px] h-4">Local</Badge>
                   )}
+                  {isProcessing && (
+                    <Badge variant="outline" className="text-[10px] h-4 bg-primary/10 text-primary border-primary/30">
+                      <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                      Processing
+                    </Badge>
+                  )}
+                  {isProcessingFailed && (
+                    <Badge variant="outline" className="text-[10px] h-4 bg-destructive/10 text-destructive border-destructive/30">
+                      Failed
+                    </Badge>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Export/Share CTAs - Desktop only in header */}
-            {!isMobile && !focusMode && (
+            {/* Export/Share CTAs - Desktop only in header, disabled when processing */}
+            {!isMobile && !focusMode && !isProcessing && !isProcessingFailed && (
               <ExportCTAs
                 sessionId={displaySessionId || sessionId || ""}
                 sessionTitle={displayTitle}
@@ -702,7 +746,29 @@ export default function SessionReview() {
       <div className="flex-1 flex min-h-0">
         {/* Left: Video + Timeline (~70%) */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {isNotStoredLocally ? (
+          {/* Processing banner when video is still processing */}
+          {processingJob && (isProcessing || isProcessingFailed) && (
+            <div className="px-4 pt-4">
+              <ProcessingBanner
+                job={processingJob}
+                onRetry={handleRetryProcessing}
+                onBack={goBack}
+              />
+            </div>
+          )}
+          
+          {/* Video player area */}
+          {isProcessing && processingJob ? (
+            // Show processing placeholder
+            <div className="flex-1 p-4">
+              <ProcessingPlaceholder job={processingJob} />
+            </div>
+          ) : isProcessingFailed && processingJob ? (
+            // Show failed state placeholder
+            <div className="flex-1 p-4">
+              <ProcessingPlaceholder job={processingJob} />
+            </div>
+          ) : isNotStoredLocally ? (
             <NotStoredLocallyCard
               title={displayTitle}
               duration={displayDuration}
@@ -791,8 +857,8 @@ export default function SessionReview() {
         onOpenChange={setShowShortcuts} 
       />
 
-      {/* Mobile floating Export/Share CTAs */}
-      {isMobile && !focusMode && (
+      {/* Mobile floating Export/Share CTAs - hidden when processing */}
+      {isMobile && !focusMode && !isProcessing && !isProcessingFailed && (
         <ExportCTAs
           sessionId={displaySessionId || sessionId || ""}
           sessionTitle={displayTitle}
