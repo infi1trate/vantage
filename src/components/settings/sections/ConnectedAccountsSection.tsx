@@ -143,6 +143,9 @@ export function ConnectedAccountsSection() {
   // Disconnect flow state
   const [confirmingDisconnect, setConfirmingDisconnect] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  
+  // Test sync state
+  const [testingSyncFor, setTestingSyncFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -313,6 +316,39 @@ export function ConnectedAccountsSection() {
       .find(p => p.id === providerId)?.name || providerId;
   };
 
+  const handleTestSync = async (providerId: string) => {
+    if (!user) return;
+    
+    setTestingSyncFor(providerId);
+    
+    try {
+      const response = await supabase.functions.invoke("dropbox-sync", {
+        headers: { "x-custom-path": "/test" },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.success) {
+        toast.success("Dropbox sync is active", {
+          description: "Test file uploaded successfully.",
+        });
+      } else {
+        toast.error("Dropbox write failed", {
+          description: "Reconnect Dropbox to restore access.",
+        });
+      }
+    } catch (error) {
+      console.error("[TestSync] Error:", error);
+      toast.error("Dropbox write failed", {
+        description: "Reconnect Dropbox to restore access.",
+      });
+    } finally {
+      setTestingSyncFor(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -436,20 +472,39 @@ export function ConnectedAccountsSection() {
                         
                         <div className="flex items-center gap-2 shrink-0">
                           {connected ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDisconnectClick(provider.id)}
-                              disabled={isDisconnecting || isConfirmingDisconnect}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              aria-label={`Disconnect ${provider.name}`}
-                            >
-                              {isDisconnecting ? (
-                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                              ) : (
-                                "Disconnect"
+                            <>
+                              {/* Test Sync button - only for Dropbox with active provisioning */}
+                              {provider.id === "dropbox" && account?.provisioning_status === "completed" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleTestSync(provider.id)}
+                                  disabled={testingSyncFor === provider.id}
+                                  className="text-muted-foreground hover:text-foreground"
+                                  aria-label="Test Dropbox sync"
+                                >
+                                  {testingSyncFor === provider.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    "Test Sync"
+                                  )}
+                                </Button>
                               )}
-                            </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDisconnectClick(provider.id)}
+                                disabled={isDisconnecting || isConfirmingDisconnect}
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                aria-label={`Disconnect ${provider.name}`}
+                              >
+                                {isDisconnecting ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  "Disconnect"
+                                )}
+                              </Button>
+                            </>
                           ) : (
                             <Button
                               variant="outline"
