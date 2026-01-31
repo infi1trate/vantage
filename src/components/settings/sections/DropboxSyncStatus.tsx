@@ -266,7 +266,7 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     setSyncingAll(true);
 
     try {
-      // Get all sessions with "ready" status that don't have a sync record yet
+      // Get all sessions with "ready" status
       const { data: allSessions, error: sessionsError } = await supabase
         .from("capture_sessions")
         .select("id")
@@ -277,53 +277,84 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
 
       if (!allSessions || allSessions.length === 0) {
         toast.info("No recordings to sync");
+        setSyncingAll(false);
         return;
       }
 
-      // Get existing sync records
+      // Get existing sync records with their status
       const { data: existingSyncs, error: syncsError } = await supabase
         .from("dropbox_sync_status")
-        .select("session_id")
+        .select("session_id, sync_status")
         .eq("user_id", user.id);
 
       if (syncsError) throw syncsError;
 
-      const syncedSessionIds = new Set(existingSyncs?.map(s => s.session_id) || []);
-      const unsyncedSessions = allSessions.filter(s => !syncedSessionIds.has(s.id));
+      // Build a map of session_id -> sync_status
+      const syncStatusMap = new Map<string, string>();
+      for (const sync of existingSyncs || []) {
+        syncStatusMap.set(sync.session_id, sync.sync_status);
+      }
 
-      if (unsyncedSessions.length === 0) {
-        toast.info("All recordings are already synced or queued");
+      // Find sessions that need syncing:
+      // 1. No sync record at all (never attempted)
+      // 2. sync_status = "pending" (stuck pending)
+      // 3. sync_status = "failed" (previously failed)
+      const sessionsToSync = allSessions.filter(s => {
+        const status = syncStatusMap.get(s.id);
+        // No record, or pending, or failed = needs sync
+        return !status || status === "pending" || status === "failed";
+      });
+
+      if (sessionsToSync.length === 0) {
+        toast.info("All recordings are already synced or syncing");
+        setSyncingAll(false);
         return;
       }
 
-      // Create pending sync records and trigger sync for each
-      let triggeredCount = 0;
-      for (const session of unsyncedSessions) {
-        try {
-          // Create pending record
-          await supabase
-            .from("dropbox_sync_status")
-            .upsert({
-              session_id: session.id,
-              user_id: user.id,
-              sync_status: "pending",
-              updated_at: new Date().toISOString(),
-            });
-
-          // Trigger sync
-          await triggerAutoSync(session.id);
-          triggeredCount++;
-        } catch (err) {
-          console.warn(`[DropboxSyncStatus] Failed to queue sync for ${session.id}:`, err);
-        }
-      }
-
       toast.success("Syncing existing recordings in the background", {
-        description: `Queued ${triggeredCount} recording(s)`,
+        description: `Queuing ${sessionsToSync.length} recording(s)...`,
       });
 
-      // Refresh stats
-      await fetchSyncStats();
+      // Process sequentially with a small delay to avoid overwhelming the server
+      // This runs in the background - don't await all of them
+      let triggeredCount = 0;
+      const processQueue = async () => {
+        for (const session of sessionsToSync) {
+          try {
+            // Create or update pending record
+            await supabase
+              .from("dropbox_sync_status")
+              .upsert({
+                session_id: session.id,
+                user_id: user.id,
+                sync_status: "pending",
+                error_message: null,
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: "session_id",
+              });
+
+            // Trigger sync
+            await triggerAutoSync(session.id);
+            triggeredCount++;
+
+            // Small delay between triggers to avoid rate limiting (500ms)
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (err) {
+            console.warn(`[DropboxSyncStatus] Failed to queue sync for ${session.id}:`, err);
+          }
+        }
+
+        console.log(`[DropboxSyncStatus] Finished queuing ${triggeredCount} recordings for sync`);
+      };
+
+      // Start processing in background (don't block UI)
+      processQueue().finally(() => {
+        fetchSyncStats();
+      });
+
+      // Refresh stats after a short delay
+      setTimeout(() => fetchSyncStats(), 1000);
     } catch (error) {
       console.error("[DropboxSyncStatus] Sync existing error:", error);
       toast.error("Failed to sync existing recordings");
