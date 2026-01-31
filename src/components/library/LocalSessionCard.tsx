@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { LocalSession, deleteLocalSession, getLocalSessionBlob, getLocalSessionThumbnail, formatBytes } from "@/lib/localSessionStorage";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +42,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
-import { useLazyLoad } from "@/hooks/useLazyLoad";
-import { measureAsync } from "@/lib/performanceMetrics";
+import { useLazyThumbnail } from "@/hooks/useLazyLoad";
 
 /**
  * Generate a deterministic placeholder color based on session id
@@ -71,53 +70,19 @@ export function LocalSessionCard({ session, onDeleted, viewMode }: LocalSessionC
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   
-  // Track thumbnail URL for cleanup
-  const thumbnailUrlRef = useRef<string | null>(null);
+  // Memoize the thumbnail loader to prevent unnecessary re-renders
+  const loadThumbnail = useCallback(() => getLocalSessionThumbnail(session.id), [session.id]);
   
-  // Lazy loading - only load thumbnail when card enters viewport
-  const { ref: cardRef, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
+  // Lazy loading with caching - only load thumbnail when card enters viewport
+  const { 
+    containerRef: cardRef, 
+    thumbnailUrl, 
+    isLoading: isThumbnailLoading 
+  } = useLazyThumbnail(session.id, loadThumbnail, {
     rootMargin: "200px", // Pre-load 200px before entering viewport
-    triggerOnce: true,
+    size: viewMode === "grid" ? "md" : "sm",
   });
-
-  // Load thumbnail from IndexedDB only when card becomes visible
-  useEffect(() => {
-    // Skip if not yet visible
-    if (!hasBeenVisible) return;
-    
-    let cancelled = false;
-    
-    async function loadThumbnail() {
-      try {
-        const thumbBlob = await measureAsync(
-          "thumbnail:load",
-          () => getLocalSessionThumbnail(session.id),
-          { sessionId: session.id }
-        );
-        
-        if (thumbBlob && !cancelled) {
-          const url = URL.createObjectURL(thumbBlob);
-          thumbnailUrlRef.current = url;
-          setThumbnailUrl(url);
-        }
-      } catch (err) {
-        console.warn("[LocalSessionCard] Failed to load thumbnail blob:", err);
-      }
-    }
-    
-    loadThumbnail();
-    
-    return () => {
-      cancelled = true;
-      // Revoke object URL on unmount
-      if (thumbnailUrlRef.current) {
-        URL.revokeObjectURL(thumbnailUrlRef.current);
-        thumbnailUrlRef.current = null;
-      }
-    };
-  }, [session.id, hasBeenVisible]);
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);

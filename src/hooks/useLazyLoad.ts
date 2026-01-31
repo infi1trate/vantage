@@ -162,3 +162,76 @@ export function useVisibilityTracking<T extends HTMLElement = HTMLDivElement>(
   
   return { ref, isVisible };
 }
+
+/**
+ * Hook for lazy thumbnail loading with caching support.
+ * Uses the thumbnail cache system for optimal performance.
+ */
+export function useLazyThumbnail(
+  videoId: string | null,
+  loadThumbnail: () => Promise<Blob | null>,
+  options: {
+    rootMargin?: string;
+    enabled?: boolean;
+    size?: "sm" | "md" | "lg";
+  } = {}
+): {
+  containerRef: React.RefObject<HTMLDivElement>;
+  thumbnailUrl: string | null;
+  isLoading: boolean;
+  hasLoaded: boolean;
+} {
+  const { rootMargin = "200px", enabled = true, size = "md" } = options;
+  
+  const { ref: containerRef, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
+    rootMargin,
+    triggerOnce: true,
+  });
+  
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const loadAttemptedRef = useRef(false);
+  
+  useEffect(() => {
+    // Only load when visible and enabled
+    if (!hasBeenVisible || !enabled || !videoId || loadAttemptedRef.current) return;
+    
+    loadAttemptedRef.current = true;
+    setIsLoading(true);
+    
+    // Dynamic import to avoid circular dependencies
+    import("@/lib/thumbnailCache").then(async ({ getCachedThumbnail, cacheThumbnail, getThumbnailCacheKey }) => {
+      const cacheKey = getThumbnailCacheKey(videoId, 0, size);
+      
+      // Check cache first
+      const cached = await getCachedThumbnail(cacheKey);
+      if (cached) {
+        setThumbnailUrl(cached);
+        setHasLoaded(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Load and cache
+      try {
+        const blob = await loadThumbnail();
+        if (blob) {
+          // Get dimensions from blob (use createImageBitmap)
+          const bitmap = await createImageBitmap(blob);
+          const url = await cacheThumbnail(cacheKey, blob, bitmap.width, bitmap.height);
+          bitmap.close();
+          setThumbnailUrl(url);
+        }
+        setHasLoaded(true);
+      } catch (err) {
+        console.warn("[useLazyThumbnail] Failed to load thumbnail:", err);
+        setHasLoaded(true);
+      } finally {
+        setIsLoading(false);
+      }
+    });
+  }, [hasBeenVisible, enabled, videoId, size, loadThumbnail]);
+  
+  return { containerRef, thumbnailUrl, isLoading, hasLoaded };
+}

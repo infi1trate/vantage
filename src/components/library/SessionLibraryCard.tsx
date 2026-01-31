@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { SessionWithAssets, deleteSessionPermanently } from "@/lib/sessionLibrary";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { useLazyLoad } from "@/hooks/useLazyLoad";
 
 interface SessionLibraryCardProps {
   session: SessionWithAssets;
@@ -53,6 +54,13 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
   const [isDeleting, setIsDeleting] = useState(false);
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const [exportDefaultTab, setExportDefaultTab] = useState<ExportTab>("download");
+  const [imageLoaded, setImageLoaded] = useState(false);
+  
+  // Lazy loading - only load when in/near viewport
+  const { ref: cardRef, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
+    rootMargin: "200px",
+    triggerOnce: true,
+  });
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -98,14 +106,23 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
   if (viewMode === "list") {
     return (
       <>
-        <Card className="group flex items-center gap-4 p-4 bg-card border-border/50 hover:border-primary/50 transition-all">
-          {/* Thumbnail */}
+        <Card ref={cardRef} className="group flex items-center gap-4 p-4 bg-card border-border/50 hover:border-primary/50 transition-all">
+          {/* Thumbnail with aspect ratio box to prevent layout shift */}
           <Link to={`/session/${session.id}`} className="shrink-0">
             <div className="w-40 aspect-video relative bg-muted/50 rounded-lg overflow-hidden">
-              {session.thumbnail_url ? (
-                <img src={session.thumbnail_url} alt={session.title} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-card">
+              {hasBeenVisible && session.thumbnail_url ? (
+                <img 
+                  src={session.thumbnail_url} 
+                  alt={session.title} 
+                  loading="lazy"
+                  decoding="async"
+                  className={`w-full h-full object-cover transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImageLoaded(true)}
+                />
+              ) : null}
+              {/* Placeholder shown until image loads */}
+              {(!hasBeenVisible || !session.thumbnail_url || !imageLoaded) && (
+                <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-card">
                   <Gamepad2 className="h-8 w-8 text-muted-foreground/30" />
                 </div>
               )}
@@ -258,14 +275,23 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
   // Grid view
   return (
     <>
-      <Card className="group relative overflow-hidden bg-card border-border/50 hover:border-primary/50 transition-all duration-300 card-hover">
+      <Card ref={cardRef} className="group relative overflow-hidden bg-card border-border/50 hover:border-primary/50 transition-all duration-300 card-hover">
         <Link to={`/session/${session.id}`}>
-          {/* Thumbnail */}
+          {/* Thumbnail with aspect ratio box */}
           <div className="aspect-video relative bg-muted/50 overflow-hidden">
-            {session.thumbnail_url ? (
-              <img src={session.thumbnail_url} alt={session.title} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-card">
+            {hasBeenVisible && session.thumbnail_url ? (
+              <img 
+                src={session.thumbnail_url} 
+                alt={session.title} 
+                loading="lazy"
+                decoding="async"
+                className={`w-full h-full object-cover transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={() => setImageLoaded(true)}
+              />
+            ) : null}
+            {/* Placeholder shown until image loads */}
+            {(!hasBeenVisible || !session.thumbnail_url || !imageLoaded) && (
+              <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-card">
                 <Gamepad2 className="h-12 w-12 text-muted-foreground/30" />
               </div>
             )}
