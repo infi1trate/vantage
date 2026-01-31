@@ -1,0 +1,240 @@
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { SettingsCard } from "../SettingsCard";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { Lock, Loader2, Check, AlertTriangle, Shield, Key } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+export function SecuritySection() {
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  const handlePasswordChange = async () => {
+    if (!newPassword || !confirmPassword) {
+      toast.error("Please fill in all password fields");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      toast.success("Password updated successfully");
+      setIsChangingPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      console.error("Error updating password:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update password");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const getPasswordStrength = (password: string) => {
+    let strength = 0;
+    if (password.length >= 8) strength++;
+    if (password.length >= 12) strength++;
+    if (/[A-Z]/.test(password)) strength++;
+    if (/[0-9]/.test(password)) strength++;
+    if (/[^A-Za-z0-9]/.test(password)) strength++;
+    return strength;
+  };
+
+  const passwordStrength = getPasswordStrength(newPassword);
+
+  return (
+    <div className="space-y-6">
+      {/* Password */}
+      <SettingsCard 
+        title="Password" 
+        description="Update your account password"
+      >
+        {!isChangingPassword ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2">
+            <div className="flex items-center gap-3">
+              <Lock className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div>
+                <span className="text-sm text-foreground">••••••••••••</span>
+                <p className="text-xs text-muted-foreground mt-0.5">Last changed: Never</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsChangingPassword(true)}
+              className="shrink-0"
+            >
+              Change Password
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                disabled={passwordLoading}
+              />
+              {newPassword && (
+                <div className="space-y-1">
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((level) => (
+                      <div
+                        key={level}
+                        className={cn(
+                          "h-1 flex-1 rounded-full transition-colors",
+                          passwordStrength >= level
+                            ? passwordStrength <= 2
+                              ? "bg-destructive"
+                              : passwordStrength <= 3
+                              ? "bg-warning"
+                              : "bg-vantage-success"
+                            : "bg-muted"
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {passwordStrength <= 2 ? "Weak" : passwordStrength <= 3 ? "Fair" : passwordStrength <= 4 ? "Good" : "Strong"}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm Password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                disabled={passwordLoading}
+              />
+              {confirmPassword && newPassword !== confirmPassword && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Passwords do not match
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col xs:flex-row gap-2 pt-2">
+              <Button
+                onClick={handlePasswordChange}
+                disabled={passwordLoading || newPassword !== confirmPassword}
+                className="flex-1 xs:flex-none"
+              >
+                {passwordLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Check className="h-4 w-4 mr-2" />
+                )}
+                Update Password
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsChangingPassword(false);
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                disabled={passwordLoading}
+                className="flex-1 xs:flex-none"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* Two-Factor Authentication */}
+      <SettingsCard 
+        title="Two-Factor Authentication" 
+        description="Add an extra layer of security to your account"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2">
+          <div className="flex items-center gap-3">
+            <Key className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div>
+              <span className="text-sm text-foreground">Not enabled</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Use an authenticator app for additional security
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => toast.info("Two-factor authentication coming soon")}
+            className="shrink-0"
+          >
+            Enable 2FA
+          </Button>
+        </div>
+      </SettingsCard>
+
+      {/* Security Tips */}
+      <SettingsCard 
+        title="Security Tips" 
+        description="Best practices to keep your account safe"
+      >
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
+            <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Use a strong, unique password
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Combine uppercase, lowercase, numbers, and symbols
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
+            <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Enable two-factor authentication
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Protect your account even if your password is compromised
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
+            <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Review active sessions regularly
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Revoke any sessions you don't recognize
+              </p>
+            </div>
+          </div>
+        </div>
+      </SettingsCard>
+    </div>
+  );
+}

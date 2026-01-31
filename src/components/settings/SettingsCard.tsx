@@ -6,20 +6,28 @@ interface SettingsCardProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  actions?: React.ReactNode;
 }
 
-export function SettingsCard({ title, description, children, className }: SettingsCardProps) {
+export function SettingsCard({ title, description, children, className, actions }: SettingsCardProps) {
   return (
     <div className={cn(
       "rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden",
       className
     )}>
-      <div className="px-4 sm:px-6 py-4 border-b border-border/30">
-        <h3 className="font-barlow text-lg sm:text-xl font-bold uppercase tracking-wide text-foreground">
-          {title}
-        </h3>
-        {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="px-4 sm:px-6 py-4 border-b border-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h3 className="font-barlow text-lg sm:text-xl font-bold uppercase tracking-wide text-foreground">
+            {title}
+          </h3>
+          {description && (
+            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+        {actions && (
+          <div className="shrink-0">
+            {actions}
+          </div>
         )}
       </div>
       <div className="px-4 sm:px-6 py-4 sm:py-5">
