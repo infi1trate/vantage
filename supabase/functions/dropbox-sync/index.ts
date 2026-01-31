@@ -41,7 +41,7 @@ const RETRY_MAX_DELAY_MS = 120000; // 2 minutes max
 
 /**
  * Check if an error is transient (retryable)
- * Transient errors include: timeouts, 429 rate limits, 5xx server errors
+ * Transient errors include: timeouts, 429 rate limits, 5xx server errors, verification failures
  */
 function isTransientError(error: string | Error | null): boolean {
   if (!error) return false;
@@ -78,6 +78,18 @@ function isTransientError(error: string | Error | null): boolean {
       lowerError.includes("connection") ||
       lowerError.includes("econnrefused") ||
       lowerError.includes("enotfound")) {
+    return true;
+  }
+  
+  // Verification failures are transient (Dropbox eventual consistency)
+  if (lowerError.includes("verification failed") ||
+      lowerError.includes("metadata request failed")) {
+    return true;
+  }
+  
+  // Upload session issues that may be recoverable
+  if (lowerError.includes("session") && 
+      (lowerError.includes("expired") || lowerError.includes("invalid"))) {
     return true;
   }
   
@@ -2278,15 +2290,68 @@ async function handleSync(
     
     if (!uploadResult.success) {
       console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
-      throw new Error(uploadResult.error || "Upload failed");
+      // Use updateSyncStatus for retry logic on transient failures
+      const currentAttempt = existingStatus?.attempt_count || 1;
+      const { retryScheduled, nextRetryAt } = await updateSyncStatus(
+        supabase, 
+        sessionId, 
+        "failed", 
+        uploadResult.error || "Upload failed",
+        currentAttempt
+      );
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          method_used: null,
+          target_path: null,
+          dropbox_file_id: null,
+          dropbox_rev: null,
+          size_bytes: null,
+          verified_exists: false,
+          error: uploadResult.error || "Upload failed",
+          retry_scheduled: retryScheduled,
+          next_retry_at: nextRetryAt?.toISOString() || null,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // CRITICAL: Verify the file actually exists in Dropbox
+    // CRITICAL: Verify the file actually exists in Dropbox via metadata API
     const verification = await verifyDropboxUpload(accessToken, dropboxPath);
     
     if (!verification.verified) {
       console.error(`[DropboxSync] Post-upload verification FAILED: ${verification.error}`);
-      throw new Error(`Verification failed: ${verification.error}`);
+      // Verification failure is retryable - keep as pending with retry schedule
+      const currentAttempt = existingStatus?.attempt_count || 1;
+      const verificationError = `Verification failed: ${verification.error}`;
+      const { retryScheduled, nextRetryAt } = await updateSyncStatus(
+        supabase, 
+        sessionId, 
+        "failed", 
+        verificationError,
+        currentAttempt
+      );
+      
+      if (retryScheduled && nextRetryAt) {
+        console.log(`[DropboxSync] Verification failed - retry scheduled for ${nextRetryAt.toISOString()}`);
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          method_used: uploadResult.method,
+          target_path: dropboxPath,
+          dropbox_file_id: null,
+          dropbox_rev: null,
+          size_bytes: null,
+          verified_exists: false,
+          error: verificationError,
+          retry_scheduled: retryScheduled,
+          next_retry_at: nextRetryAt?.toISOString() || null,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // File verified! Update sync status to completed with confirmed metadata
@@ -2301,6 +2366,7 @@ async function handleSync(
         completed_at: new Date().toISOString(),
         error_message: null,
         method_used: uploadResult.method || "streaming",
+        next_retry_at: null, // Clear any pending retry
       })
       .eq("session_id", sessionId);
 
@@ -2330,16 +2396,20 @@ async function handleSync(
   } catch (error) {
     console.error("[DropboxSync] Sync error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const currentAttempt = existingStatus?.attempt_count || 1;
 
-    // Update sync status to failed
-    await supabase
-      .from("dropbox_sync_status")
-      .update({
-        sync_status: "failed",
-        error_message: errorMessage,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("session_id", sessionId);
+    // Use updateSyncStatus for retry logic on transient failures
+    const { retryScheduled, nextRetryAt } = await updateSyncStatus(
+      supabase, 
+      sessionId, 
+      "failed", 
+      errorMessage,
+      currentAttempt
+    );
+    
+    if (retryScheduled && nextRetryAt) {
+      console.log(`[DropboxSync] Error - retry scheduled for ${nextRetryAt.toISOString()}`);
+    }
 
     return new Response(
       JSON.stringify({ 
@@ -2351,6 +2421,8 @@ async function handleSync(
         size_bytes: null,
         verified_exists: false,
         error: errorMessage,
+        retry_scheduled: retryScheduled,
+        next_retry_at: nextRetryAt?.toISOString() || null,
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
