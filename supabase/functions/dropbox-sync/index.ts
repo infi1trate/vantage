@@ -25,6 +25,15 @@ const DROPBOX_MOVE_URL = "https://api.dropboxapi.com/2/files/move_v2";
 const DROPBOX_DELETE_URL = "https://api.dropboxapi.com/2/files/delete_v2";
 const DROPBOX_GET_METADATA_URL = "https://api.dropboxapi.com/2/files/get_metadata";
 
+// Dropbox upload session endpoints (for large files)
+const DROPBOX_UPLOAD_SESSION_START_URL = "https://content.dropboxapi.com/2/files/upload_session/start";
+const DROPBOX_UPLOAD_SESSION_APPEND_URL = "https://content.dropboxapi.com/2/files/upload_session/append_v2";
+const DROPBOX_UPLOAD_SESSION_FINISH_URL = "https://content.dropboxapi.com/2/files/upload_session/finish";
+
+// Upload size thresholds
+const SIMPLE_UPLOAD_MAX_SIZE = 150 * 1024 * 1024; // 150MB - Dropbox limit for simple upload
+const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks for session uploads (must be multiple of 4MB)
+
 // Dropbox path constants
 // NOTE: Dropbox "App folder" access roots at /Apps/Vantage/ in the Dropbox UI.
 // All API paths are RELATIVE to this sandbox root - "/" in API = "/Apps/Vantage" in UI.
@@ -1176,8 +1185,191 @@ async function verifyDropboxUpload(
 }
 
 /**
+ * Upload a file to Dropbox using chunked upload sessions
+ * Required for files > 150MB, but also more reliable for large files
+ */
+async function uploadWithChunkedSession(
+  accessToken: string,
+  fileData: ArrayBuffer,
+  dropboxPath: string
+): Promise<{ success: boolean; uploadResult?: any; error?: string }> {
+  const totalSize = fileData.byteLength;
+  const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
+  
+  console.log(`[DropboxSync] Starting chunked upload: ${totalSize} bytes, ${totalChunks} chunks of ${CHUNK_SIZE} bytes`);
+  
+  try {
+    // Step 1: Start upload session
+    console.log(`[DropboxSync] Starting upload session...`);
+    const firstChunkEnd = Math.min(CHUNK_SIZE, totalSize);
+    const firstChunk = fileData.slice(0, firstChunkEnd);
+    
+    const startResponse = await fetch(DROPBOX_UPLOAD_SESSION_START_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          close: totalSize <= CHUNK_SIZE, // Close if single chunk
+        }),
+      },
+      body: firstChunk,
+    });
+    
+    if (!startResponse.ok) {
+      const errorText = await startResponse.text();
+      console.error(`[DropboxSync] Session start failed:`, errorText);
+      return { success: false, error: `Session start failed: ${startResponse.status} - ${errorText}` };
+    }
+    
+    const startResult = await startResponse.json();
+    const sessionId = startResult.session_id;
+    console.log(`[DropboxSync] Upload session started: ${sessionId}`);
+    
+    let offset = firstChunkEnd;
+    let chunkIndex = 1;
+    
+    // Step 2: Append remaining chunks
+    while (offset < totalSize) {
+      const remainingBytes = totalSize - offset;
+      const chunkSize = Math.min(CHUNK_SIZE, remainingBytes);
+      const isLastChunk = offset + chunkSize >= totalSize;
+      const chunk = fileData.slice(offset, offset + chunkSize);
+      
+      console.log(`[DropboxSync] Uploading chunk ${chunkIndex + 1}/${totalChunks}: offset=${offset}, size=${chunkSize}, isLast=${isLastChunk}`);
+      
+      const appendResponse = await fetch(DROPBOX_UPLOAD_SESSION_APPEND_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/octet-stream",
+          "Dropbox-API-Arg": JSON.stringify({
+            cursor: {
+              session_id: sessionId,
+              offset: offset,
+            },
+            close: isLastChunk,
+          }),
+        },
+        body: chunk,
+      });
+      
+      if (!appendResponse.ok) {
+        const errorText = await appendResponse.text();
+        console.error(`[DropboxSync] Chunk append failed at offset ${offset}:`, errorText);
+        return { success: false, error: `Chunk ${chunkIndex + 1} failed: ${appendResponse.status} - ${errorText}` };
+      }
+      
+      // Consume response body
+      await appendResponse.text();
+      
+      offset += chunkSize;
+      chunkIndex++;
+    }
+    
+    // Step 3: Finish upload session
+    console.log(`[DropboxSync] Finishing upload session...`);
+    const finishResponse = await fetch(DROPBOX_UPLOAD_SESSION_FINISH_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          cursor: {
+            session_id: sessionId,
+            offset: totalSize,
+          },
+          commit: {
+            path: dropboxPath,
+            mode: "overwrite",
+            autorename: false,
+            mute: true,
+          },
+        }),
+      },
+      body: new Uint8Array(0), // Empty body for finish
+    });
+    
+    if (!finishResponse.ok) {
+      const errorText = await finishResponse.text();
+      console.error(`[DropboxSync] Session finish failed:`, errorText);
+      return { success: false, error: `Session finish failed: ${finishResponse.status} - ${errorText}` };
+    }
+    
+    const uploadResult = await finishResponse.json();
+    console.log(`[DropboxSync] Chunked upload completed:`, JSON.stringify(uploadResult));
+    
+    return { success: true, uploadResult };
+    
+  } catch (error) {
+    console.error(`[DropboxSync] Chunked upload error:`, error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Chunked upload network error" 
+    };
+  }
+}
+
+/**
+ * Upload a file to Dropbox - automatically chooses simple or chunked upload
+ * based on file size
+ */
+async function uploadToDropbox(
+  accessToken: string,
+  fileData: ArrayBuffer,
+  dropboxPath: string
+): Promise<{ success: boolean; uploadResult?: any; error?: string }> {
+  const fileSize = fileData.byteLength;
+  
+  // Use chunked upload for files > 150MB (Dropbox limit) or > 50MB (for reliability)
+  // Using 50MB threshold for better reliability in edge function environment
+  const useChunkedUpload = fileSize > 50 * 1024 * 1024;
+  
+  if (useChunkedUpload) {
+    console.log(`[DropboxSync] Using chunked upload for ${fileSize} bytes (> 50MB)`);
+    return uploadWithChunkedSession(accessToken, fileData, dropboxPath);
+  }
+  
+  // Simple upload for smaller files
+  console.log(`[DropboxSync] Using simple upload for ${fileSize} bytes`);
+  try {
+    const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          path: dropboxPath,
+          mode: "overwrite",
+          autorename: false,
+          mute: true,
+        }),
+      },
+      body: fileData,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error("[DropboxSync] Simple upload failed:", errorText);
+      return { success: false, error: `Upload failed: ${uploadResponse.status} - ${errorText}` };
+    }
+
+    const uploadResult = await uploadResponse.json();
+    console.log(`[DropboxSync] Simple upload completed:`, JSON.stringify(uploadResult));
+    return { success: true, uploadResult };
+    
+  } catch (error) {
+    console.error(`[DropboxSync] Simple upload error:`, error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Upload network error" 
+    };
+  }
+}
+
+/**
  * Execute the auto-sync operation (runs in background)
- * Uses streaming upload to avoid memory issues with large files
+ * Uses chunked upload for large files to avoid memory/timeout issues
  */
 async function executeAutoSync(
   sessionId: string,
@@ -1195,7 +1387,7 @@ async function executeAutoSync(
       return;
     }
 
-    // Get the video storage path from video_assets (NOT the signed URL which expires)
+    // Get the video storage path from video_assets
     const { data: asset, error: assetError } = await supabase
       .from("video_assets")
       .select("storage_path, storage_url, file_size_bytes, session_id")
@@ -1232,33 +1424,23 @@ async function executeAutoSync(
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
     const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-    // Get a signed URL for streaming (avoid loading entire file into memory)
-    console.log(`[DropboxSync] Getting signed URL for streaming upload...`);
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    // Download the video file from storage
+    console.log(`[DropboxSync] Downloading video from storage: ${asset.storage_path}`);
+    const { data: fileData, error: downloadError } = await supabase.storage
       .from("video-assets")
-      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
+      .download(asset.storage_path);
     
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      console.error(`[DropboxSync] Failed to get signed URL:`, signedUrlError);
-      await updateSyncStatus(supabase, sessionId, "failed", "Failed to get video URL");
+    if (downloadError || !fileData) {
+      console.error(`[DropboxSync] Failed to download video:`, downloadError);
+      await updateSyncStatus(supabase, sessionId, "failed", "Failed to download video from storage");
       return;
     }
 
-    // Fetch the video as a stream (this still downloads, but we'll stream to Dropbox)
-    console.log(`[DropboxSync] Fetching video for upload...`);
-    const videoResponse = await fetch(signedUrlData.signedUrl);
+    // Convert Blob to ArrayBuffer for upload
+    const arrayBuffer = await fileData.arrayBuffer();
+    const fileSize = arrayBuffer.byteLength;
     
-    if (!videoResponse.ok) {
-      console.error(`[DropboxSync] Failed to fetch video: ${videoResponse.status}`);
-      await updateSyncStatus(supabase, sessionId, "failed", `Failed to fetch video: ${videoResponse.status}`);
-      return;
-    }
-
-    // Get file size from response headers or database
-    const contentLength = videoResponse.headers.get("content-length");
-    const fileSize = contentLength ? parseInt(contentLength, 10) : (asset.file_size_bytes || 0);
-    
-    console.log(`[DropboxSync] Video size: ${fileSize} bytes, uploading to: ${dropboxPath}`);
+    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to: ${dropboxPath}`);
 
     // Validate file size
     if (fileSize < 1024) {
@@ -1267,35 +1449,16 @@ async function executeAutoSync(
       return;
     }
 
-    // Stream the video body directly to Dropbox (avoids buffering entire file in memory)
-    console.log(`[DropboxSync] Uploading to Dropbox...`);
-    const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${tokenResult.accessToken}`,
-        "Content-Type": "application/octet-stream",
-        "Dropbox-API-Arg": JSON.stringify({
-          path: dropboxPath,
-          mode: "overwrite",
-          autorename: false,
-          mute: true,
-        }),
-      },
-      body: videoResponse.body, // Stream directly!
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error("[DropboxSync] Upload failed:", errorText);
-      await updateSyncStatus(supabase, sessionId, "failed", `Upload failed: ${uploadResponse.status} - ${errorText}`);
+    // Upload to Dropbox (automatically chooses simple or chunked)
+    const uploadResult = await uploadToDropbox(tokenResult.accessToken, arrayBuffer, dropboxPath);
+    
+    if (!uploadResult.success) {
+      console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
+      await updateSyncStatus(supabase, sessionId, "failed", uploadResult.error || "Upload failed");
       return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log(`[DropboxSync] Upload API response:`, JSON.stringify(uploadResult));
-
     // CRITICAL: Verify the file actually exists in Dropbox
-    // Don't trust the upload response alone - confirm via metadata
     const verification = await verifyDropboxUpload(tokenResult.accessToken, dropboxPath);
     
     if (!verification.verified) {
@@ -1310,8 +1473,8 @@ async function executeAutoSync(
       .from("dropbox_sync_status")
       .update({
         sync_status: "completed",
-        dropbox_path: uploadResult.path_display || dropboxPath,
-        dropbox_file_id: verification.fileId || uploadResult.id,
+        dropbox_path: uploadResult.uploadResult?.path_display || dropboxPath,
+        dropbox_file_id: verification.fileId || uploadResult.uploadResult?.id,
         file_size_bytes: verification.size || fileSize,
         completed_at: new Date().toISOString(),
         error_message: null,
@@ -1444,31 +1607,22 @@ async function handleSync(
   const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
   try {
-    // Get a signed URL for streaming (avoid loading entire file into memory)
-    console.log(`[DropboxSync] Getting signed URL for streaming upload...`);
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    // Download the video file from storage
+    console.log(`[DropboxSync] Downloading video from storage: ${asset.storage_path}`);
+    const { data: fileData, error: downloadError } = await supabase.storage
       .from("video-assets")
-      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
+      .download(asset.storage_path);
     
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      console.error(`[DropboxSync] Failed to get signed URL:`, signedUrlError);
-      throw new Error("Failed to get video URL");
+    if (downloadError || !fileData) {
+      console.error(`[DropboxSync] Failed to download video:`, downloadError);
+      throw new Error("Failed to download video from storage");
     }
 
-    // Fetch the video as a stream
-    console.log(`[DropboxSync] Fetching video for upload...`);
-    const videoResponse = await fetch(signedUrlData.signedUrl);
+    // Convert Blob to ArrayBuffer for upload
+    const arrayBuffer = await fileData.arrayBuffer();
+    const fileSize = arrayBuffer.byteLength;
     
-    if (!videoResponse.ok) {
-      console.error(`[DropboxSync] Failed to fetch video: ${videoResponse.status}`);
-      throw new Error(`Failed to fetch video: ${videoResponse.status}`);
-    }
-
-    // Get file size from response headers or database
-    const contentLength = videoResponse.headers.get("content-length");
-    const fileSize = contentLength ? parseInt(contentLength, 10) : (asset.file_size_bytes || 0);
-    
-    console.log(`[DropboxSync] Video size: ${fileSize} bytes, uploading to: ${dropboxPath}`);
+    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to: ${dropboxPath}`);
 
     // Validate file size
     if (fileSize < 1024) {
@@ -1476,31 +1630,14 @@ async function handleSync(
       throw new Error(`File too small: ${fileSize} bytes`);
     }
 
-    // Stream the video body directly to Dropbox
+    // Upload to Dropbox (automatically chooses simple or chunked based on size)
     console.log(`[DropboxSync] Uploading to Dropbox...`);
-    const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/octet-stream",
-        "Dropbox-API-Arg": JSON.stringify({
-          path: dropboxPath,
-          mode: "overwrite",
-          autorename: false,
-          mute: true,
-        }),
-      },
-      body: videoResponse.body, // Stream directly!
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error("[DropboxSync] Upload failed:", errorText);
-      throw new Error(`Dropbox upload failed: ${uploadResponse.status} - ${errorText}`);
+    const uploadResult = await uploadToDropbox(accessToken, arrayBuffer, dropboxPath);
+    
+    if (!uploadResult.success) {
+      console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
+      throw new Error(uploadResult.error || "Upload failed");
     }
-
-    const uploadResult = await uploadResponse.json();
-    console.log(`[DropboxSync] Upload API response:`, JSON.stringify(uploadResult));
 
     // CRITICAL: Verify the file actually exists in Dropbox
     const verification = await verifyDropboxUpload(accessToken, dropboxPath);
@@ -1516,8 +1653,8 @@ async function handleSync(
       .from("dropbox_sync_status")
       .update({
         sync_status: "completed",
-        dropbox_path: uploadResult.path_display || dropboxPath,
-        dropbox_file_id: verification.fileId || uploadResult.id,
+        dropbox_path: uploadResult.uploadResult?.path_display || dropboxPath,
+        dropbox_file_id: verification.fileId || uploadResult.uploadResult?.id,
         file_size_bytes: verification.size || fileSize,
         completed_at: new Date().toISOString(),
         error_message: null,
@@ -1536,8 +1673,8 @@ async function handleSync(
     return new Response(
       JSON.stringify({
         success: true,
-        path: uploadResult.path_display,
-        fileId: verification.fileId || uploadResult.id,
+        path: uploadResult.uploadResult?.path_display || dropboxPath,
+        fileId: verification.fileId || uploadResult.uploadResult?.id,
         size: verification.size || fileSize,
         verified: true,
       }),
