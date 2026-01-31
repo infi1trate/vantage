@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { cn } from "@/lib/utils";
 import { SuggestionMarkers, AnnotationSuggestion } from "./SuggestionMarkers";
 import { recordMetric } from "@/lib/performanceMetrics";
+
 export interface SelectionState {
   type: "point" | "range" | null;
   point?: number;
@@ -23,6 +24,57 @@ interface TimelineSelectionProps {
   className?: string;
 }
 
+// Memoized marker component to prevent re-renders
+const TimelineMarker = memo(function TimelineMarker({
+  id,
+  time,
+  duration,
+  color,
+  onSeek,
+  onMarkerClick,
+}: {
+  id: string;
+  time: number;
+  duration: number;
+  color?: string;
+  onSeek: (time: number) => void;
+  onMarkerClick?: (id: string, time: number) => void;
+}) {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSeek(time);
+    onMarkerClick?.(id, time);
+  }, [id, time, onSeek, onMarkerClick]);
+
+  return (
+    <button
+      className={cn(
+        "absolute top-2 bottom-6 w-1 rounded-full transition-transform hover:scale-x-150 z-10",
+        color || "bg-primary"
+      )}
+      style={{ left: `${(time / duration) * 100}%` }}
+      onClick={handleClick}
+    />
+  );
+});
+
+// Memoized time markers
+const TimeMarkers = memo(function TimeMarkers({ duration }: { duration: number }) {
+  const formatTimeShort = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="absolute bottom-1 left-0 right-0 flex justify-between px-2 text-[10px] font-mono text-muted-foreground/50 pointer-events-none">
+      {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
+        <span key={pct}>{formatTimeShort(pct * duration)}</span>
+      ))}
+    </div>
+  );
+});
+
 export function TimelineSelection({
   duration,
   currentTime,
@@ -42,6 +94,11 @@ export function TimelineSelection({
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [selectionHistory, setSelectionHistory] = useState<SelectionState[]>([]);
+  
+  // Refs for RAF-throttled seek - immediate UI, batched video updates
+  const rafIdRef = useRef<number | null>(null);
+  const pendingSeekRef = useRef<number | null>(null);
+  const lastSeekTimeRef = useRef<number>(0);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -122,6 +179,34 @@ export function TimelineSelection({
     recordMetric("playback:seek", scrubDuration, { type: "click", time });
   }, [getTimeFromPosition, selection, duration, pushHistory, onSeek]);
 
+  // RAF-throttled seek for smooth scrubbing
+  const throttledSeek = useCallback((time: number) => {
+    pendingSeekRef.current = time;
+    
+    if (rafIdRef.current !== null) return; // Already scheduled
+    
+    rafIdRef.current = requestAnimationFrame(() => {
+      const now = performance.now();
+      
+      // Throttle to ~60fps (16ms)
+      if (now - lastSeekTimeRef.current >= 16 && pendingSeekRef.current !== null) {
+        onSeek(pendingSeekRef.current);
+        lastSeekTimeRef.current = now;
+      }
+      
+      rafIdRef.current = null;
+    });
+  }, [onSeek]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const time = getTimeFromPosition(e.clientX);
     setHoverTime(time);
@@ -131,11 +216,11 @@ export function TimelineSelection({
     if (dragType === "handle-start" && selection.rangeEnd !== undefined) {
       const newStart = Math.min(time, selection.rangeEnd - 0.1);
       onSelectionChange({ type: "range", rangeStart: newStart, rangeEnd: selection.rangeEnd });
-      onSeek(newStart);
+      throttledSeek(newStart);
     } else if (dragType === "handle-end" && selection.rangeStart !== undefined) {
       const newEnd = Math.max(time, selection.rangeStart + 0.1);
       onSelectionChange({ type: "range", rangeStart: selection.rangeStart, rangeEnd: newEnd });
-      onSeek(newEnd);
+      throttledSeek(newEnd);
     } else if (dragType === "seek" && dragStart !== null) {
       const diff = Math.abs(time - dragStart);
       
@@ -146,15 +231,15 @@ export function TimelineSelection({
         const end = Math.max(dragStart, time);
         onSelectionChange({ type: "range", rangeStart: start, rangeEnd: end });
       } else {
-        onSeek(time);
+        throttledSeek(time);
       }
     } else if (dragType === "range" && dragStart !== null) {
       const start = Math.min(dragStart, time);
       const end = Math.max(dragStart, time);
       onSelectionChange({ type: "range", rangeStart: start, rangeEnd: end });
-      onSeek(time);
+      throttledSeek(time);
     }
-  }, [getTimeFromPosition, isDragging, dragType, dragStart, selection, onSelectionChange, onSeek]);
+  }, [getTimeFromPosition, isDragging, dragType, dragStart, selection, onSelectionChange, throttledSeek]);
 
   const handleMouseUp = useCallback(() => {
     if (isDragging) {
@@ -321,27 +406,19 @@ export function TimelineSelection({
         </>
       )}
 
-      {/* Time markers along bottom */}
-      <div className="absolute bottom-1 left-0 right-0 flex justify-between px-2 text-[10px] font-mono text-muted-foreground/50 pointer-events-none">
-        {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
-          <span key={pct}>{formatTimeShort(pct * duration)}</span>
-        ))}
-      </div>
+      {/* Time markers along bottom - memoized */}
+      <TimeMarkers duration={duration} />
 
-      {/* Markers */}
+      {/* Markers - memoized components */}
       {markers.map((marker) => (
-        <button
+        <TimelineMarker
           key={marker.id}
-          className={cn(
-            "absolute top-2 bottom-6 w-1 rounded-full transition-transform hover:scale-x-150 z-10",
-            marker.color || "bg-primary"
-          )}
-          style={{ left: `${(marker.time / duration) * 100}%` }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSeek(marker.time);
-            onMarkerClick?.(marker.id, marker.time);
-          }}
+          id={marker.id}
+          time={marker.time}
+          duration={duration}
+          color={marker.color}
+          onSeek={onSeek}
+          onMarkerClick={onMarkerClick}
         />
       ))}
 
