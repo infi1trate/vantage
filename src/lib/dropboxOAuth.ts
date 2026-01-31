@@ -10,10 +10,12 @@ import { supabase } from "@/integrations/supabase/client";
 // OAuth state storage key
 const OAUTH_STATE_KEY = "vantage_dropbox_oauth_state";
 
-interface DropboxOAuthResult {
+export interface DropboxOAuthResult {
   success: boolean;
   email?: string;
   accountId?: string;
+  provisioned?: boolean;
+  provisioningError?: string;
   error?: string;
 }
 
@@ -192,6 +194,8 @@ async function exchangeCodeForTokens(
         success: true,
         email: response.data.email,
         accountId: response.data.accountId,
+        provisioned: response.data.provisioned,
+        provisioningError: response.data.provisioningError,
       };
     }
 
@@ -236,6 +240,40 @@ export function handleDropboxCallback(): { code?: string; state?: string; error?
   }
 
   return null;
+}
+
+/**
+ * Retry provisioning for a failed Dropbox connection
+ * Note: This requires a fresh access token - user may need to reconnect
+ */
+export async function retryDropboxProvisioning(accessToken: string): Promise<{ 
+  success: boolean; 
+  error?: string 
+}> {
+  try {
+    const response = await supabase.functions.invoke("dropbox-sync", {
+      body: { accessToken },
+      headers: {
+        "x-custom-path": "/provision/retry",
+      },
+    });
+
+    if (response.error) {
+      console.error("[DropboxOAuth] Retry provisioning error:", response.error);
+      return { success: false, error: response.error.message };
+    }
+
+    return {
+      success: response.data?.success || false,
+      error: response.data?.error,
+    };
+  } catch (error) {
+    console.error("[DropboxOAuth] Retry provisioning error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
 
 /**

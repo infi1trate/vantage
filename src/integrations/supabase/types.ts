@@ -485,6 +485,7 @@ export type Database = {
           provider: string
           provider_account_id: string
           provider_email: string | null
+          provisioning_status: string | null
           user_id: string
         }
         Insert: {
@@ -495,6 +496,7 @@ export type Database = {
           provider: string
           provider_account_id: string
           provider_email?: string | null
+          provisioning_status?: string | null
           user_id: string
         }
         Update: {
@@ -505,6 +507,7 @@ export type Database = {
           provider?: string
           provider_account_id?: string
           provider_email?: string | null
+          provisioning_status?: string | null
           user_id?: string
         }
         Relationships: []

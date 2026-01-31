@@ -15,6 +15,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 // Dropbox API endpoints
 const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
 const DROPBOX_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload";
+const DROPBOX_CREATE_FOLDER_URL = "https://api.dropboxapi.com/2/files/create_folder_v2";
 
 interface DropboxTokenResponse {
   access_token: string;
@@ -23,6 +24,140 @@ interface DropboxTokenResponse {
   refresh_token?: string;
   account_id?: string;
   uid?: string;
+}
+
+interface ProvisioningResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Provision Dropbox storage by creating folder structure and validation file
+ */
+async function provisionDropboxStorage(accessToken: string): Promise<ProvisioningResult> {
+  console.log("[DropboxSync] Starting storage provisioning...");
+  
+  try {
+    // Step 1: Create /Apps/Vantage folder
+    const vantageFolder = await createDropboxFolder(accessToken, "/Apps/Vantage");
+    if (!vantageFolder.success && !vantageFolder.alreadyExists) {
+      return { success: false, error: vantageFolder.error || "Failed to create Vantage folder" };
+    }
+    console.log("[DropboxSync] Created /Apps/Vantage folder");
+
+    // Step 2: Create /Apps/Vantage/Recordings subfolder
+    const recordingsFolder = await createDropboxFolder(accessToken, "/Apps/Vantage/Recordings");
+    if (!recordingsFolder.success && !recordingsFolder.alreadyExists) {
+      return { success: false, error: recordingsFolder.error || "Failed to create Recordings folder" };
+    }
+    console.log("[DropboxSync] Created /Apps/Vantage/Recordings folder");
+
+    // Step 3: Upload validation file
+    const validationFile = await uploadValidationFile(accessToken);
+    if (!validationFile.success) {
+      return { success: false, error: validationFile.error || "Failed to upload validation file" };
+    }
+    console.log("[DropboxSync] Uploaded validation file");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[DropboxSync] Provisioning error:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown provisioning error" 
+    };
+  }
+}
+
+/**
+ * Create a folder in Dropbox
+ */
+async function createDropboxFolder(
+  accessToken: string, 
+  path: string
+): Promise<{ success: boolean; alreadyExists?: boolean; error?: string }> {
+  try {
+    const response = await fetch(DROPBOX_CREATE_FOLDER_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        path,
+        autorename: false,
+      }),
+    });
+
+    if (response.ok) {
+      return { success: true };
+    }
+
+    const errorData = await response.json();
+    
+    // Handle "folder already exists" case (conflict error)
+    if (errorData?.error?.path?.[".tag"] === "conflict") {
+      console.log(`[DropboxSync] Folder ${path} already exists (idempotent)`);
+      return { success: true, alreadyExists: true };
+    }
+
+    console.error(`[DropboxSync] Create folder ${path} failed:`, errorData);
+    return { 
+      success: false, 
+      error: errorData?.error_summary || `Failed to create folder: ${response.status}` 
+    };
+  } catch (error) {
+    console.error(`[DropboxSync] Create folder ${path} error:`, error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Network error" 
+    };
+  }
+}
+
+/**
+ * Upload the validation file to confirm write permissions
+ */
+async function uploadValidationFile(
+  accessToken: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const content = "Vantage connected successfully";
+    const encoder = new TextEncoder();
+    const body = encoder.encode(content);
+
+    const response = await fetch(DROPBOX_UPLOAD_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({
+          path: "/Apps/Vantage/.vantage_connected",
+          mode: "overwrite",
+          autorename: false,
+          mute: true,
+        }),
+      },
+      body,
+    });
+
+    if (response.ok) {
+      return { success: true };
+    }
+
+    const errorText = await response.text();
+    console.error("[DropboxSync] Upload validation file failed:", errorText);
+    return { 
+      success: false, 
+      error: `Failed to upload validation file: ${response.status}` 
+    };
+  } catch (error) {
+    console.error("[DropboxSync] Upload validation file error:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Network error" 
+    };
+  }
 }
 
 serve(async (req) => {
@@ -94,10 +229,14 @@ serve(async (req) => {
       return handleDisconnect(userId, supabase);
     }
 
+    if (path === "/provision/retry" && req.method === "POST") {
+      return handleRetryProvisioning(req, userId, supabase);
+    }
+
     // Default route - show available endpoints
     return new Response(JSON.stringify({ 
       error: "Not found",
-      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/status", "/disconnect"],
+      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/status", "/disconnect", "/provision/retry"],
       receivedPath: path,
     }), {
       status: 404,
@@ -146,7 +285,7 @@ async function handleOAuthStart(req: Request, userId: string): Promise<Response>
 }
 
 /**
- * Exchange OAuth code for tokens and save to connected_accounts
+ * Exchange OAuth code for tokens, save to connected_accounts, and provision storage
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleOAuthCallback(
@@ -207,7 +346,7 @@ async function handleOAuthCallback(
     accountId = accountData.account_id || accountId;
   }
 
-  // Store in connected_accounts (upsert)
+  // Store in connected_accounts with pending provisioning status
   const { error: upsertError } = await supabase
     .from("connected_accounts")
     .upsert({
@@ -218,6 +357,7 @@ async function handleOAuthCallback(
       display_handle: accountEmail,
       connected_at: new Date().toISOString(),
       last_used_at: new Date().toISOString(),
+      provisioning_status: "pending",
     }, {
       onConflict: "user_id,provider",
     });
@@ -232,11 +372,97 @@ async function handleOAuthCallback(
 
   console.log(`[DropboxSync] Connected Dropbox for user ${userId}: ${accountEmail}`);
 
+  // Provision Dropbox storage (non-blocking on failure)
+  const provisionResult = await provisionDropboxStorage(tokens.access_token);
+  
+  // Update provisioning status based on result
+  const provisioningStatus = provisionResult.success ? "completed" : "failed";
+  
+  const { error: updateError } = await supabase
+    .from("connected_accounts")
+    .update({ provisioning_status: provisioningStatus })
+    .eq("user_id", userId)
+    .eq("provider", "dropbox");
+
+  if (updateError) {
+    console.error("[DropboxSync] Failed to update provisioning status:", updateError);
+  }
+
+  if (!provisionResult.success) {
+    console.warn(`[DropboxSync] Provisioning failed for user ${userId}: ${provisionResult.error}`);
+  }
+
   return new Response(
     JSON.stringify({ 
       success: true, 
       email: accountEmail,
-      accountId 
+      accountId,
+      provisioned: provisionResult.success,
+      provisioningError: provisionResult.error,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+/**
+ * Retry provisioning for a failed Dropbox connection
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleRetryProvisioning(
+  req: Request,
+  userId: string,
+  supabase: any
+): Promise<Response> {
+  const body = await req.json();
+  const { accessToken } = body;
+
+  if (!accessToken) {
+    return new Response(JSON.stringify({ error: "accessToken required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Verify the user has a Dropbox connection
+  const { data: account, error: accountError } = await supabase
+    .from("connected_accounts")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("provider", "dropbox")
+    .single();
+
+  if (accountError || !account) {
+    return new Response(JSON.stringify({ error: "No Dropbox connection found" }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Update status to pending before retrying
+  await supabase
+    .from("connected_accounts")
+    .update({ provisioning_status: "pending" })
+    .eq("user_id", userId)
+    .eq("provider", "dropbox");
+
+  // Attempt provisioning
+  const provisionResult = await provisionDropboxStorage(accessToken);
+  
+  // Update status based on result
+  const provisioningStatus = provisionResult.success ? "completed" : "failed";
+  
+  await supabase
+    .from("connected_accounts")
+    .update({ provisioning_status: provisioningStatus })
+    .eq("user_id", userId)
+    .eq("provider", "dropbox");
+
+  console.log(`[DropboxSync] Retry provisioning for user ${userId}: ${provisioningStatus}`);
+
+  return new Response(
+    JSON.stringify({ 
+      success: provisionResult.success,
+      error: provisionResult.error,
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
@@ -289,13 +515,13 @@ async function handleSync(
       onConflict: "session_id",
     });
 
-  // Dropbox path: /Vantage/recordings/{date}/{filename}
+  // Dropbox path: /Apps/Vantage/Recordings/{date}/{filename}
   const date = new Date().toISOString().split("T")[0];
   const sessionTitle = session?.title || "recording";
   const sanitizedTitle = (fileName || sessionTitle)
     .replace(/[^a-zA-Z0-9-_]/g, "_")
     .substring(0, 50);
-  const dropboxPath = `/Vantage/recordings/${date}/${sanitizedTitle}_${sessionId.substring(0, 8)}.webm`;
+  const dropboxPath = `/Apps/Vantage/Recordings/${date}/${sanitizedTitle}_${sessionId.substring(0, 8)}.webm`;
 
   try {
     // Download video from storage

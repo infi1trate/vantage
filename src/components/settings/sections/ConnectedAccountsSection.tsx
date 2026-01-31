@@ -15,10 +15,10 @@ import { SettingsCard } from "../SettingsCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Loader2, Check, ExternalLink } from "lucide-react";
+import { Loader2, Check, ExternalLink, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { startDropboxOAuth, disconnectDropbox } from "@/lib/dropboxOAuth";
+import { startDropboxOAuth, disconnectDropbox, type DropboxOAuthResult } from "@/lib/dropboxOAuth";
 import { DropboxSyncStatus } from "./DropboxSyncStatus";
 
 interface ConnectedAccount {
@@ -28,6 +28,7 @@ interface ConnectedAccount {
   provider_email: string | null;
   connected_at: string;
   last_used_at: string | null;
+  provisioning_status?: string | null;
 }
 
 // Provider icons as simple SVG components
@@ -185,14 +186,23 @@ export function ConnectedAccountsSection() {
     try {
       // Handle Dropbox with real OAuth
       if (providerId === "dropbox") {
-        const result = await startDropboxOAuth();
+        const result: DropboxOAuthResult = await startDropboxOAuth();
         
         if (result.success) {
           // Refresh connected accounts
           await fetchConnectedAccounts();
-          toast.success("Connected to Dropbox", {
-            description: result.email ? `Signed in as ${result.email}` : undefined,
-          });
+          
+          // Show success with provisioning status
+          if (result.provisioned) {
+            toast.success("Connected to Dropbox", {
+              description: result.email ? `Signed in as ${result.email}. Storage ready.` : "Storage provisioned successfully.",
+            });
+          } else {
+            // Connection succeeded but provisioning failed
+            toast.warning("Connected to Dropbox with limited functionality", {
+              description: result.provisioningError || "Storage setup failed. You can retry in settings.",
+            });
+          }
         } else {
           toast.error("Failed to connect Dropbox", {
             description: result.error || "Please try again",
@@ -378,10 +388,19 @@ export function ConnectedAccountsSection() {
                                 {provider.name}
                               </span>
                               {connected && (
-                                <span className="text-xs bg-vantage-success/20 text-vantage-success px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <Check className="h-3 w-3" />
-                                  Connected
-                                </span>
+                                <>
+                                  <span className="text-xs bg-vantage-success/20 text-vantage-success px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Check className="h-3 w-3" />
+                                    Connected
+                                  </span>
+                                  {/* Show warning if Dropbox provisioning failed */}
+                                  {provider.id === "dropbox" && account?.provisioning_status === "failed" && (
+                                    <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Setup incomplete
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                             {connected && account ? (
@@ -390,6 +409,12 @@ export function ConnectedAccountsSection() {
                                 {account.connected_at && (
                                   <span className="hidden sm:inline ml-2">
                                     • Connected on {format(new Date(account.connected_at), "MMM d, yyyy")}
+                                  </span>
+                                )}
+                                {/* Show provisioning failed hint for Dropbox */}
+                                {provider.id === "dropbox" && account.provisioning_status === "failed" && (
+                                  <span className="hidden sm:inline ml-2 text-amber-500">
+                                    • Reconnect to retry setup
                                   </span>
                                 )}
                               </p>
