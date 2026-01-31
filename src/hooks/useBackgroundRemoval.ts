@@ -255,6 +255,14 @@ export function useBackgroundRemoval({
           const canvasWidth = canvas.width;
           const canvasHeight = canvas.height;
           
+          // Pre-compute edge feathering lookup for smooth alpha curve
+          // Applies subtle S-curve for natural edge blending
+          const featherAlpha = (raw: number): number => {
+            // Smoothstep for natural edge transition
+            const t = Math.max(0, Math.min(1, raw));
+            return t * t * (3 - 2 * t);
+          };
+          
           for (let y = 0; y < canvasHeight; y++) {
             const maskY = Math.floor(y * scaleY) * maskWidth;
             const rowOffset = y * canvasWidth * 4;
@@ -268,17 +276,53 @@ export function useBackgroundRemoval({
                 personConfidence = 1 - personConfidence;
               }
               
-              // Apply slight threshold for cleaner edges
-              const alpha = Math.max(0, Math.min(1, personConfidence * 1.2));
+              // Apply feathered alpha with subtle boost for cleaner edges
+              const rawAlpha = personConfidence * 1.15; // slight boost
+              const alpha = featherAlpha(Math.max(0, Math.min(1, rawAlpha)));
               
-              if (alpha > 0.01) {
+              if (alpha > 0.005) {
                 const canvasIdx = rowOffset + x * 4;
                 const invAlpha = 1 - alpha;
                 
-                // Blend: person (video) over background
-                bgPixels[canvasIdx] = (videoPixels[canvasIdx] * alpha + bgPixels[canvasIdx] * invAlpha) | 0;
-                bgPixels[canvasIdx + 1] = (videoPixels[canvasIdx + 1] * alpha + bgPixels[canvasIdx + 1] * invAlpha) | 0;
-                bgPixels[canvasIdx + 2] = (videoPixels[canvasIdx + 2] * alpha + bgPixels[canvasIdx + 2] * invAlpha) | 0;
+                // Get pixel values
+                const vR = videoPixels[canvasIdx];
+                const vG = videoPixels[canvasIdx + 1];
+                const vB = videoPixels[canvasIdx + 2];
+                const bR = bgPixels[canvasIdx];
+                const bG = bgPixels[canvasIdx + 1];
+                const bB = bgPixels[canvasIdx + 2];
+                
+                // Spill suppression: reduce background color bleed on edge pixels
+                // Only apply on semi-transparent edges (0.1 < alpha < 0.9)
+                let finalR = vR, finalG = vG, finalB = vB;
+                
+                if (alpha > 0.1 && alpha < 0.9) {
+                  // Calculate spill amount based on how close subject color is to background
+                  const spillStrength = 0.3; // subtle suppression
+                  const edgeFactor = 1 - Math.abs(alpha - 0.5) * 2; // strongest at alpha=0.5
+                  
+                  // Reduce color channels that match background too closely
+                  const rDiff = Math.abs(vR - bR);
+                  const gDiff = Math.abs(vG - bG);
+                  const bDiff = Math.abs(vB - bB);
+                  const maxDiff = Math.max(rDiff, gDiff, bDiff, 1);
+                  
+                  // Suppress channels that are too similar to background
+                  const suppressR = (1 - rDiff / maxDiff) * spillStrength * edgeFactor;
+                  const suppressG = (1 - gDiff / maxDiff) * spillStrength * edgeFactor;
+                  const suppressB = (1 - bDiff / maxDiff) * spillStrength * edgeFactor;
+                  
+                  // Blend toward neutral/desaturated for spill areas
+                  const gray = (vR + vG + vB) / 3;
+                  finalR = vR + (gray - vR) * suppressR;
+                  finalG = vG + (gray - vG) * suppressG;
+                  finalB = vB + (gray - vB) * suppressB;
+                }
+                
+                // Final composite with feathered alpha
+                bgPixels[canvasIdx] = (finalR * alpha + bR * invAlpha) | 0;
+                bgPixels[canvasIdx + 1] = (finalG * alpha + bG * invAlpha) | 0;
+                bgPixels[canvasIdx + 2] = (finalB * alpha + bB * invAlpha) | 0;
                 bgPixels[canvasIdx + 3] = 255;
               }
               // Where alpha ≈ 0, bgPixels remains as background color/image
