@@ -4,7 +4,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { SessionCard } from "@/components/library/SessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
-import { getSessionsWithAssets, SessionWithAssets } from "@/lib/sessionLibrary";
+import { SessionWithAssets } from "@/lib/sessionLibrary";
+import { useCloudSessions } from "@/hooks/useSessionQueries";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,10 +47,16 @@ export default function SessionLibrary() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   
-  const [cloudSessions, setCloudSessions] = useState<SessionWithAssets[]>([]);
+  // Use React Query for cloud sessions - automatic caching and deduplication
+  const { 
+    data: cloudSessions = [], 
+    isLoading: cloudLoading,
+    refetch: refetchCloud 
+  } = useCloudSessions(user?.id);
+  
   const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
   const [storageUsage, setStorageUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(true);
   const [showNewCapture, setShowNewCapture] = useState(false);
   const [activeTab, setActiveTab] = useState<TabValue>("local");
   
@@ -60,34 +67,15 @@ export default function SessionLibrary() {
   const [filterVisibility, setFilterVisibility] = useState<FilterVisibility>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  useEffect(() => {
-    loadAllSessions();
-  }, [user]);
+  // Combined loading state
+  const loading = localLoading || (!!user && cloudLoading);
 
-  const loadAllSessions = async () => {
-    setLoading(true);
-    try {
-      // Always load local sessions
-      const [localData, usage] = await Promise.all([
-        getAllLocalSessions(),
-        getStorageUsage(),
-      ]);
-      setLocalSessions(localData);
-      setStorageUsage(usage);
-      
-      // Load cloud sessions if user is logged in
-      if (user) {
-        const cloudData = await getSessionsWithAssets(user.id);
-        setCloudSessions(cloudData);
-      }
-    } catch (error) {
-      console.error("Error loading sessions:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    loadLocalSessions();
+  }, []);
 
   const loadLocalSessions = async () => {
+    setLocalLoading(true);
     try {
       const [localData, usage] = await Promise.all([
         getAllLocalSessions(),
@@ -97,17 +85,13 @@ export default function SessionLibrary() {
       setStorageUsage(usage);
     } catch (error) {
       console.error("Error loading local sessions:", error);
+    } finally {
+      setLocalLoading(false);
     }
   };
 
-  const loadCloudSessions = async () => {
-    if (!user) return;
-    try {
-      const cloudData = await getSessionsWithAssets(user.id);
-      setCloudSessions(cloudData);
-    } catch (error) {
-      console.error("Error loading cloud sessions:", error);
-    }
+  const loadCloudSessions = () => {
+    refetchCloud();
   };
 
   // Filter and sort local sessions

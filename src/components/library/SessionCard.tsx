@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, memo, useCallback } from "react";
+import { useState, useEffect, useRef, memo, useCallback, useMemo } from "react";
+import { usePrefetchSession } from "@/hooks/useSessionQueries";
 import { useNavigate, Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,7 @@ export interface SessionCardProps {
 
 export const SessionCard = memo(function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) {
   const navigate = useNavigate();
+  const prefetchSession = usePrefetchSession();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -90,6 +92,7 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   
   const thumbnailUrlRef = useRef<string | null>(null);
+  const hasPrefetched = useRef(false);
 
   // Extract common properties based on session type
   const isLocal = session.type === "local";
@@ -103,6 +106,13 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
   // Session-specific properties
   const localSession = isLocal ? session.data : null;
   const cloudSession = !isLocal ? session.data : null;
+
+  // Prefetch session data on hover (only once per card)
+  const handlePrefetch = useCallback(() => {
+    if (hasPrefetched.current) return;
+    hasPrefetched.current = true;
+    prefetchSession(sessionId, isLocal);
+  }, [prefetchSession, sessionId, isLocal]);
 
   // Load thumbnail for local sessions
   useEffect(() => {
@@ -282,6 +292,7 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
         <Card 
           className="group flex items-center gap-4 p-4 bg-card border-border/50 hover:border-primary/50 transition-all cursor-pointer"
           onClick={handleOpenDetail}
+          onPointerEnter={handlePrefetch}
         >
           {/* Thumbnail */}
           <div className="shrink-0 group/thumb">
@@ -535,6 +546,7 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
       <Card 
         className="group relative overflow-hidden bg-card border-border/50 hover:border-primary/50 transition-all duration-300 card-hover cursor-pointer"
         onClick={handleOpenDetail}
+        onPointerEnter={handlePrefetch}
       >
         {/* Thumbnail */}
         <div className="aspect-video relative bg-muted/50 overflow-hidden">
