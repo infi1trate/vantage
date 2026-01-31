@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ExportDrawer, ExportTab, ExportOptions } from "./ExportDrawer";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -42,6 +43,7 @@ export function ExportCTAs({
 }: ExportCTAsProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [defaultTab, setDefaultTab] = useState<ExportTab>("download");
+  const navigate = useNavigate();
 
   const handleExportClick = () => {
     setDefaultTab("download");
@@ -51,6 +53,10 @@ export function ExportCTAs({
   const handleShareClick = () => {
     setDefaultTab("community");
     setDrawerOpen(true);
+  };
+
+  const handleBackupClick = () => {
+    navigate("/settings?section=dropbox");
   };
 
   if (variant === "floating") {
@@ -109,17 +115,20 @@ export function ExportCTAs({
   return (
     <>
       <div className={cn("flex items-center gap-2", className)}>
-        {/* Dropbox backup indicator - only shown when synced */}
+        {/* Dropbox backup indicator - only shown when synced, clickable to open Settings */}
         {dropboxSyncStatus === "synced" && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 text-muted-foreground/60 text-xs mr-1">
+              <button
+                onClick={handleBackupClick}
+                className="flex items-center gap-1.5 text-muted-foreground/60 hover:text-muted-foreground text-xs mr-1 transition-colors"
+              >
                 <CloudIcon className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Backed up</span>
-              </div>
+              </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              Backed up to Dropbox
+              Backed up to Dropbox · Click to view status
             </TooltipContent>
           </Tooltip>
         )}
