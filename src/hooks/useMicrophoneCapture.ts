@@ -72,22 +72,40 @@ export function useMicrophoneCapture(): UseMicrophoneCaptureReturn {
     }
   }, [selectedDeviceId]);
 
-  const startAudioLevelMonitoring = useCallback((mediaStream: MediaStream) => {
+  /**
+   * Monitors audio levels from the RAW microphone stream (pre-mix).
+   * 
+   * IMPORTANT: This analyzes the mic input directly, NOT the mixed output.
+   * This ensures the level indicator reflects only the user's voice,
+   * not game audio or other mixed sources.
+   * 
+   * The analyser is connected to a separate AudioContext that doesn't
+   * affect the recording pipeline - it's purely for visualization.
+   */
+  const startAudioLevelMonitoring = useCallback((micStream: MediaStream) => {
     try {
       // Clean up any existing context first
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => {});
       }
       
+      // Create a dedicated AudioContext for level monitoring only
+      // This is separate from the recording/mixing pipeline
       audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(mediaStream);
+      
+      // Connect directly to the raw mic stream (pre-mix, pre-gain)
+      const source = audioContextRef.current.createMediaStreamSource(micStream);
       analyserRef.current = audioContextRef.current.createAnalyser();
       
       // Use smaller FFT for faster response, but we'll use time-domain data for RMS
       analyserRef.current.fftSize = 256;
       analyserRef.current.smoothingTimeConstant = 0; // We'll do our own smoothing
       
+      // Don't connect to destination - we're only reading levels, not outputting audio
       source.connect(analyserRef.current);
+      // analyserRef is NOT connected to audioContext.destination (no output)
+      
+      console.log("[MicCapture] Audio level monitoring started (raw mic stream, pre-mix)");
 
       // Use time-domain data for RMS calculation (better for voice levels)
       const dataArray = new Float32Array(analyserRef.current.fftSize);
