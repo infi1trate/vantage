@@ -76,6 +76,137 @@ interface ProvisioningResult {
   error?: string;
 }
 
+interface FileValidationResult {
+  valid: boolean;
+  fileData?: ArrayBuffer;
+  fileSize?: number;
+  error?: string;
+}
+
+/**
+ * Validate that a video file exists in storage and has content
+ * This MUST be called server-side before any Dropbox upload attempt
+ */
+async function validateVideoFile(
+  supabase: any,
+  storagePath: string | null,
+  storageUrl: string | null,
+  fallbackUrl?: string | null
+): Promise<FileValidationResult> {
+  console.log(`[DropboxSync] Validating video file exists...`);
+  
+  // Check that we have at least one way to access the file
+  if (!storagePath && !storageUrl && !fallbackUrl) {
+    console.error(`[DropboxSync] No storage path or URL available for validation`);
+    return {
+      valid: false,
+      error: "File not found: No storage path or URL available",
+    };
+  }
+  
+  try {
+    let fileData: Blob | null = null;
+    let downloadMethod = "";
+    
+    // Try storage path first (most reliable with service role)
+    if (storagePath) {
+      downloadMethod = "storage_path";
+      console.log(`[DropboxSync] Checking file via storage path: ${storagePath}`);
+      
+      const { data, error } = await supabase.storage
+        .from("video-assets")
+        .download(storagePath);
+      
+      if (error) {
+        console.error(`[DropboxSync] Storage path download failed:`, error);
+        // Don't return yet - try fallback methods
+      } else {
+        fileData = data;
+      }
+    }
+    
+    // Fallback to storage URL
+    if (!fileData && storageUrl) {
+      downloadMethod = "storage_url";
+      console.log(`[DropboxSync] Checking file via storage URL`);
+      
+      try {
+        const response = await fetch(storageUrl);
+        if (response.ok) {
+          fileData = await response.blob();
+        } else {
+          console.warn(`[DropboxSync] Storage URL fetch failed: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.warn(`[DropboxSync] Storage URL fetch error:`, fetchError);
+      }
+    }
+    
+    // Last resort: fallback URL (e.g., provided by caller)
+    if (!fileData && fallbackUrl) {
+      downloadMethod = "fallback_url";
+      console.log(`[DropboxSync] Checking file via fallback URL`);
+      
+      try {
+        const response = await fetch(fallbackUrl);
+        if (response.ok) {
+          fileData = await response.blob();
+        } else {
+          console.warn(`[DropboxSync] Fallback URL fetch failed: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.warn(`[DropboxSync] Fallback URL fetch error:`, fetchError);
+      }
+    }
+    
+    // Final validation: file must exist
+    if (!fileData) {
+      console.error(`[DropboxSync] File not found after trying all methods`);
+      return {
+        valid: false,
+        error: "File not found or empty at upload time",
+      };
+    }
+    
+    // Convert to ArrayBuffer and check size
+    const arrayBuffer = await fileData.arrayBuffer();
+    const fileSize = arrayBuffer.byteLength;
+    
+    // Validation: file must have content (> 0 bytes)
+    if (fileSize === 0) {
+      console.error(`[DropboxSync] File exists but is empty (0 bytes)`);
+      return {
+        valid: false,
+        error: "File is empty (0 bytes) at upload time",
+      };
+    }
+    
+    // Validation: file should be reasonably sized for a video (> 1KB minimum)
+    if (fileSize < 1024) {
+      console.warn(`[DropboxSync] File is suspiciously small: ${fileSize} bytes`);
+      return {
+        valid: false,
+        error: `File too small to be a valid video (${fileSize} bytes)`,
+      };
+    }
+    
+    console.log(`[DropboxSync] File validation passed: ${fileSize} bytes via ${downloadMethod}`);
+    
+    return {
+      valid: true,
+      fileData: arrayBuffer,
+      fileSize,
+    };
+    
+  } catch (error) {
+    console.error(`[DropboxSync] File validation error:`, error);
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : "Unknown validation error",
+    };
+  }
+}
+
 /**
  * Simple XOR-based encryption for tokens
  * In production, you'd use proper AES encryption with vault secrets
@@ -1032,37 +1163,25 @@ async function executeAutoSync(
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
     const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-    // Download video from storage using service role (more reliable than signed URLs)
-    console.log(`[DropboxSync] Downloading video for auto-sync from path: ${asset.storage_path}`);
+    // CRITICAL: Validate file exists server-side before attempting upload
+    // This prevents silent failures when the file is missing or empty
+    console.log(`[DropboxSync] Validating video file for auto-sync...`);
+    const validation = await validateVideoFile(
+      supabase,
+      asset.storage_path,
+      asset.storage_url,
+      null // no fallback URL for auto-sync
+    );
     
-    let videoBlob: ArrayBuffer;
-    
-    if (asset.storage_path) {
-      // Preferred: Download using storage path with service role
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from("video-assets")
-        .download(asset.storage_path);
-      
-      if (downloadError || !fileData) {
-        console.error(`[DropboxSync] Storage download failed:`, downloadError);
-        throw new Error(`Failed to download from storage: ${downloadError?.message || "No data"}`);
-      }
-      
-      videoBlob = await fileData.arrayBuffer();
-    } else if (asset.storage_url) {
-      // Fallback: Try the storage URL (may be expired)
-      console.log(`[DropboxSync] Falling back to storage_url`);
-      const videoResponse = await fetch(asset.storage_url);
-      if (!videoResponse.ok) {
-        throw new Error(`Failed to download video: ${videoResponse.status}`);
-      }
-      videoBlob = await videoResponse.arrayBuffer();
-    } else {
-      throw new Error("No storage path or URL available");
+    if (!validation.valid) {
+      console.error(`[DropboxSync] Auto-sync aborted: ${validation.error}`);
+      await updateSyncStatus(supabase, sessionId, "failed", validation.error || "File not found or empty at upload time");
+      return;
     }
     
-    const fileSize = videoBlob.byteLength;
-    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to Dropbox: ${dropboxPath}`);
+    const videoBlob = validation.fileData!;
+    const fileSize = validation.fileSize!;
+    console.log(`[DropboxSync] File validated: ${fileSize} bytes, proceeding with upload to: ${dropboxPath}`);
 
     // Upload to Dropbox
     const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
@@ -1226,41 +1345,43 @@ async function handleSync(
   const filename = sanitizeFilename(session?.title || "Recording", sessionId);
   const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-  try {
-    // Download video from storage using service role (preferred) or URL (fallback)
-    console.log(`[DropboxSync] Downloading video for session ${sessionId} from path: ${asset.storage_path}`);
+  // CRITICAL: Validate file exists server-side before attempting upload
+  // This prevents silent failures when the file is missing or empty
+  console.log(`[DropboxSync] Validating video file for manual sync...`);
+  const validation = await validateVideoFile(
+    supabase,
+    asset.storage_path,
+    asset.storage_url,
+    videoUrl // allow caller-provided URL as fallback
+  );
+  
+  if (!validation.valid) {
+    console.error(`[DropboxSync] Manual sync aborted: ${validation.error}`);
     
-    let videoBlob: ArrayBuffer;
+    // Update sync status to failed with specific error
+    await supabase
+      .from("dropbox_sync_status")
+      .update({
+        sync_status: "failed",
+        error_message: validation.error || "File not found or empty at upload time",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("session_id", sessionId);
     
-    if (asset.storage_path) {
-      // Preferred: Download using storage path with service role
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from("video-assets")
-        .download(asset.storage_path);
-      
-      if (downloadError || !fileData) {
-        console.error(`[DropboxSync] Storage download failed:`, downloadError);
-        throw new Error(`Failed to download from storage: ${downloadError?.message || "No data"}`);
-      }
-      
-      videoBlob = await fileData.arrayBuffer();
-    } else if (videoUrl || asset.storage_url) {
-      // Fallback: Try the provided URL or stored URL
-      const urlToUse = videoUrl || asset.storage_url;
-      console.log(`[DropboxSync] Falling back to URL fetch`);
-      const videoResponse = await fetch(urlToUse);
-      if (!videoResponse.ok) {
-        throw new Error(`Failed to download video: ${videoResponse.status}`);
-      }
-      videoBlob = await videoResponse.arrayBuffer();
-    } else {
-      throw new Error("No storage path or URL available");
-    }
-    
-    const fileSize = videoBlob.byteLength;
-    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to Dropbox: ${dropboxPath}`);
+    return new Response(JSON.stringify({ 
+      error: validation.error || "File not found or empty at upload time",
+      success: false,
+    }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  
+  const videoBlob = validation.fileData!;
+  const fileSize = validation.fileSize!;
+  console.log(`[DropboxSync] File validated: ${fileSize} bytes, proceeding with upload to: ${dropboxPath}`);
 
-    console.log(`[DropboxSync] Uploading ${fileSize} bytes to Dropbox: ${dropboxPath}`);
+  try {
 
     // Upload to Dropbox
     const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
