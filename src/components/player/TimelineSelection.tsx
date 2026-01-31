@@ -446,9 +446,9 @@ export function TimelineSelection({
       {/* Background */}
       <div className="absolute inset-0 bg-muted/50" />
 
-      {/* Progress fill (played area) */}
+      {/* Progress fill (played area) - neutral color to avoid confusion with selections */}
       <div
-        className="absolute inset-y-0 left-0 bg-primary/10 pointer-events-none"
+        className="absolute inset-y-0 left-0 bg-foreground/10 pointer-events-none"
         style={{ width: `${progressPercentage}%` }}
       />
 
