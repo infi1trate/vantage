@@ -6,8 +6,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
+import { ProcessingProvider } from "@/contexts/ProcessingContext";
 import { RouteErrorFallback } from "@/components/ErrorBoundary";
 import { DevPerfOverlay } from "@/components/dev/DevPerfOverlay";
+import { ProcessingFooter } from "@/components/processing/ProcessingFooter";
 import { Loader2 } from "lucide-react";
 
 // Eagerly load landing page for fast initial render
@@ -65,13 +67,17 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <JobsProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <RouterProvider router={router} />
-          {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
-          <DevPerfOverlay />
-        </TooltipProvider>
+        <ProcessingProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <RouterProvider router={router} />
+            {/* Background processing footer - shows active jobs */}
+            <ProcessingFooter />
+            {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
+            <DevPerfOverlay />
+          </TooltipProvider>
+        </ProcessingProvider>
       </JobsProvider>
     </AuthProvider>
   </QueryClientProvider>
