@@ -1189,6 +1189,62 @@ async function verifyDropboxUpload(
 }
 
 /**
+ * Dropbox upload session expiry time (48 hours according to Dropbox docs)
+ * We use a conservative 24 hours to be safe
+ */
+const UPLOAD_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Check if a Dropbox upload session is still valid
+ * Sessions expire after 48h but we use 24h to be safe
+ */
+function isUploadSessionValid(sessionStartedAt: string | null): boolean {
+  if (!sessionStartedAt) return false;
+  const startedAt = new Date(sessionStartedAt).getTime();
+  const age = Date.now() - startedAt;
+  return age < UPLOAD_SESSION_MAX_AGE_MS;
+}
+
+/**
+ * Update upload session state in database
+ */
+async function updateUploadSessionState(
+  supabase: any,
+  sessionId: string,
+  uploadSessionId: string | null,
+  offset: number,
+  totalBytes: number,
+  sessionStartedAt: string | null
+): Promise<void> {
+  await supabase
+    .from("dropbox_sync_status")
+    .update({
+      upload_session_id: uploadSessionId,
+      upload_offset: offset,
+      upload_total_bytes: totalBytes,
+      upload_session_started_at: sessionStartedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("session_id", sessionId);
+}
+
+/**
+ * Clear upload session state after completion or failure
+ */
+async function clearUploadSessionState(supabase: any, sessionId: string): Promise<void> {
+  await supabase
+    .from("dropbox_sync_status")
+    .update({
+      upload_session_id: null,
+      upload_offset: 0,
+      upload_total_bytes: null,
+      upload_session_started_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("session_id", sessionId);
+}
+
+/**
  * Stream upload a file to Dropbox using chunked upload sessions
  * Fetches chunks from a signed URL and uploads directly to avoid memory issues
  * 
@@ -1196,60 +1252,148 @@ async function verifyDropboxUpload(
  * - Never loads the entire file into memory
  * - Fetches one chunk at a time using Range requests
  * - Uploads each chunk immediately then frees memory
+ * - RESUMABLE: Stores session state in DB and can resume from last successful chunk
  */
 async function streamUploadToDropbox(
   accessToken: string,
   signedUrl: string,
   totalSize: number,
-  dropboxPath: string
-): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string }> {
+  dropboxPath: string,
+  supabase?: any,
+  captureSessionId?: string,
+  existingSessionState?: {
+    upload_session_id: string | null;
+    upload_offset: number | null;
+    upload_session_started_at: string | null;
+  }
+): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string; resumed?: boolean }> {
   const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
+  const canPersist = supabase && captureSessionId;
+  
+  let dropboxSessionId: string | null = null;
+  let offset = 0;
+  let chunkIndex = 0;
+  let resumed = false;
   
   console.log(`[DropboxSync] Starting streaming upload: ${totalSize} bytes, ${totalChunks} chunks of ${CHUNK_SIZE} bytes`);
   
   try {
-    // Step 1: Fetch and upload first chunk, start session
-    console.log(`[DropboxSync] Fetching chunk 1/${totalChunks}...`);
-    const firstChunkEnd = Math.min(CHUNK_SIZE, totalSize) - 1;
-    
-    const firstChunkResponse = await fetch(signedUrl, {
-      headers: { "Range": `bytes=0-${firstChunkEnd}` }
-    });
-    
-    if (!firstChunkResponse.ok && firstChunkResponse.status !== 206) {
-      return { success: false, error: `Failed to fetch first chunk: ${firstChunkResponse.status}` };
+    // ===== CHECK FOR RESUMABLE SESSION =====
+    if (existingSessionState?.upload_session_id && 
+        isUploadSessionValid(existingSessionState.upload_session_started_at) &&
+        existingSessionState.upload_offset !== null &&
+        existingSessionState.upload_offset > 0) {
+      
+      // We have an existing session - try to resume
+      dropboxSessionId = existingSessionState.upload_session_id;
+      offset = existingSessionState.upload_offset;
+      chunkIndex = Math.floor(offset / CHUNK_SIZE);
+      resumed = true;
+      
+      console.log(`[DropboxSync] RESUMING upload session ${dropboxSessionId} from offset ${offset} (chunk ${chunkIndex + 1}/${totalChunks})`);
+      
+      // Verify the session is still valid by checking with Dropbox
+      // We do this by attempting a 0-byte append at the current offset
+      try {
+        const verifyResponse = await fetch(DROPBOX_UPLOAD_SESSION_APPEND_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/octet-stream",
+            "Dropbox-API-Arg": JSON.stringify({
+              cursor: {
+                session_id: dropboxSessionId,
+                offset: offset,
+              },
+              close: false,
+            }),
+          },
+          body: new Uint8Array(0),
+        });
+        
+        if (!verifyResponse.ok) {
+          const errorText = await verifyResponse.text();
+          console.warn(`[DropboxSync] Existing session invalid or expired: ${errorText}`);
+          // Session expired or invalid - start fresh
+          dropboxSessionId = null;
+          offset = 0;
+          chunkIndex = 0;
+          resumed = false;
+          
+          if (canPersist) {
+            await clearUploadSessionState(supabase, captureSessionId);
+          }
+        } else {
+          console.log(`[DropboxSync] Session verified, resuming from offset ${offset}`);
+        }
+      } catch (verifyError) {
+        console.warn(`[DropboxSync] Session verification failed:`, verifyError);
+        dropboxSessionId = null;
+        offset = 0;
+        chunkIndex = 0;
+        resumed = false;
+      }
     }
+    // ===== END RESUMABLE SESSION CHECK =====
     
-    const firstChunk = await firstChunkResponse.arrayBuffer();
-    const isLastChunk = totalSize <= CHUNK_SIZE;
-    
-    console.log(`[DropboxSync] Starting upload session with ${firstChunk.byteLength} bytes...`);
-    const startResponse = await fetch(DROPBOX_UPLOAD_SESSION_START_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/octet-stream",
-        "Dropbox-API-Arg": JSON.stringify({
-          close: isLastChunk,
-        }),
-      },
-      body: firstChunk,
-    });
-    
-    if (!startResponse.ok) {
-      const errorText = await startResponse.text();
-      console.error(`[DropboxSync] Session start failed:`, errorText);
-      return { success: false, error: `Session start failed: ${startResponse.status} - ${errorText}` };
+    // ===== START NEW SESSION IF NEEDED =====
+    if (!dropboxSessionId) {
+      console.log(`[DropboxSync] Fetching chunk 1/${totalChunks}...`);
+      const firstChunkEnd = Math.min(CHUNK_SIZE, totalSize) - 1;
+      
+      const firstChunkResponse = await fetch(signedUrl, {
+        headers: { "Range": `bytes=0-${firstChunkEnd}` }
+      });
+      
+      if (!firstChunkResponse.ok && firstChunkResponse.status !== 206) {
+        return { success: false, error: `Failed to fetch first chunk: ${firstChunkResponse.status}` };
+      }
+      
+      const firstChunk = await firstChunkResponse.arrayBuffer();
+      const isLastChunk = totalSize <= CHUNK_SIZE;
+      
+      console.log(`[DropboxSync] Starting upload session with ${firstChunk.byteLength} bytes...`);
+      const startResponse = await fetch(DROPBOX_UPLOAD_SESSION_START_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/octet-stream",
+          "Dropbox-API-Arg": JSON.stringify({
+            close: isLastChunk,
+          }),
+        },
+        body: firstChunk,
+      });
+      
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text();
+        console.error(`[DropboxSync] Session start failed:`, errorText);
+        return { success: false, error: `Session start failed: ${startResponse.status} - ${errorText}` };
+      }
+      
+      const startResult = await startResponse.json();
+      dropboxSessionId = startResult.session_id;
+      offset = firstChunk.byteLength;
+      chunkIndex = 1;
+      
+      console.log(`[DropboxSync] Upload session started: ${dropboxSessionId}`);
+      
+      // Persist session state after first chunk
+      if (canPersist) {
+        await updateUploadSessionState(
+          supabase,
+          captureSessionId,
+          dropboxSessionId,
+          offset,
+          totalSize,
+          new Date().toISOString()
+        );
+        console.log(`[DropboxSync] Session state persisted: offset=${offset}`);
+      }
     }
+    // ===== END START NEW SESSION =====
     
-    const startResult = await startResponse.json();
-    const sessionId = startResult.session_id;
-    console.log(`[DropboxSync] Upload session started: ${sessionId}`);
-    
-    let offset = firstChunk.byteLength;
-    let chunkIndex = 1;
-    
-    // Step 2: Stream and upload remaining chunks
+    // ===== UPLOAD REMAINING CHUNKS =====
     while (offset < totalSize) {
       const chunkEnd = Math.min(offset + CHUNK_SIZE, totalSize) - 1;
       const isLast = chunkEnd >= totalSize - 1;
@@ -1261,7 +1405,8 @@ async function streamUploadToDropbox(
       });
       
       if (!chunkResponse.ok && chunkResponse.status !== 206) {
-        return { success: false, error: `Failed to fetch chunk ${chunkIndex + 1}: ${chunkResponse.status}` };
+        // Don't clear session state on fetch failure - can retry
+        return { success: false, error: `Failed to fetch chunk ${chunkIndex + 1}: ${chunkResponse.status}`, resumed };
       }
       
       const chunk = await chunkResponse.arrayBuffer();
@@ -1275,7 +1420,7 @@ async function streamUploadToDropbox(
           "Content-Type": "application/octet-stream",
           "Dropbox-API-Arg": JSON.stringify({
             cursor: {
-              session_id: sessionId,
+              session_id: dropboxSessionId,
               offset: offset,
             },
             close: isLast,
@@ -1287,7 +1432,12 @@ async function streamUploadToDropbox(
       if (!appendResponse.ok) {
         const errorText = await appendResponse.text();
         console.error(`[DropboxSync] Chunk append failed at offset ${offset}:`, errorText);
-        return { success: false, error: `Chunk ${chunkIndex + 1} failed: ${appendResponse.status} - ${errorText}` };
+        // Check if it's an offset mismatch - might be able to recover
+        if (errorText.includes("incorrect_offset")) {
+          console.warn(`[DropboxSync] Offset mismatch detected - session state may be stale`);
+        }
+        // Don't clear session on append failure - Dropbox session might still be valid
+        return { success: false, error: `Chunk ${chunkIndex + 1} failed: ${appendResponse.status} - ${errorText}`, resumed };
       }
       
       // Consume response body to free resources
@@ -1295,9 +1445,23 @@ async function streamUploadToDropbox(
       
       offset += chunk.byteLength;
       chunkIndex++;
+      
+      // Persist updated offset after each successful chunk
+      if (canPersist && !isLast) {
+        await updateUploadSessionState(
+          supabase,
+          captureSessionId,
+          dropboxSessionId,
+          offset,
+          totalSize,
+          existingSessionState?.upload_session_started_at || new Date().toISOString()
+        );
+        console.log(`[DropboxSync] Progress persisted: ${offset}/${totalSize} bytes (${Math.round(offset/totalSize*100)}%)`);
+      }
     }
+    // ===== END UPLOAD REMAINING CHUNKS =====
     
-    // Step 3: Finish upload session
+    // ===== FINISH UPLOAD SESSION =====
     console.log(`[DropboxSync] Finishing upload session...`);
     const finishResponse = await fetch(DROPBOX_UPLOAD_SESSION_FINISH_URL, {
       method: "POST",
@@ -1306,7 +1470,7 @@ async function streamUploadToDropbox(
         "Content-Type": "application/octet-stream",
         "Dropbox-API-Arg": JSON.stringify({
           cursor: {
-            session_id: sessionId,
+            session_id: dropboxSessionId,
             offset: totalSize,
           },
           commit: {
@@ -1323,19 +1487,35 @@ async function streamUploadToDropbox(
     if (!finishResponse.ok) {
       const errorText = await finishResponse.text();
       console.error(`[DropboxSync] Session finish failed:`, errorText);
-      return { success: false, error: `Session finish failed: ${finishResponse.status} - ${errorText}` };
+      // Clear session state on finish failure - session is now unusable
+      if (canPersist) {
+        await clearUploadSessionState(supabase, captureSessionId);
+      }
+      return { success: false, error: `Session finish failed: ${finishResponse.status} - ${errorText}`, resumed };
     }
     
     const uploadResult = await finishResponse.json();
     console.log(`[DropboxSync] Streaming upload completed:`, JSON.stringify(uploadResult));
     
-    return { success: true, uploadResult, method: "streaming_session" };
+    // Clear session state on success
+    if (canPersist) {
+      await clearUploadSessionState(supabase, captureSessionId);
+    }
+    
+    return { 
+      success: true, 
+      uploadResult, 
+      method: resumed ? "streaming_session_resumed" : "streaming_session",
+      resumed 
+    };
     
   } catch (error) {
     console.error(`[DropboxSync] Streaming upload error:`, error);
+    // Don't clear session state on network error - might be able to resume
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : "Streaming upload network error" 
+      error: error instanceof Error ? error.message : "Streaming upload network error",
+      resumed
     };
   }
 }
@@ -1419,19 +1599,35 @@ async function getSignedUrl(
 /**
  * Upload a file to Dropbox using streaming - automatically chooses method based on file size
  * Uses signed URL and Range requests to avoid loading entire file into memory
+ * Supports resumable uploads by persisting session state in the database
  */
 async function uploadToDropboxStreaming(
   accessToken: string,
   signedUrl: string,
   fileSize: number,
-  dropboxPath: string
-): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string }> {
+  dropboxPath: string,
+  supabase?: any,
+  captureSessionId?: string,
+  existingSessionState?: {
+    upload_session_id: string | null;
+    upload_offset: number | null;
+    upload_session_started_at: string | null;
+  }
+): Promise<{ success: boolean; uploadResult?: any; error?: string; method?: string; resumed?: boolean }> {
   // Use streaming for files > 8MB (one chunk), simple for smaller files
   const useStreaming = fileSize > CHUNK_SIZE;
   
   if (useStreaming) {
     console.log(`[DropboxSync] Using streaming upload for ${fileSize} bytes (> ${CHUNK_SIZE / 1024 / 1024}MB)`);
-    return streamUploadToDropbox(accessToken, signedUrl, fileSize, dropboxPath);
+    return streamUploadToDropbox(
+      accessToken, 
+      signedUrl, 
+      fileSize, 
+      dropboxPath,
+      supabase,
+      captureSessionId,
+      existingSessionState
+    );
   }
   
   console.log(`[DropboxSync] Using simple upload for ${fileSize} bytes`);
@@ -1453,7 +1649,7 @@ async function executeAutoSync(
     // ===== IDEMPOTENCY CHECK FOR AUTO-SYNC =====
     const { data: existingStatus, error: statusError } = await supabase
       .from("dropbox_sync_status")
-      .select("sync_status, dropbox_file_id, started_at")
+      .select("sync_status, dropbox_file_id, started_at, attempt_count, upload_session_id, upload_offset, upload_session_started_at")
       .eq("session_id", sessionId)
       .single();
 
@@ -1464,15 +1660,24 @@ async function executeAutoSync(
         return;
       }
 
-      // Check for active upload (not stale)
+      // Check for active upload (not stale) - but allow if it's resumable
       if (existingStatus.sync_status === "syncing" && existingStatus.started_at) {
         const startedAt = new Date(existingStatus.started_at).getTime();
         const elapsedMs = Date.now() - startedAt;
         const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-        if (elapsedMs < STALE_THRESHOLD_MS) {
+        // If we have a resumable session, allow continuing even if "syncing"
+        const hasResumableSession = existingStatus.upload_session_id && 
+          existingStatus.upload_offset > 0 &&
+          isUploadSessionValid(existingStatus.upload_session_started_at);
+
+        if (elapsedMs < STALE_THRESHOLD_MS && !hasResumableSession) {
           console.log(`[DropboxSync] Auto-sync skipped - session ${sessionId} has active upload`);
           return;
+        }
+        
+        if (hasResumableSession) {
+          console.log(`[DropboxSync] Found resumable session for ${sessionId} - will attempt to resume`);
         }
       }
     }
@@ -1551,7 +1756,24 @@ async function executeAutoSync(
     console.log(`[DropboxSync] Streaming ${fileSize} bytes to Dropbox: ${dropboxPath}`);
 
     // Upload to Dropbox using streaming (never loads full file into memory)
-    const uploadResult = await uploadToDropboxStreaming(tokenResult.accessToken, signedUrl, fileSize, dropboxPath);
+    // Pass existing session state for resumable uploads
+    const uploadResult = await uploadToDropboxStreaming(
+      tokenResult.accessToken, 
+      signedUrl, 
+      fileSize, 
+      dropboxPath,
+      supabase,
+      sessionId,
+      existingStatus ? {
+        upload_session_id: existingStatus.upload_session_id,
+        upload_offset: existingStatus.upload_offset,
+        upload_session_started_at: existingStatus.upload_session_started_at,
+      } : undefined
+    );
+    
+    if (uploadResult.resumed) {
+      console.log(`[DropboxSync] Upload was RESUMED from previous attempt`);
+    }
     
     if (!uploadResult.success) {
       console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
@@ -1647,9 +1869,10 @@ async function handleSync(
 
   // ===== IDEMPOTENCY CHECK =====
   // Check current sync status BEFORE doing anything else
+  // Also fetch upload session state for resumable uploads
   const { data: existingStatus, error: statusError } = await supabase
     .from("dropbox_sync_status")
-    .select("sync_status, dropbox_file_id, dropbox_path, completed_at, started_at")
+    .select("sync_status, dropbox_file_id, dropbox_path, completed_at, started_at, attempt_count, upload_session_id, upload_offset, upload_session_started_at")
     .eq("session_id", sessionId)
     .single();
 
@@ -1679,7 +1902,12 @@ async function handleSync(
       const elapsedMs = now - startedAt;
       const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-      if (elapsedMs < STALE_THRESHOLD_MS) {
+      // Check if we have a resumable session
+      const hasResumableSession = existingStatus.upload_session_id && 
+        existingStatus.upload_offset > 0 &&
+        isUploadSessionValid(existingStatus.upload_session_started_at);
+
+      if (elapsedMs < STALE_THRESHOLD_MS && !hasResumableSession) {
         // Active upload in progress - don't start another
         console.log(`[DropboxSync] Session ${sessionId} has upload in progress (started ${Math.round(elapsedMs / 1000)}s ago)`);
         return new Response(
@@ -1696,6 +1924,9 @@ async function handleSync(
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      } else if (hasResumableSession) {
+        // Has resumable session - allow to proceed
+        console.log(`[DropboxSync] Session ${sessionId} has resumable upload (offset ${existingStatus.upload_offset}) - will resume`);
       } else {
         // Stale lock - reset to allow retry
         console.log(`[DropboxSync] Session ${sessionId} has stale lock (${Math.round(elapsedMs / 1000)}s old) - allowing retry`);
@@ -1798,7 +2029,24 @@ async function handleSync(
     console.log(`[DropboxSync] Streaming ${fileSize} bytes to Dropbox: ${dropboxPath}`);
 
     // Upload to Dropbox using streaming (never loads full file into memory)
-    const uploadResult = await uploadToDropboxStreaming(accessToken, signedUrl, fileSize, dropboxPath);
+    // Pass existing session state for resumable uploads
+    const uploadResult = await uploadToDropboxStreaming(
+      accessToken, 
+      signedUrl, 
+      fileSize, 
+      dropboxPath,
+      supabase,
+      sessionId,
+      existingStatus ? {
+        upload_session_id: existingStatus.upload_session_id,
+        upload_offset: existingStatus.upload_offset,
+        upload_session_started_at: existingStatus.upload_session_started_at,
+      } : undefined
+    );
+    
+    if (uploadResult.resumed) {
+      console.log(`[DropboxSync] Upload was RESUMED from previous attempt`);
+    }
     
     if (!uploadResult.success) {
       console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
