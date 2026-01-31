@@ -440,7 +440,7 @@ export function EffectsModal({
                         {aiExpanded && (
                           <div className="mt-2 p-3 bg-muted/10 rounded-lg border border-border/20 space-y-2">
                             <Input
-                              placeholder="e.g. cozy gaming room, neon city..."
+                              placeholder="dark room with soft lighting"
                               value={aiPrompt}
                               onChange={(e) => setAiPrompt(e.target.value)}
                               className="h-9 text-sm bg-background/50"
