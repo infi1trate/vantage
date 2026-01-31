@@ -20,8 +20,8 @@ const features = [
   },
   {
     icon: Pencil,
-    title: "ANNOTATE",
-    description: "Mark kills, deaths, highlights. Add voice notes. Draw on frames.",
+    title: "MARK",
+    description: "Tag kills, deaths, highlights. Add voice notes. Draw on frames.",
     accent: false,
   },
   {

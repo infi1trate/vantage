@@ -14,7 +14,7 @@ const steps = [
   },
   {
     number: "03",
-    title: "ANNOTATE",
+    title: "MARK",
     description: "Add notes, voice memos, drawings. Tag moments that matter.",
   },
   {

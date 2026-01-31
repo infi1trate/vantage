@@ -72,7 +72,7 @@ export function CaptureConsentDialog({
     {
       icon: Mic,
       label: "Microphone Audio",
-      description: "Your voice for annotations and commentary",
+      description: "Your voice for reactions and commentary",
       enabled: captureConfig.microphone,
       required: true,
     },

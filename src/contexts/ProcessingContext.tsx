@@ -85,7 +85,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
           onClick={() => { window.location.href = `/session/${job.sessionId}`; }}
         >
           <Eye className="h-3.5 w-3.5 mr-1.5" />
-          View & Annotate
+          View & Review
         </Button>
       ),
       duration: 8000,

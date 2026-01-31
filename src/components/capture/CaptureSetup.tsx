@@ -191,7 +191,7 @@ export function CaptureSetup({ session, onStart, isLoading }: CaptureSetupProps)
               <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">Required</span>
             </div>
             <p className="text-sm text-muted-foreground mb-3">
-              Your voice will be recorded for annotations and commentary.
+              Your voice will be recorded for reactions and commentary.
             </p>
             {loadingDevices ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
