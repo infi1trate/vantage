@@ -177,6 +177,7 @@ const AspectButton = memo(function AspectButton({
 });
 
 // Reel Preview Component - shown after generation
+// Minimal controls only: play/pause, mute. No scrubbing or editing.
 function ReelPreviewContent({
   reel,
   onBack,
@@ -190,7 +191,6 @@ function ReelPreviewContent({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
-  const [showPlayButton, setShowPlayButton] = useState(true);
 
   const ratioConfig = ASPECT_RATIOS.find(r => r.value === reel.aspectRatio) || ASPECT_RATIOS[0];
   const AspectIcon = ratioConfig.icon;
@@ -201,15 +201,13 @@ function ReelPreviewContent({
       videoRef.current.muted = true;
       videoRef.current.play().then(() => {
         setIsPlaying(true);
-        setShowPlayButton(false);
       }).catch(() => {
-        // Autoplay blocked, show play button
-        setShowPlayButton(true);
+        // Autoplay blocked
       });
     }
   }, [isMobile]);
 
-  const handlePlayClick = useCallback(() => {
+  const handlePlayPause = useCallback(() => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
@@ -217,22 +215,18 @@ function ReelPreviewContent({
       } else {
         videoRef.current.play();
         setIsPlaying(true);
-        setShowPlayButton(false);
       }
+    } else {
+      // Toggle visual state for placeholder
+      setIsPlaying(!isPlaying);
     }
   }, [isPlaying]);
-
-  const handleVideoClick = useCallback(() => {
-    if (isMobile) {
-      handlePlayClick();
-    }
-  }, [isMobile, handlePlayClick]);
 
   const toggleMute = useCallback(() => {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
-      setIsMuted(!isMuted);
     }
+    setIsMuted(!isMuted);
   }, [isMuted]);
 
   const handleDownload = useCallback(() => {
@@ -249,36 +243,39 @@ function ReelPreviewContent({
 
   return (
     <div className="flex flex-col h-full max-h-[85vh] md:max-h-[650px]">
-      {/* Success header */}
+      {/* AI-generated header - clear labeling */}
       <div className="shrink-0 px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
-          <CheckCircle2 className="h-4 w-4 text-vantage-success" />
-          <span className="text-xs font-medium text-vantage-success">
-            Reel ready!
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="text-xs font-medium text-primary">
+            AI-generated Reel
           </span>
-          <span className="text-[10px] text-muted-foreground ml-auto">
-            {reel.momentCount} clips assembled
-          </span>
+          <Badge 
+            variant="secondary" 
+            className="ml-auto text-[10px] bg-muted/50"
+          >
+            {reel.momentCount} clips • {formatDuration(reel.duration)}
+          </Badge>
         </div>
       </div>
 
-      {/* Video Preview */}
+      {/* Video Preview - no timeline, no scrubbing */}
       <div className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center">
         <div 
           className={cn(
-            "relative w-full max-w-full overflow-hidden rounded-xl bg-black/90 shadow-2xl",
+            "relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-2xl",
             reel.aspectRatio === "9:16" && "max-w-[280px]",
             reel.aspectRatio === "1:1" && "max-w-[320px]",
             reel.aspectRatio === "16:9" && "max-w-full"
           )}
         >
           <AspectRatio ratio={ratioConfig.ratio}>
-            {/* Placeholder video - in production, use actual reel URL */}
+            {/* Video container - tap to play/pause */}
             <div 
-              className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 flex items-center justify-center cursor-pointer"
-              onClick={handleVideoClick}
+              className="absolute inset-0 bg-gradient-to-br from-muted/30 via-background to-muted/30 flex items-center justify-center cursor-pointer select-none"
+              onClick={handlePlayPause}
             >
-              {/* Simulated video content */}
+              {/* Hidden video element for when real URL exists */}
               <video
                 ref={videoRef}
                 className="absolute inset-0 w-full h-full object-cover opacity-0"
@@ -290,63 +287,56 @@ function ReelPreviewContent({
                 onPause={() => setIsPlaying(false)}
               />
               
-              {/* Visual placeholder since we don't have actual video */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center backdrop-blur-sm">
-                  <Film className="h-8 w-8 text-primary" />
+              {/* Visual placeholder */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                <div className={cn(
+                  "w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200",
+                  isPlaying 
+                    ? "bg-primary/10 backdrop-blur-sm" 
+                    : "bg-white/90 shadow-lg"
+                )}>
+                  {isPlaying ? (
+                    <Film className="h-8 w-8 text-primary animate-pulse" />
+                  ) : (
+                    <Play className="h-8 w-8 text-background ml-1" />
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground">Preview placeholder</p>
+                {!isPlaying && (
+                  <p className="text-xs text-muted-foreground">
+                    {isMobile ? "Tap to play" : "Click to play"}
+                  </p>
+                )}
               </div>
 
-              {/* Play button overlay - tap to play on mobile */}
-              {(showPlayButton || !isPlaying) && (
-                <button
-                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 active:bg-black/50"
-                  onClick={handlePlayClick}
-                >
-                  <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg transform transition-transform active:scale-95">
-                    <Play className="h-6 w-6 text-background ml-1" />
-                  </div>
-                </button>
-              )}
-
-              {/* Mute toggle */}
+              {/* Minimal overlay controls - only mute toggle */}
               {isPlaying && (
-                <button
-                  className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm transition-transform active:scale-95"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleMute();
-                  }}
-                >
-                  {isMuted ? (
-                    <VolumeX className="h-4 w-4 text-white" />
-                  ) : (
-                    <Volume2 className="h-4 w-4 text-white" />
-                  )}
-                </button>
+                <div className="absolute bottom-3 right-3 flex gap-2">
+                  <button
+                    className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm transition-transform active:scale-95 touch-manipulation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMute();
+                    }}
+                  >
+                    {isMuted ? (
+                      <VolumeX className="h-4 w-4 text-white" />
+                    ) : (
+                      <Volume2 className="h-4 w-4 text-white" />
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           </AspectRatio>
 
           {/* Aspect ratio badge */}
-          <div className="absolute top-3 left-3">
+          <div className="absolute top-3 left-3 pointer-events-none">
             <Badge 
               variant="secondary" 
               className="bg-black/60 text-white border-0 backdrop-blur-sm gap-1 text-[10px]"
             >
               <AspectIcon className="h-3 w-3" />
               {reel.aspectRatio}
-            </Badge>
-          </div>
-
-          {/* Duration badge */}
-          <div className="absolute top-3 right-3">
-            <Badge 
-              variant="secondary" 
-              className="bg-black/60 text-white border-0 backdrop-blur-sm text-[10px] font-mono"
-            >
-              {formatDuration(reel.duration)}
             </Badge>
           </div>
         </div>
@@ -374,7 +364,7 @@ function ReelPreviewContent({
           </Button>
         </div>
         <button
-          className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1"
+          className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
           onClick={onBack}
         >
           <ArrowLeft className="h-3 w-3" />
