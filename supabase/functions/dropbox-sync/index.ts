@@ -839,7 +839,7 @@ serve(async (req) => {
       return handleTestSync(userId, supabase);
     }
 
-    if (path === "/list-recordings" && req.method === "GET") {
+    if (path === "/list-recordings" && (req.method === "GET" || req.method === "POST")) {
       return handleListRecordings(userId, supabase);
     }
 
