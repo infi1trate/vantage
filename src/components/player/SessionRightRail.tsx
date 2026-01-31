@@ -59,8 +59,8 @@ export const SessionRightRail = memo(function SessionRightRail({
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
-  // Count highlights specifically (kill, death, highlight types)
-  const highlightCount = useMemo(() => {
+  // Count moments specifically (kill, death, highlight types)
+  const momentCount = useMemo(() => {
     return annotations.filter(a => 
       ["kill", "death", "highlight"].includes(a.annotation_type)
     ).length;
@@ -92,9 +92,9 @@ export const SessionRightRail = memo(function SessionRightRail({
   }> = [
     { 
       id: "highlights", 
-      label: "Highlights", 
+      label: "Moments", 
       icon: Star,
-      count: highlightCount,
+      count: momentCount,
     },
     { 
       id: "annotations", 

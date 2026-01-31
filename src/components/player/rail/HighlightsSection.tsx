@@ -169,9 +169,9 @@ export const HighlightsSection = memo(function HighlightsSection({
         <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-vantage-warning/10 flex items-center justify-center">
           <Star className="h-7 w-7 text-vantage-warning/50" />
         </div>
-        <h4 className="font-semibold mb-2">No highlights yet</h4>
+        <h4 className="font-semibold mb-2">No moments yet</h4>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Mark kills, deaths, and highlight moments during playback to track key events.
+          Mark kills, deaths, and key moments during playback to track important events.
         </p>
       </div>
     );
