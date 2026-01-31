@@ -33,6 +33,8 @@ import {
   CheckCircle2,
   Volume2,
   VolumeX,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -278,11 +280,15 @@ function ReelPreviewContent({
       
     } catch (error) {
       setExportPhase("error");
-      toast.error("Export failed", {
-        description: "Please try again",
-      });
+      // No toast - error is shown inline to keep user anchored
     }
   }, [exportPhase]);
+
+  // Retry export after failure
+  const handleRetryExport = useCallback(() => {
+    setExportPhase("idle");
+    setExportProgress(0);
+  }, []);
 
   // Download the exported file
   const handleDownload = useCallback(() => {
@@ -490,6 +496,26 @@ function ReelPreviewContent({
           </div>
         )}
 
+        {/* Error state - calm, reassuring, with retry */}
+        {exportPhase === "error" && (
+          <div className="mb-4">
+            <div className={cn(
+              "flex items-center gap-3 rounded-lg bg-destructive/10 border border-destructive/20",
+              isMobile ? "px-4 py-3.5" : "px-3 py-3"
+            )}>
+              <AlertCircle className={cn("text-destructive shrink-0", isMobile ? "h-6 w-6" : "h-5 w-5")} />
+              <div className="flex-1 min-w-0">
+                <span className={cn("font-medium text-destructive block", isMobile ? "text-base" : "text-sm")}>
+                  Couldn't export this time
+                </span>
+                <span className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-[11px]")}>
+                  Your reel is still here — let's try again
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action buttons - taller on mobile for thumb reach */}
         <div className="flex gap-2">
           {exportPhase === "complete" ? (
@@ -511,6 +537,27 @@ function ReelPreviewContent({
               >
                 <Share2 className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
                 <span className={isMobile ? "" : "hidden sm:inline"}>Share</span>
+              </Button>
+            </>
+          ) : exportPhase === "error" ? (
+            <>
+              {/* Error: Retry Export is primary */}
+              <Button
+                size="lg"
+                className={cn("flex-1 gap-2 font-semibold", isMobile ? "h-14 text-base" : "h-12")}
+                onClick={handleRetryExport}
+              >
+                <RefreshCw className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
+                Retry Export
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className={cn("gap-2", isMobile ? "h-14 px-5" : "h-12 px-4")}
+                onClick={onBack}
+              >
+                <ArrowLeft className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
+                <span className={isMobile ? "" : "hidden sm:inline"}>Back</span>
               </Button>
             </>
           ) : (
