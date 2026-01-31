@@ -839,10 +839,14 @@ serve(async (req) => {
       return handleTestSync(userId, supabase);
     }
 
+    if (path === "/list-recordings" && req.method === "GET") {
+      return handleListRecordings(userId, supabase);
+    }
+
     // Default route - show available endpoints
     return new Response(JSON.stringify({ 
       error: "Not found",
-      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/sync/auto", "/status", "/disconnect", "/provision/retry", "/test"],
+      availableRoutes: ["/oauth/start", "/oauth/callback", "/sync", "/sync/auto", "/status", "/disconnect", "/provision/retry", "/test", "/list-recordings"],
       receivedPath: path,
     }), {
       status: 404,
@@ -1853,6 +1857,123 @@ async function handleTestSync(userId: string, supabase: any): Promise<Response> 
       JSON.stringify({ 
         success: false, 
         error: error instanceof Error ? error.message : "Network error" 
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+
+/**
+ * List files in the Dropbox Recordings folder
+ * Provides ground truth for debugging sync issues
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleListRecordings(userId: string, supabase: any): Promise<Response> {
+  console.log(`[DropboxSync] Listing recordings for user ${userId}`);
+
+  // Get valid access token
+  const tokenResult = await getValidAccessToken(userId, supabase);
+  if (!tokenResult.accessToken) {
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: tokenResult.error || "No valid token",
+        files: [],
+        folder_reachable: false,
+      }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  try {
+    // List the Recordings folder
+    const listResponse = await fetch(DROPBOX_LIST_FOLDER_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${tokenResult.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        path: RECORDINGS_PATH,
+        recursive: false,
+        include_deleted: false,
+        include_media_info: false,
+      }),
+    });
+
+    if (!listResponse.ok) {
+      const errorText = await listResponse.text();
+      console.error("[DropboxSync] List folder failed:", errorText);
+      
+      // Check if it's a "path not found" error (folder doesn't exist yet)
+      if (listResponse.status === 409 && errorText.includes("path/not_found")) {
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            folder_reachable: false,
+            folder_exists: false,
+            files: [],
+            message: "Recordings folder does not exist yet. It will be created on first sync.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Failed to list folder: ${listResponse.status}`,
+          folder_reachable: false,
+          files: [],
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const listData = await listResponse.json();
+    const entries = listData.entries || [];
+
+    // Filter to only files (not folders) and extract relevant info
+    const files = entries
+      .filter((entry: any) => entry[".tag"] === "file")
+      .map((file: any) => ({
+        name: file.name,
+        path: file.path_display,
+        size_bytes: file.size,
+        modified: file.client_modified || file.server_modified,
+        id: file.id,
+        rev: file.rev,
+      }))
+      .sort((a: any, b: any) => {
+        // Sort by modified date, newest first
+        return new Date(b.modified).getTime() - new Date(a.modified).getTime();
+      });
+
+    console.log(`[DropboxSync] Found ${files.length} files in Recordings folder`);
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        folder_reachable: true,
+        folder_exists: true,
+        folder_path: RECORDINGS_PATH,
+        file_count: files.length,
+        files,
+        message: files.length === 0 
+          ? "Dropbox folder reachable but empty" 
+          : `Found ${files.length} recording(s)`,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
+  } catch (error) {
+    console.error("[DropboxSync] List recordings error:", error);
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Network error",
+        folder_reachable: false,
+        files: [],
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
