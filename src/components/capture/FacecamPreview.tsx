@@ -259,7 +259,7 @@ export function FacecamPreview({
           <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent animate-pulse" />
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/70 backdrop-blur-sm rounded-full">
             <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-            <span className="text-[10px] text-white/80 font-medium">Creating...</span>
+            <span className="text-[10px] text-white/80 font-medium">Generating...</span>
           </div>
         </div>
       )}
