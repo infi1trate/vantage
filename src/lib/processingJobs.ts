@@ -26,22 +26,24 @@ export interface ProcessingStage {
 }
 
 export interface ProcessingJob {
-  id: string;
-  sessionId: string;
+  id: string;                    // jobId (uuid)
+  sessionId: string;             // recordingId
   sessionTitle: string;
   status: ProcessingStatus;
+  progress: number;              // 0-100
+  step: string | null;           // "Preparing", "Encoding", "Uploading", "Finalizing"
   
-  // Stage tracking
+  // Stage tracking (internal)
   stages: ProcessingStage[];
   currentStageIndex: number;
   
   // Data references (stored separately to avoid localStorage bloat)
-  blobKey?: string;        // IndexedDB key for the blob
-  thumbnailKey?: string;   // IndexedDB key for thumbnail
+  blobKey?: string;              // IndexedDB key for the blob
+  thumbnailKey?: string;         // IndexedDB key for thumbnail
   mimeType: string;
   fileExt: string;
-  duration: number;        // seconds
-  blobSize: number;        // bytes
+  duration: number;              // seconds
+  blobSize: number;              // bytes
   
   // Capture config (for metadata)
   hasCam: boolean;
@@ -55,10 +57,12 @@ export interface ProcessingJob {
   localSaveSuccess?: boolean;
   cloudUploadSuccess?: boolean;
   videoAssetId?: string;
-  errorMessage?: string;
+  errorMessage: string | null;   // nullable error message
+  outputReady: boolean;          // true when video is playable in detail view
   
   // Timestamps
   createdAt: string;
+  updatedAt: string;
   startedAt?: string;
   completedAt?: string;
   
@@ -72,6 +76,7 @@ const BLOB_STORE_NAME = "processing_blobs";
 const DB_NAME = "vantage_processing";
 const DB_VERSION = 1;
 const MAX_COMPLETED_JOBS = 10;
+const PRUNE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Default processing stages
 const PROCESSING_STAGES: Omit<ProcessingStage, "status">[] = [
@@ -183,7 +188,29 @@ export function loadProcessingJobs(): ProcessingJob[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
-    return JSON.parse(stored) as ProcessingJob[];
+    
+    const jobs = JSON.parse(stored) as ProcessingJob[];
+    const now = Date.now();
+    
+    // Prune completed jobs older than 24 hours
+    const pruned = jobs.filter(job => {
+      if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+        const completedTime = job.completedAt ? new Date(job.completedAt).getTime() : 0;
+        if (now - completedTime > PRUNE_AFTER_MS) {
+          // Also clean up blobs
+          deleteProcessingBlobs(job.id).catch(() => {});
+          return false;
+        }
+      }
+      return true;
+    });
+    
+    // Save pruned list if we removed any
+    if (pruned.length < jobs.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+    }
+    
+    return pruned;
   } catch (error) {
     console.error("[ProcessingJobs] Failed to load:", error);
     return [];
@@ -195,7 +222,7 @@ export function loadProcessingJobs(): ProcessingJob[] {
  */
 export function saveProcessingJobs(jobs: ProcessingJob[]): void {
   try {
-    // Keep active + recent completed
+    // Keep active + recent completed (not yet pruned)
     const active = jobs.filter(j => 
       j.status === "queued" || j.status === "processing" || j.status === "uploading"
     );
@@ -231,11 +258,14 @@ export function createProcessingJob(params: {
   hasSystemAudio: boolean;
   userId?: string;
 }): ProcessingJob {
+  const now = new Date().toISOString();
   const job: ProcessingJob = {
     id: generateJobId(),
     sessionId: params.sessionId,
     sessionTitle: params.sessionTitle,
     status: "queued",
+    progress: 0,
+    step: "Preparing",
     stages: PROCESSING_STAGES.map(s => ({ ...s, status: "pending" as const })),
     currentStageIndex: -1,
     mimeType: params.mimeType,
@@ -246,7 +276,10 @@ export function createProcessingJob(params: {
     hasMic: params.hasMic,
     hasSystemAudio: params.hasSystemAudio,
     userId: params.userId,
-    createdAt: new Date().toISOString(),
+    errorMessage: null,
+    outputReady: false,
+    createdAt: now,
+    updatedAt: now,
     retryCount: 0,
     maxRetries: 3,
   };
@@ -270,7 +303,7 @@ export function updateProcessingJob(
   
   if (index === -1) return null;
   
-  const job = { ...jobs[index], ...updates };
+  const job = { ...jobs[index], ...updates, updatedAt: new Date().toISOString() };
   
   // Update stage statuses based on currentStageIndex
   if (updates.currentStageIndex !== undefined) {
@@ -283,11 +316,23 @@ export function updateProcessingJob(
         return { ...stage, status: "pending" as const };
       }
     });
+    
+    // Update step label based on current stage
+    const currentStage = job.stages[updates.currentStageIndex];
+    if (currentStage) {
+      job.step = currentStage.label;
+    }
+    
+    // Update progress (0-100 based on stages)
+    job.progress = Math.round(((updates.currentStageIndex + 1) / job.stages.length) * 100);
   }
   
   // Mark all stages complete on success
   if (updates.status === "completed") {
     job.stages = job.stages.map(s => ({ ...s, status: "completed" as const }));
+    job.progress = 100;
+    job.step = "Complete";
+    job.outputReady = true;
   }
   
   // Mark current stage failed on error
@@ -296,6 +341,7 @@ export function updateProcessingJob(
       ...job.stages[job.currentStageIndex],
       status: "failed",
     };
+    job.step = "Failed";
   }
   
   jobs[index] = job;
@@ -340,8 +386,11 @@ export function retryProcessingJob(jobId: string): ProcessingJob | null {
   
   return updateProcessingJob(jobId, {
     status: "queued",
+    progress: 0,
+    step: "Preparing",
     retryCount: job.retryCount + 1,
-    errorMessage: undefined,
+    errorMessage: null,
+    outputReady: false,
     completedAt: undefined,
     currentStageIndex: -1,
     stages: PROCESSING_STAGES.map(s => ({ ...s, status: "pending" as const })),
