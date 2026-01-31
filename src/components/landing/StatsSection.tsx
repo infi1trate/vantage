@@ -3,8 +3,8 @@ import { useRef } from "react";
 
 const stats = [
   { value: "10K+", label: "Sessions Recorded" },
-  { value: "500K", label: "Annotations Made" },
-  { value: "2.5M", label: "Moments Captured" },
+  { value: "500K", label: "Moments Marked" },
+  { value: "2.5M", label: "Highlights Captured" },
   { value: "<50ms", label: "Recording Latency" },
 ];
 

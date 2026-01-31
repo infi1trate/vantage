@@ -91,7 +91,7 @@ export function showVideoReadyNotification(
   const notification = showSystemNotification(
     "Vantage: Video ready",
     {
-      body: `${sessionTitle} is ready for annotation`,
+      body: `${sessionTitle} is ready for review`,
       tag: "video-ready", // Replaces existing with same tag
       requireInteraction: false,
     }

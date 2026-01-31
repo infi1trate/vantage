@@ -69,9 +69,9 @@ export function SuggestionsList({
         <div className="w-14 h-14 rounded-full bg-muted/50 flex items-center justify-center mb-4">
           <Wand2 className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h4 className="text-sm font-medium mb-2">Get Annotation Suggestions</h4>
+        <h4 className="text-sm font-medium mb-2">Get Moment Suggestions</h4>
         <p className="text-xs text-muted-foreground mb-4 max-w-xs">
-          AI will analyze your session and suggest potential kills, deaths, fight clusters, and highlights to annotate.
+          AI will analyze your session and suggest potential kills, deaths, fight clusters, and highlights to mark.
         </p>
         <Button onClick={onGenerateSuggestions} disabled={isLoading}>
           <Sparkles className="h-4 w-4 mr-2" />
@@ -195,7 +195,7 @@ export function SuggestionsList({
       {/* Footer hint */}
       <div className="shrink-0 p-2 border-t border-border/30 text-center">
         <p className="text-[11px] text-muted-foreground">
-          Accepting converts suggestion to annotation
+          Accepting converts suggestion to a Moment
         </p>
       </div>
     </div>

@@ -84,14 +84,14 @@ export function CommunityAnnotationsPanel({
       <div className="p-3 border-b border-border/50 flex items-center justify-between">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <Pencil className="h-4 w-4" />
-          Annotations
+          Notes
         </h3>
         {!isAllowed && !isAuthor && (
           <Tooltip>
             <TooltipTrigger>
               <Lock className="h-4 w-4 text-muted-foreground" />
             </TooltipTrigger>
-            <TooltipContent>Creator disabled public annotations</TooltipContent>
+            <TooltipContent>Creator disabled public notes</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -102,14 +102,14 @@ export function CommunityAnnotationsPanel({
           <div className="p-6 text-center">
             <Lock className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
             <p className="text-sm text-muted-foreground">
-              Creator has disabled annotations for this post.
+              Creator has disabled notes for this post.
             </p>
           </div>
         ) : annotations.length === 0 ? (
           <div className="p-6 text-center">
             <Pencil className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
             <p className="text-sm text-muted-foreground">
-              No annotations yet.
+              No notes yet.
               {canAddAnnotation && " Add the first one!"}
             </p>
           </div>

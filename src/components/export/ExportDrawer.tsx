@@ -1265,7 +1265,7 @@ export function ExportDrawer({
                   <div className="flex items-center gap-2">
                     <Pencil className="h-4 w-4 text-muted-foreground" />
                     <Label htmlFor="annotations" className="text-sm cursor-pointer">
-                      Allow public annotations
+                      Allow public notes
                     </Label>
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5 ml-6">

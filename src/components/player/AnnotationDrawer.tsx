@@ -229,7 +229,7 @@ export function AnnotationDrawer({
     try {
       await deleteAnnotation(annotationId);
       onAnnotationDeleted(annotationId);
-      toast.success("Annotation deleted");
+      toast.success("Moment deleted");
       onClose();
     } catch (error) {
       toast.error("Failed to delete");
@@ -348,11 +348,11 @@ export function AnnotationDrawer({
         onAnnotationCreated(created);
       }
       
-      toast.success("Annotation saved");
+      toast.success("Moment saved");
       onClose();
     } catch (error) {
       console.error("Save failed:", error);
-      toast.error("Failed to save annotation");
+      toast.error("Failed to save moment");
     } finally {
       setSaving(false);
     }
@@ -448,7 +448,7 @@ export function AnnotationDrawer({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h2 className="text-sm font-semibold">
-            {isEditing ? "Edit Annotation" : "New Annotation"}
+            {isEditing ? "Edit Moment" : "New Moment"}
           </h2>
         </div>
         {saving && (
@@ -635,7 +635,7 @@ export function AnnotationDrawer({
                 disabled={deleting}
               >
                 <Trash2 className="h-4 w-4" />
-                {deleting ? "Deleting..." : "Delete Annotation"}
+                {deleting ? "Deleting..." : "Delete Moment"}
               </Button>
             </div>
           )}
