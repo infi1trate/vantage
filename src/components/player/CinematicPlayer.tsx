@@ -444,10 +444,10 @@ export function CinematicPlayer({
         )}
       </div>
 
-      {/* Timeline section - prominent */}
-      <div className="shrink-0 bg-card/80 backdrop-blur-sm border-t border-border/30">
+      {/* Timeline section - prominent with breathing room */}
+      <div className="shrink-0 bg-card/80 backdrop-blur-sm border-t border-border/30 pt-3 pb-4 md:pt-4 md:pb-5">
         {/* Mini controls row */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
+        <div className="flex items-center justify-between px-4 md:px-6 pb-3 md:pb-4 border-b border-border/20">
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -487,9 +487,9 @@ export function CinematicPlayer({
         </div>
 
         {/* Floating annotation bar - appears above timeline when selection exists */}
-        <div className="relative mx-4">
+        <div className="relative mx-4 md:mx-6 mt-4 md:mt-5">
           {activeSelection.type !== null && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-10">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-10">
               <FloatingAnnotationBar
                 selection={activeSelection}
                 onCreateMarker={(type) => {
@@ -512,7 +512,7 @@ export function CinematicPlayer({
         </div>
 
         {/* Main timeline with selection support */}
-        <div className="mx-4 my-3">
+        <div className="mx-4 md:mx-6 mt-4 md:mt-5">
           <TimelineSelection
             duration={duration}
             currentTime={currentTime}
@@ -533,7 +533,7 @@ export function CinematicPlayer({
           
           {/* Onboarding hint when no selection */}
           {activeSelection.type === null && annotations.length === 0 && (
-            <TimelineEmptyState className="mt-2" />
+            <TimelineEmptyState className="mt-3 md:mt-4" />
           )}
         </div>
       </div>
