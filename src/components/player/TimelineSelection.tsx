@@ -103,26 +103,35 @@ const TimelineReactionMarker = memo(function TimelineReactionMarker({
       <TooltipTrigger asChild>
         <button
           className={cn(
-            "absolute top-1 w-6 h-6 -translate-x-1/2 rounded-full transition-all z-20",
+            // Outer touch target: 44px for accessibility, visual element smaller inside
+            "absolute top-0 w-11 h-11 -translate-x-1/2 transition-all z-20",
             "flex items-center justify-center",
             "hover:scale-110 active:scale-95",
-            // Subtle glow effect consistent with Vantage branding
-            isEmoji 
-              ? "bg-card/90 border border-border/50 shadow-sm hover:shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]"
-              : isVoice
-                ? "bg-accent/20 border border-accent/30 hover:bg-accent/30"
-                : "bg-muted/80 border border-border/40 hover:bg-muted"
+            "touch-manipulation"
           )}
           style={{ left: `${(marker.time / duration) * 100}%` }}
           onClick={handleClick}
         >
-          {isEmoji ? (
-            <span className="text-sm leading-none">{marker.content}</span>
-          ) : isVoice ? (
-            <Mic className="h-3 w-3 text-accent" />
-          ) : (
-            <MessageCircle className="h-3 w-3 text-muted-foreground" />
-          )}
+          {/* Visual indicator - smaller than touch target */}
+          <div
+            className={cn(
+              "w-6 h-6 rounded-full flex items-center justify-center",
+              // Subtle glow effect consistent with Vantage branding
+              isEmoji 
+                ? "bg-card/90 border border-border/50 shadow-sm group-hover:shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]"
+                : isVoice
+                  ? "bg-accent/20 border border-accent/30"
+                  : "bg-muted/80 border border-border/40"
+            )}
+          >
+            {isEmoji ? (
+              <span className="text-sm leading-none">{marker.content}</span>
+            ) : isVoice ? (
+              <Mic className="h-3 w-3 text-accent" />
+            ) : (
+              <MessageCircle className="h-3 w-3 text-muted-foreground" />
+            )}
+          </div>
         </button>
       </TooltipTrigger>
       <TooltipContent 
