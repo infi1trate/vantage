@@ -2,12 +2,22 @@ import { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { cn } from "@/lib/utils";
 import { SuggestionMarkers, AnnotationSuggestion } from "./SuggestionMarkers";
 import { recordMetric } from "@/lib/performanceMetrics";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Smile, MessageCircle, Mic } from "lucide-react";
 
 export interface SelectionState {
   type: "point" | "range" | null;
   point?: number;
   rangeStart?: number;
   rangeEnd?: number;
+}
+
+// Reaction marker type for timeline display
+export interface ReactionMarker {
+  id: string;
+  time: number;
+  type: "emoji" | "text" | "voice";
+  content: string; // emoji character or text snippet
 }
 
 interface TimelineSelectionProps {
@@ -18,6 +28,9 @@ interface TimelineSelectionProps {
   onSelectionChange: (selection: SelectionState) => void;
   markers?: Array<{ id: string; time: number; color?: string }>;
   onMarkerClick?: (id: string, time: number) => void;
+  // Reaction markers
+  reactionMarkers?: ReactionMarker[];
+  onReactionClick?: (id: string, time: number) => void;
   suggestions?: AnnotationSuggestion[];
   onSuggestionAccept?: (suggestion: AnnotationSuggestion) => void;
   onSuggestionDismiss?: (suggestionId: string) => void;
@@ -58,6 +71,80 @@ const TimelineMarker = memo(function TimelineMarker({
   );
 });
 
+// Memoized reaction marker with emoji/icon display and hover tooltip
+const TimelineReactionMarker = memo(function TimelineReactionMarker({
+  marker,
+  duration,
+  onSeek,
+  onReactionClick,
+}: {
+  marker: ReactionMarker;
+  duration: number;
+  onSeek: (time: number) => void;
+  onReactionClick?: (id: string, time: number) => void;
+}) {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSeek(marker.time);
+    onReactionClick?.(marker.id, marker.time);
+  }, [marker.id, marker.time, onSeek, onReactionClick]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const isEmoji = marker.type === "emoji";
+  const isVoice = marker.type === "voice";
+
+  return (
+    <Tooltip delayDuration={100}>
+      <TooltipTrigger asChild>
+        <button
+          className={cn(
+            "absolute top-1 w-6 h-6 -translate-x-1/2 rounded-full transition-all z-20",
+            "flex items-center justify-center",
+            "hover:scale-110 active:scale-95",
+            // Subtle glow effect consistent with Vantage branding
+            isEmoji 
+              ? "bg-card/90 border border-border/50 shadow-sm hover:shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]"
+              : isVoice
+                ? "bg-accent/20 border border-accent/30 hover:bg-accent/30"
+                : "bg-muted/80 border border-border/40 hover:bg-muted"
+          )}
+          style={{ left: `${(marker.time / duration) * 100}%` }}
+          onClick={handleClick}
+        >
+          {isEmoji ? (
+            <span className="text-sm leading-none">{marker.content}</span>
+          ) : isVoice ? (
+            <Mic className="h-3 w-3 text-accent" />
+          ) : (
+            <MessageCircle className="h-3 w-3 text-muted-foreground" />
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent 
+        side="top" 
+        className="max-w-[200px] text-xs"
+        sideOffset={8}
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {formatTime(marker.time)}
+          </span>
+          {isEmoji ? (
+            <span className="text-lg">{marker.content}</span>
+          ) : (
+            <p className="line-clamp-2">{marker.content}</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
+
 // Memoized time markers
 const TimeMarkers = memo(function TimeMarkers({ duration }: { duration: number }) {
   const formatTimeShort = (seconds: number) => {
@@ -83,6 +170,8 @@ export function TimelineSelection({
   onSelectionChange,
   markers = [],
   onMarkerClick,
+  reactionMarkers = [],
+  onReactionClick,
   suggestions = [],
   onSuggestionAccept,
   onSuggestionDismiss,
@@ -419,6 +508,17 @@ export function TimelineSelection({
           color={marker.color}
           onSeek={onSeek}
           onMarkerClick={onMarkerClick}
+        />
+      ))}
+
+      {/* Reaction markers - emoji/text/voice with hover tooltips */}
+      {reactionMarkers.map((marker) => (
+        <TimelineReactionMarker
+          key={`reaction-${marker.id}`}
+          marker={marker}
+          duration={duration}
+          onSeek={onSeek}
+          onReactionClick={onReactionClick}
         />
       ))}
 
