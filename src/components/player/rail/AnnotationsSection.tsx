@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, memo, useCallback } from "react";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,114 @@ const formatRange = (start: number, end: number) => {
   return `${formatTime(start)} – ${formatTime(end)}`;
 };
 
-export function AnnotationsSection({
+// Item type for combined list
+type CombinedItem = {
+  id: string;
+  type: "annotation" | "voice";
+  time: number;
+  endTime?: number;
+  eventType: string;
+  data: Annotation | VoiceNote;
+};
+
+// Memoized list item
+const AnnotationItem = memo(function AnnotationItem({
+  item,
+  isActive,
+  onClick,
+  onDelete,
+}: {
+  item: CombinedItem;
+  isActive: boolean;
+  onClick: () => void;
+  onDelete?: () => void;
+}) {
+  const config = EVENT_CONFIG[item.eventType] || EVENT_CONFIG.marker;
+  const Icon = config.icon;
+  
+  const snippet = useMemo(() => {
+    if (item.type === "annotation") {
+      const a = item.data as Annotation;
+      return a.title || a.content || null;
+    } else {
+      const v = item.data as VoiceNote;
+      return v.transcription || null;
+    }
+  }, [item]);
+  
+  return (
+    <button
+      className={cn(
+        "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all group",
+        isActive 
+          ? "bg-primary/10 border border-primary/30 shadow-sm" 
+          : "hover:bg-muted/50 border border-transparent"
+      )}
+      onClick={onClick}
+    >
+      {/* Icon */}
+      <div className={cn(
+        "shrink-0 p-2 rounded-lg transition-colors",
+        isActive ? "bg-primary/20" : config.bg
+      )}>
+        <Icon className={cn(
+          "h-4 w-4",
+          isActive ? "text-primary" : config.color
+        )} />
+      </div>
+      
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-xs font-medium",
+            isActive ? "text-primary" : "text-muted-foreground"
+          )}>
+            {config.label}
+          </span>
+          <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
+            {item.endTime 
+              ? formatRange(item.time, item.endTime)
+              : formatTime(item.time)
+            }
+          </span>
+        </div>
+        
+        {snippet && (
+          <p className={cn(
+            "text-sm truncate mt-0.5",
+            isActive ? "text-foreground" : "text-muted-foreground"
+          )}>
+            {snippet}
+          </p>
+        )}
+      </div>
+      
+      {/* Actions */}
+      <div className="shrink-0 flex items-center gap-1">
+        {onDelete && item.type === "annotation" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+          </Button>
+        )}
+        <ChevronRight className={cn(
+          "h-4 w-4 transition-opacity",
+          isActive ? "opacity-100 text-primary" : "opacity-0 group-hover:opacity-50 text-muted-foreground"
+        )} />
+      </div>
+    </button>
+  );
+});
+
+export const AnnotationsSection = memo(function AnnotationsSection({
   annotations,
   voiceNotes,
   currentTime,
@@ -54,15 +161,8 @@ export function AnnotationsSection({
   onAnnotationDelete,
 }: AnnotationsSectionProps) {
   // Combine and sort all items
-  const items = useMemo(() => {
-    const combined: Array<{
-      id: string;
-      type: "annotation" | "voice";
-      time: number;
-      endTime?: number;
-      eventType: string;
-      data: Annotation | VoiceNote;
-    }> = [
+  const items = useMemo<CombinedItem[]>(() => {
+    const combined: CombinedItem[] = [
       ...annotations.map(a => ({
         id: a.id,
         type: "annotation" as const,
@@ -94,7 +194,7 @@ export function AnnotationsSection({
     return active?.id;
   }, [items, currentTime]);
 
-  const handleItemClick = (item: typeof items[0]) => {
+  const handleItemClick = useCallback((item: CombinedItem) => {
     if (item.type === "annotation") {
       const annotation = item.data as Annotation;
       onAnnotationClick?.(annotation) ?? onMarkerClick(annotation.timestamp_seconds);
@@ -102,21 +202,7 @@ export function AnnotationsSection({
       const voiceNote = item.data as VoiceNote;
       onVoiceNoteClick?.(voiceNote) ?? onMarkerClick(voiceNote.timestamp_seconds);
     }
-  };
-
-  const getItemConfig = (eventType: string) => {
-    return EVENT_CONFIG[eventType] || EVENT_CONFIG.marker;
-  };
-
-  const getItemSnippet = (item: typeof items[0]): string | null => {
-    if (item.type === "annotation") {
-      const a = item.data as Annotation;
-      return a.title || a.content || null;
-    } else {
-      const v = item.data as VoiceNote;
-      return v.transcription || null;
-    }
-  };
+  }, [onAnnotationClick, onVoiceNoteClick, onMarkerClick]);
 
   if (items.length === 0) {
     return (
@@ -136,86 +222,17 @@ export function AnnotationsSection({
     <ScrollArea className="h-full">
       <div className="p-2">
         <div className="space-y-0.5">
-          {items.map((item) => {
-            const config = getItemConfig(item.eventType);
-            const Icon = config.icon;
-            const isActive = item.id === activeItemId;
-            const snippet = getItemSnippet(item);
-            
-            return (
-              <button
-                key={item.id}
-                className={cn(
-                  "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all group",
-                  isActive 
-                    ? "bg-primary/10 border border-primary/30 shadow-sm" 
-                    : "hover:bg-muted/50 border border-transparent"
-                )}
-                onClick={() => handleItemClick(item)}
-              >
-                {/* Icon */}
-                <div className={cn(
-                  "shrink-0 p-2 rounded-lg transition-colors",
-                  isActive ? "bg-primary/20" : config.bg
-                )}>
-                  <Icon className={cn(
-                    "h-4 w-4",
-                    isActive ? "text-primary" : config.color
-                  )} />
-                </div>
-                
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "text-xs font-medium",
-                      isActive ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {config.label}
-                    </span>
-                    <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
-                      {item.endTime 
-                        ? formatRange(item.time, item.endTime)
-                        : formatTime(item.time)
-                      }
-                    </span>
-                  </div>
-                  
-                  {snippet && (
-                    <p className={cn(
-                      "text-sm truncate mt-0.5",
-                      isActive ? "text-foreground" : "text-muted-foreground"
-                    )}>
-                      {snippet}
-                    </p>
-                  )}
-                </div>
-                
-                {/* Actions */}
-                <div className="shrink-0 flex items-center gap-1">
-                  {onAnnotationDelete && item.type === "annotation" && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAnnotationDelete(item.id);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                    </Button>
-                  )}
-                  <ChevronRight className={cn(
-                    "h-4 w-4 transition-opacity",
-                    isActive ? "opacity-100 text-primary" : "opacity-0 group-hover:opacity-50 text-muted-foreground"
-                  )} />
-                </div>
-              </button>
-            );
-          })}
+          {items.map((item) => (
+            <AnnotationItem
+              key={item.id}
+              item={item}
+              isActive={item.id === activeItemId}
+              onClick={() => handleItemClick(item)}
+              onDelete={onAnnotationDelete ? () => onAnnotationDelete(item.id) : undefined}
+            />
+          ))}
         </div>
       </div>
     </ScrollArea>
   );
-}
+});

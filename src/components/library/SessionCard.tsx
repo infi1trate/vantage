@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +80,7 @@ export interface SessionCardProps {
   viewMode: "grid" | "list";
 }
 
-export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) {
+export const SessionCard = memo(function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) {
   const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
@@ -781,4 +781,4 @@ export function SessionCard({ session, onDeleted, viewMode }: SessionCardProps) 
       </Dialog>
     </>
   );
-}
+});
