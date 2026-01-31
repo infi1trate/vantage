@@ -133,13 +133,23 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                 </div>
               )}
               <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1.5">
-              {session.dropbox_sync_status === "synced" && (
+                {session.dropbox_sync_status === "synced" && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <CloudIcon className="h-3 w-3 text-muted-foreground/50" />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
                       Backed up to Dropbox
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {session.dropbox_sync_status === "pending" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CloudIcon className="h-3 w-3 text-muted-foreground/20 animate-pulse" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Backing up...
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -328,6 +338,16 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
                     Backed up to Dropbox
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {session.dropbox_sync_status === "pending" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CloudIcon className="h-3.5 w-3.5 text-muted-foreground/20 animate-pulse" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    Backing up...
                   </TooltipContent>
                 </Tooltip>
               )}
