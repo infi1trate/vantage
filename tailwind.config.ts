@@ -15,6 +15,7 @@ export default {
     extend: {
       fontFamily: {
         display: ['League Gothic', 'sans-serif'],
+        barlow: ['Barlow Condensed', 'sans-serif'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
