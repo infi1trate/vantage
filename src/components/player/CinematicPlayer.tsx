@@ -348,16 +348,18 @@ export function CinematicPlayer({
           </div>
         ) : null}
 
-        {/* Center play button overlay */}
-        <button 
-          onClick={handlePlayPause}
-          className={cn(
-            "absolute z-20 p-5 rounded-full bg-primary/80 backdrop-blur-sm transition-all duration-200",
-            isPlaying ? "opacity-0 scale-90 pointer-events-none" : "opacity-100 scale-100 hover:scale-105 hover:bg-primary"
-          )}
-        >
-          <Play className="h-10 w-10 text-primary-foreground" fill="currentColor" />
-        </button>
+        {/* Center play button overlay - hide when error or no video */}
+        {videoUrl && !videoDecodeError && (
+          <button 
+            onClick={handlePlayPause}
+            className={cn(
+              "absolute z-20 p-5 rounded-full bg-primary/80 backdrop-blur-sm transition-all duration-200",
+              isPlaying ? "opacity-0 scale-90 pointer-events-none" : "opacity-100 scale-100 hover:scale-105 hover:bg-primary"
+            )}
+          >
+            <Play className="h-10 w-10 text-primary-foreground" fill="currentColor" />
+          </button>
+        )}
       </div>
 
       {/* Timeline section - prominent */}
