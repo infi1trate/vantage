@@ -479,6 +479,7 @@ export type Database = {
       connected_accounts: {
         Row: {
           connected_at: string
+          display_handle: string | null
           id: string
           last_used_at: string | null
           provider: string
@@ -488,6 +489,7 @@ export type Database = {
         }
         Insert: {
           connected_at?: string
+          display_handle?: string | null
           id?: string
           last_used_at?: string | null
           provider: string
@@ -497,6 +499,7 @@ export type Database = {
         }
         Update: {
           connected_at?: string
+          display_handle?: string | null
           id?: string
           last_used_at?: string | null
           provider?: string
@@ -993,6 +996,7 @@ export type Database = {
           ip_address: string | null
           is_current: boolean | null
           last_active_at: string
+          location_text: string | null
           user_agent: string | null
           user_id: string
         }
@@ -1003,6 +1007,7 @@ export type Database = {
           ip_address?: string | null
           is_current?: boolean | null
           last_active_at?: string
+          location_text?: string | null
           user_agent?: string | null
           user_id: string
         }
@@ -1013,6 +1018,7 @@ export type Database = {
           ip_address?: string | null
           is_current?: boolean | null
           last_active_at?: string
+          location_text?: string | null
           user_agent?: string | null
           user_id?: string
         }

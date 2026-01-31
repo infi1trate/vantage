@@ -1,1 +1,13 @@
 project_id = "ojlhsedzdfmcxvmmbcnf"
+
+[functions.analyze-gameplay]
+verify_jwt = false
+
+[functions.generate-background]
+verify_jwt = false
+
+[functions.suggest-annotations]
+verify_jwt = false
+
+[functions.settings-api]
+verify_jwt = false
