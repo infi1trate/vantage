@@ -31,6 +31,7 @@ interface FacecamPreviewProps {
   backgroundColor?: BackgroundColorId;
   backgroundImage?: string | null;
   flipCamera?: boolean;
+  isGeneratingBackground?: boolean;
   className?: string;
 }
 
@@ -41,6 +42,7 @@ export function FacecamPreview({
   backgroundColor = "transparent",
   backgroundImage = null,
   flipCamera = true,
+  isGeneratingBackground = false,
   className 
 }: FacecamPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -251,10 +253,22 @@ export function FacecamPreview({
         </div>
       )}
       
+      {/* AI Background generation loading overlay - subtle pulse effect */}
+      {isGeneratingBackground && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent animate-pulse" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/70 backdrop-blur-sm rounded-full">
+            <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
+            <span className="text-[10px] text-white/80 font-medium">Creating...</span>
+          </div>
+        </div>
+      )}
+      
       {/* Status badge */}
       <div className={cn(
         "absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] text-white/80 transition-all duration-150",
-        frameShape === "circle" && "bottom-3 right-3"
+        frameShape === "circle" && "bottom-3 right-3",
+        isGeneratingBackground && "opacity-50"
       )}>
         <Camera className="h-3 w-3" />
         <span>Live</span>
@@ -264,7 +278,7 @@ export function FacecamPreview({
       </div>
       
       {/* Segmentation error indicator */}
-      {segmentError && needsBackgroundRemoval && (
+      {segmentError && needsBackgroundRemoval && !isGeneratingBackground && (
         <div className="absolute top-2 left-2 right-2 px-2 py-1 bg-warning/20 border border-warning/30 rounded text-[10px] text-warning text-center">
           {segmentError}
         </div>
