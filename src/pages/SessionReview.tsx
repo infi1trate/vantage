@@ -626,7 +626,8 @@ export default function SessionReview() {
   const displaySessionId = isLocal ? localSession.id : (session?.id || processingJob?.sessionId);
   
   const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
-  const videoUrl = isLocal ? localVideoUrl : (gameplayAsset?.storage_url || session?.video_url);
+  // Use fresh URL from video assets only - don't use session.video_url as it may be expired
+  const videoUrl = isLocal ? localVideoUrl : gameplayAsset?.storage_url;
   
   // Check if this is a not_stored_locally session
   const isNotStoredLocally = isLocal && localSession?.status === "not_stored_locally";

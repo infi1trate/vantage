@@ -506,17 +506,34 @@ export async function getVideoAssets(sessionId: string) {
 export async function getVideoAssetUrl(asset: VideoAsset): Promise<string | null> {
   // If storage_path is available, generate a fresh signed URL
   if (asset.storage_path) {
-    const { data, error } = await supabase.storage
-      .from("video-assets")
-      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
-    
-    if (error) {
-      console.error("[captures] Failed to generate signed URL:", error);
-      // Fall back to stored URL (might be expired but worth trying)
-      return asset.storage_url;
+    try {
+      const { data, error } = await supabase.storage
+        .from("video-assets")
+        .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
+      
+      if (error) {
+        console.error("[captures] Failed to generate signed URL:", error);
+        // Fall back to stored URL (might be expired but worth trying)
+        return asset.storage_url;
+      }
+      
+      if (data?.signedUrl) {
+        // The Supabase client should return a full URL, but verify it's absolute
+        if (data.signedUrl.startsWith('http')) {
+          return data.signedUrl;
+        }
+        
+        // If somehow we got a relative URL, construct the full URL
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        if (supabaseUrl && data.signedUrl.startsWith('/')) {
+          return `${supabaseUrl}/storage/v1${data.signedUrl}`;
+        }
+        
+        return data.signedUrl;
+      }
+    } catch (err) {
+      console.error("[captures] Error generating signed URL:", err);
     }
-    
-    return data.signedUrl;
   }
   
   // Fall back to stored URL if no storage_path
@@ -530,12 +547,19 @@ export async function getVideoAssetUrl(asset: VideoAsset): Promise<string | null
 export async function getVideoAssetsWithFreshUrls(sessionId: string): Promise<VideoAsset[]> {
   const assets = await getVideoAssets(sessionId);
   
+  if (import.meta.env.DEV) {
+    console.log(`[captures] Refreshing URLs for ${assets.length} video assets`);
+  }
+  
   // Generate fresh signed URLs for all assets with storage_path
   const assetsWithFreshUrls = await Promise.all(
     assets.map(async (asset) => {
       if (asset.storage_path) {
         const freshUrl = await getVideoAssetUrl(asset);
-        if (freshUrl) {
+        if (freshUrl && freshUrl !== asset.storage_url) {
+          if (import.meta.env.DEV) {
+            console.log(`[captures] Refreshed URL for asset ${asset.id}: ${freshUrl.slice(-50)}`);
+          }
           return { ...asset, storage_url: freshUrl };
         }
       }
