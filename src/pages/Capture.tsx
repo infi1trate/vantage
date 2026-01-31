@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useBlocker, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
 import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
@@ -47,6 +48,7 @@ export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
+  const { queueProcessing } = useProcessing();
   const navigate = useNavigate();
   
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -187,7 +189,7 @@ export default function CapturePage() {
     capture.retryFromError(); // This clears the error without changing state
   };
 
-  // User clicks "End Capture" - stops recording and saves
+  // User clicks "End Capture" - stops recording and queues background processing
   const handleEndCapture = async () => {
     if (!session) return;
     
@@ -199,12 +201,14 @@ export default function CapturePage() {
 
     try {
       // Capture thumbnail BEFORE stopping (while canvas is still active)
-      // Capture both dataURL (for quick render) and blob (for IndexedDB storage)
       const [thumbnailDataUrl, thumbnailBlob] = await Promise.all([
         Promise.resolve(capture.captureThumbnail()),
         capture.captureThumbnailBlob(),
       ]);
-      console.log("[Capture] Thumbnail captured:", thumbnailDataUrl ? "dataURL yes" : "dataURL no", thumbnailBlob ? `blob ${thumbnailBlob.size} bytes` : "blob no");
+      
+      if (import.meta.env.DEV) {
+        console.log("[Capture] Thumbnail captured:", thumbnailDataUrl ? "dataURL yes" : "dataURL no", thumbnailBlob ? `blob ${thumbnailBlob.size} bytes` : "blob no");
+      }
 
       // Stop recording and get data
       const recordedData = await capture.stopRecording();
@@ -217,117 +221,37 @@ export default function CapturePage() {
         throw new Error("No composite recording data");
       }
 
-      // Save to IndexedDB for local persistence
-      const localSession: LocalSession = {
-        id: session.id,
-        title: session.title,
-        gameName: session.game_name,
-        createdAt: new Date().toISOString(),
+      // Queue background processing - this returns immediately
+      // Processing (local save, upload) happens in the background
+      await queueProcessing({
+        sessionId: session.id,
+        sessionTitle: session.title,
+        blob: recordedData.compositeBlob,
+        thumbnailBlob,
+        thumbnailDataUrl,
+        mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
+        fileExt: recordedData.fileExt || "webm",
         duration: recordedData.duration,
         hasCam: capture.captureConfig.hasCam,
         hasMic: capture.captureConfig.hasMic,
         hasSystemAudio: capture.captureConfig.hasSystemAudio,
-        visibility: "private",
-        thumbnailDataUrl, // Keep dataURL for quick fallback render
-        blobSize: recordedData.compositeBlob.size,
-        mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
-        fileExt: recordedData.fileExt,
-        codecsLabel: recordedData.codecsLabel,
-        browserLabel: recordedData.browserLabel,
-        durationMs: recordedData.duration * 1000,
-        recordedSource: recordedData.recordedSource,
-        status: "stored_local", // Will be updated by saveLocalSession if storage fails
-        totalBytes: recordedData.compositeBlob.size,
-      };
+        userId: user?.id,
+        gameName: session.game_name,
+      });
 
-      // Save session with thumbnail blob - handle storage failures gracefully
-      const saveResult = await saveLocalSession(localSession, recordedData.compositeBlob, thumbnailBlob);
+      toast.success("Recording complete! Processing in background...");
       
-      if (!saveResult.success) {
-        // Storage failed - show recovery screen instead of error
-        console.warn("[Capture] Local storage failed:", saveResult.error);
-        
-        // Store the blob in state for the recovery screen
-        setStorageFailure({
-          blob: recordedData.compositeBlob,
-          duration: recordedData.duration,
-          title: session.title,
-          mimeType: recordedData.compositeMimeType || "video/webm",
-          fileExt: recordedData.fileExt,
-          error: saveResult.error!,
-          thumbnailBlob,
-        });
-        return; // Don't navigate - show recovery screen
-      }
-      
-      console.log(`[Capture] Saved to IndexedDB: ${recordedData.compositeBlob.size} bytes, mimeType: ${localSession.mimeType}`);
-
-      // Also upload to Supabase if user is logged in
-      // Use the actual mimeType for proper content-type header
-      const uploadMimeType = recordedData.compositeMimeType || "video/webm";
-      if (user) {
-        try {
-          const compositePath = `${user.id}/${session.id}/gameplay.webm`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from("video-assets")
-            .upload(compositePath, recordedData.compositeBlob, { contentType: uploadMimeType });
-          
-          if (uploadError) {
-            console.warn("[Capture] Supabase upload failed, but local save succeeded:", uploadError);
-          } else {
-            // Use signed URL for private bucket access (24 hour expiration)
-            const { data: urlData, error: urlError } = await supabase.storage
-              .from("video-assets")
-              .createSignedUrl(compositePath, 86400);
-            
-            if (urlError) {
-              console.warn("[Capture] Failed to create signed URL:", urlError);
-              return;
-            }
-            
-            await createVideoAsset({
-              session_id: session.id,
-              user_id: user.id,
-              asset_type: "gameplay",
-              storage_url: urlData.signedUrl,
-              storage_path: compositePath,
-              duration_ms: recordedData.duration * 1000,
-              status: "ready",
-              processing_progress: 100,
-              mime_type: "video/webm",
-              file_size_bytes: recordedData.compositeBlob.size,
-              width: null,
-              height: null,
-              framerate: 60,
-              bitrate: null,
-              codec: null,
-              thumbnail_url: thumbnailDataUrl,
-              thumbnail_sprite_url: null,
-              error_message: null,
-            });
-            
-            // Update session status in Supabase
-            await updateCaptureSession(session.id, {
-              status: "ready",
-              duration_seconds: recordedData.duration,
-              thumbnail_url: thumbnailDataUrl,
-            });
-            
-            console.log(`[Capture] Uploaded to Supabase: ${recordedData.compositeBlob.size} bytes`);
-          }
-        } catch (supabaseError) {
-          console.warn("[Capture] Supabase sync failed, but local save succeeded:", supabaseError);
-        }
-      }
-
-      toast.success("Capture saved successfully!");
-      
-      // Navigate to library with this session highlighted
+      // Navigate to library immediately - don't wait for processing
       navigate("/library", { state: { highlightSession: session.id } });
     } catch (error: any) {
-      console.error("Error saving capture:", error);
-      toast.error(error.message || "Failed to save capture");
+      console.error("Error ending capture:", error);
+      
+      // Check if it's a data validation error that needs recovery screen
+      if (error.code === "NO_DATA_CAPTURED") {
+        toast.error(error.message || "Recording failed - not enough data captured");
+      } else {
+        toast.error(error.message || "Failed to end capture");
+      }
     }
   };
 
