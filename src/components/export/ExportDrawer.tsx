@@ -1318,15 +1318,21 @@ export function ExportDrawer({
                 </Tooltip>
               </div>
             )}
-            {/* File info */}
+            {/* File info with full session clarification */}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5">
-                <HardDrive className="h-3.5 w-3.5" />
-                <span>{estimateFileSize(sessionDuration, preset)}</span>
+                <Film className="h-3.5 w-3.5" />
+                <span className="text-foreground/70 font-medium">Full session</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" />
-                <span>{formatDuration(sessionDuration)}</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{formatDuration(sessionDuration)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <HardDrive className="h-3 w-3" />
+                  <span>{estimateFileSize(sessionDuration, preset)}</span>
+                </div>
               </div>
             </div>
             <Button 
@@ -1409,7 +1415,7 @@ export function ExportDrawer({
     : "EXPORT";
   const displayDescription = (showProgress || showSummary) && currentJob
     ? currentJob.sessionTitle
-    : "Publish or save your video";
+    : "Save or share your full session";
 
   // Use Drawer for mobile, Sheet for desktop
   if (isMobile) {

@@ -162,9 +162,9 @@ export const HighlightsSection = memo(function HighlightsSection({
         <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-vantage-warning/10 flex items-center justify-center">
           <Star className="h-7 w-7 text-vantage-warning/50" />
         </div>
-        <h4 className="font-semibold mb-2">No moments yet</h4>
+        <h4 className="font-semibold mb-2">No moments tagged yet</h4>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Mark kills, deaths, and key moments during playback to track important events.
+          Tag kills, deaths, and highlights to jump to key points. Your full session is always preserved.
         </p>
       </div>
     );
@@ -193,10 +193,14 @@ export const HighlightsSection = memo(function HighlightsSection({
             <div className="flex items-center gap-1.5 text-xs">
               <Star className="h-3.5 w-3.5 text-vantage-warning" />
               <span className="text-vantage-warning font-medium">{counts.highlight}</span>
-              <span className="text-muted-foreground">Moments</span>
+              <span className="text-muted-foreground">Highlights</span>
             </div>
           )}
         </div>
+        {/* Clarifying note that these are markers, not replacements */}
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
+          Quick-jump markers · Full session always available
+        </p>
       </div>
 
       {/* Scrollable moment list */}
