@@ -190,6 +190,34 @@ export function useBackgroundRemoval({
         const maskWidth = personMask.width;
         const maskHeight = personMask.height;
 
+        // Guardrail: Detect inverted mask by sampling center region
+        // Subject is typically centered in webcam feeds
+        const centerX = Math.floor(maskWidth / 2);
+        const centerY = Math.floor(maskHeight / 2);
+        const sampleRadius = Math.floor(Math.min(maskWidth, maskHeight) * 0.15);
+        
+        let centerSum = 0;
+        let centerCount = 0;
+        for (let dy = -sampleRadius; dy <= sampleRadius; dy++) {
+          for (let dx = -sampleRadius; dx <= sampleRadius; dx++) {
+            const sx = centerX + dx;
+            const sy = centerY + dy;
+            if (sx >= 0 && sx < maskWidth && sy >= 0 && sy < maskHeight) {
+              centerSum += maskData[sy * maskWidth + sx];
+              centerCount++;
+            }
+          }
+        }
+        const centerAvg = centerCount > 0 ? centerSum / centerCount : 0.5;
+        
+        // If center region has low confidence, mask is likely inverted
+        // (center should be the person with high confidence)
+        const isInverted = centerAvg < 0.3;
+        
+        if (isInverted && process.env.NODE_ENV === 'development') {
+          console.debug('[BackgroundRemoval] Detected inverted mask, auto-correcting');
+        }
+
         // Draw background first
         if (bgImageRef.current) {
           ctx.drawImage(bgImageRef.current, 0, 0, canvas.width, canvas.height);
@@ -234,7 +262,11 @@ export function useBackgroundRemoval({
             for (let x = 0; x < canvasWidth; x++) {
               const maskX = Math.floor(x * scaleX);
               // Confidence value: 0.0 = background, 1.0 = person
-              const personConfidence = maskData[maskY + maskX];
+              // Apply inversion correction if detected
+              let personConfidence = maskData[maskY + maskX];
+              if (isInverted) {
+                personConfidence = 1 - personConfidence;
+              }
               
               // Apply slight threshold for cleaner edges
               const alpha = Math.max(0, Math.min(1, personConfidence * 1.2));
