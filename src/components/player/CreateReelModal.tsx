@@ -176,6 +176,9 @@ const AspectButton = memo(function AspectButton({
   );
 });
 
+// Export status type
+type ExportStatus = "idle" | "exporting" | "complete" | "error";
+
 // Reel Preview Component - shown after generation
 // Minimal controls only: play/pause, mute. No scrubbing or editing.
 function ReelPreviewContent({
@@ -191,6 +194,10 @@ function ReelPreviewContent({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  
+  // Export state
+  const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
+  const [exportProgress, setExportProgress] = useState(0);
 
   const ratioConfig = ASPECT_RATIOS.find(r => r.value === reel.aspectRatio) || ASPECT_RATIOS[0];
   const AspectIcon = ratioConfig.icon;
@@ -229,16 +236,57 @@ function ReelPreviewContent({
     setIsMuted(!isMuted);
   }, [isMuted]);
 
-  const handleDownload = useCallback(() => {
-    toast.success("Download started", {
-      description: "Your reel is being prepared for download",
-    });
-  }, []);
+  // Export with inline progress
+  const handleExport = useCallback(async () => {
+    if (exportStatus === "exporting") return;
+    
+    setExportStatus("exporting");
+    setExportProgress(0);
+    
+    // Simulate export progress (replace with actual export logic)
+    const progressInterval = setInterval(() => {
+      setExportProgress(prev => {
+        if (prev >= 95) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return prev + Math.random() * 15;
+      });
+    }, 200);
+    
+    try {
+      // Simulate export time
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      clearInterval(progressInterval);
+      setExportProgress(100);
+      setExportStatus("complete");
+      
+      toast.success("Reel exported!", {
+        description: "Your reel is ready to share",
+      });
+    } catch (error) {
+      clearInterval(progressInterval);
+      setExportStatus("error");
+      toast.error("Export failed", {
+        description: "Please try again",
+      });
+    }
+  }, [exportStatus]);
 
-  const handleShare = useCallback(() => {
-    toast.success("Share options", {
-      description: "Choose where to share your reel",
-    });
+  // Share link
+  const handleShareLink = useCallback(async () => {
+    // In production, this would copy a share link
+    try {
+      await navigator.clipboard.writeText("https://vantage.app/reel/abc123");
+      toast.success("Link copied!", {
+        description: "Share this link with anyone",
+      });
+    } catch {
+      toast.success("Share link ready", {
+        description: "https://vantage.app/reel/abc123",
+      });
+    }
   }, []);
 
   return (
@@ -342,30 +390,99 @@ function ReelPreviewContent({
         </div>
       </div>
 
-      {/* Footer actions */}
+      {/* Footer actions with export progress */}
       <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
+        {/* Export progress indicator */}
+        {exportStatus === "exporting" && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-foreground">Exporting reel...</span>
+              <span className="text-xs font-mono text-muted-foreground">{Math.round(exportProgress)}%</span>
+            </div>
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary rounded-full transition-all duration-200 ease-out"
+                style={{ width: `${exportProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Export complete state */}
+        {exportStatus === "complete" && (
+          <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
+            <CheckCircle2 className="h-4 w-4 text-vantage-success" />
+            <span className="text-xs font-medium text-vantage-success">
+              Export complete!
+            </span>
+          </div>
+        )}
+
+        {/* Action buttons */}
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            className="flex-1 h-12 gap-2"
-            onClick={handleDownload}
-          >
-            <Download className="h-4 w-4" />
-            <span className="hidden sm:inline">Download</span>
-          </Button>
-          <Button
-            size="lg"
-            className="flex-1 h-12 gap-2"
-            onClick={handleShare}
-          >
-            <Share2 className="h-4 w-4" />
-            Share
-          </Button>
+          {exportStatus === "complete" ? (
+            <>
+              {/* After export: Share link becomes primary */}
+              <Button
+                size="lg"
+                className="flex-1 h-12 gap-2"
+                onClick={handleShareLink}
+              >
+                <Share2 className="h-4 w-4" />
+                Share Link
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-12 gap-2 px-4"
+                onClick={onClose}
+              >
+                <Check className="h-4 w-4" />
+                <span className="hidden sm:inline">Done</span>
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Primary: Export Reel */}
+              <Button
+                size="lg"
+                className="flex-1 h-12 gap-2"
+                onClick={handleExport}
+                disabled={exportStatus === "exporting"}
+              >
+                {exportStatus === "exporting" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Export Reel
+                  </>
+                )}
+              </Button>
+              
+              {/* Secondary: Share Link */}
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-12 gap-2 px-4"
+                onClick={handleShareLink}
+                disabled={exportStatus === "exporting"}
+              >
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
+            </>
+          )}
         </div>
+        
+        {/* Back link */}
         <button
           className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
           onClick={onBack}
+          disabled={exportStatus === "exporting"}
         >
           <ArrowLeft className="h-3 w-3" />
           Create another reel
