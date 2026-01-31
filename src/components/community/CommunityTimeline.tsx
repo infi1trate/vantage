@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { CommunityReaction, ReactionCluster, clusterReactions } from "@/lib/communityReactions";
+import { CommunityReaction, ReactionCluster, clusterReactions, getReactionDensity } from "@/lib/communityReactions";
 import { CommunityAnnotation } from "@/lib/community";
 import { MessageSquare } from "lucide-react";
 import {
@@ -43,6 +43,23 @@ export function CommunityTimeline({
     () => clusterReactions(reactions, 2),
     [reactions]
   );
+
+  // Calculate reaction heat map for timeline background
+  const reactionHeatGradient = useMemo(() => {
+    if (reactions.length === 0 || duration <= 0) return "transparent";
+    
+    const density = getReactionDensity(reactions, duration, 5);
+    if (density.length === 0) return "transparent";
+    
+    // Build gradient stops based on density
+    const stops = density.map((d, i) => {
+      const percent = (i / density.length) * 100;
+      const alpha = Math.round(d * 0.25 * 100) / 100; // max 25% opacity
+      return `rgba(var(--primary-rgb), ${alpha}) ${percent}%`;
+    });
+    
+    return `linear-gradient(to right, ${stops.join(", ")})`;
+  }, [reactions, duration]);
 
   const progressPercentage = (currentTime / duration) * 100;
 
@@ -132,6 +149,14 @@ export function CommunityTimeline({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
+        {/* Reaction heat map background */}
+        {reactions.length > 0 && (
+          <div
+            className="absolute inset-0 rounded-full pointer-events-none opacity-60"
+            style={{ background: reactionHeatGradient }}
+          />
+        )}
+
         {/* Progress bar */}
         <div
           className="absolute top-0 left-0 h-full bg-primary/60 rounded-full pointer-events-none"
@@ -197,10 +222,11 @@ function ReactionClusterMarker({
 }: ReactionClusterMarkerProps) {
   const position = (cluster.timestamp_seconds / duration) * 100;
   const displayEmojis = cluster.reactions.slice(0, 3);
-  const overflow = cluster.total - displayEmojis.reduce((sum, r) => sum + r.count, 0);
+  const totalCount = cluster.total;
 
-  // Scale marker size based on reaction density
-  const scale = Math.min(1.3, 0.8 + cluster.total * 0.05);
+  // Scale marker based on reaction count for visual weight
+  const intensity = Math.min(1, totalCount / 20); // caps at 20 reactions
+  const glowIntensity = Math.round(intensity * 30);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -208,48 +234,70 @@ function ReactionClusterMarker({
   };
 
   return (
-    <Tooltip>
+    <Tooltip delayDuration={100}>
       <TooltipTrigger asChild>
         <button
           onClick={handleClick}
-          className="absolute -top-4 -translate-x-1/2 flex flex-col items-center gap-0.5 transition-all hover:scale-110 z-10"
+          className="absolute -top-5 -translate-x-1/2 flex flex-col items-center transition-all hover:scale-110 active:scale-95 z-10 group"
           style={{ 
             left: `${position}%`,
-            transform: `translateX(-50%) scale(${scale})`,
           }}
         >
-          {/* Stacked emojis */}
-          <div className="flex -space-x-1">
+          {/* Emoji stack with subtle glow */}
+          <div 
+            className="flex -space-x-1.5 px-1.5 py-0.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/40 shadow-sm transition-all group-hover:shadow-lg"
+            style={{
+              boxShadow: `0 0 ${glowIntensity}px rgba(var(--primary-rgb), 0.3)`,
+            }}
+          >
             {displayEmojis.map((r, i) => (
               <span
                 key={i}
-                className="text-sm drop-shadow-md"
+                className="text-sm drop-shadow-md transition-transform group-hover:scale-110"
                 style={{ zIndex: 3 - i }}
               >
                 {r.emoji}
               </span>
             ))}
+            {/* Count badge */}
+            {totalCount > 3 && (
+              <span className="ml-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                +{totalCount - displayEmojis.reduce((sum, r) => sum + r.count, 0)}
+              </span>
+            )}
           </div>
+          
           {/* Connection line to timeline */}
-          <div className="w-px h-2 bg-muted-foreground/20" />
+          <div className="w-px h-1.5 bg-primary/30 group-hover:bg-primary/60 transition-colors" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" className="p-2">
-        <div className="text-xs space-y-1">
-          <p className="font-mono text-muted-foreground">
+      <TooltipContent 
+        side="top" 
+        className="p-3 max-w-[220px]"
+        sideOffset={4}
+      >
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] text-muted-foreground">
             {formatTimestamp(cluster.timestamp_seconds)}
           </p>
-          <div className="flex items-center gap-2">
+          
+          {/* Emoji breakdown with counts */}
+          <div className="flex flex-wrap gap-2">
             {cluster.reactions.map((r, i) => (
-              <span key={i} className="flex items-center gap-0.5">
-                <span>{r.emoji}</span>
-                <span className="text-muted-foreground">{r.count}</span>
-              </span>
+              <div 
+                key={i} 
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted/50"
+              >
+                <span className="text-base">{r.emoji}</span>
+                <span className="text-xs font-medium text-muted-foreground">{r.count}</span>
+              </div>
             ))}
           </div>
-          {overflow > 0 && (
-            <p className="text-muted-foreground">+{overflow} more</p>
-          )}
+          
+          {/* Total */}
+          <p className="text-[11px] text-muted-foreground border-t border-border/30 pt-1.5">
+            {totalCount} reaction{totalCount !== 1 ? 's' : ''} at this moment
+          </p>
         </div>
       </TooltipContent>
     </Tooltip>
