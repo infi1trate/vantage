@@ -512,14 +512,20 @@ export function TimelineSelection({
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-6 rounded-sm bg-primary shadow-md" />
           </div>
 
-          {/* Duration label */}
+          {/* Center label showing range span and duration */}
           <div
-            className="absolute bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-primary/90 text-primary-foreground text-[10px] font-mono pointer-events-none"
+            className="absolute bottom-1 px-2.5 py-1 rounded-full bg-primary/95 text-primary-foreground text-[11px] font-mono pointer-events-none shadow-md flex items-center gap-1.5"
             style={{
               left: `${rangeStartPct + (rangeEndPct - rangeStartPct) / 2}%`,
+              transform: "translateX(-50%)",
             }}
           >
-            {(selection.rangeEnd - selection.rangeStart).toFixed(1)}s
+            <span>{formatTimeShort(selection.rangeStart)}</span>
+            <span className="text-primary-foreground/60">→</span>
+            <span>{formatTimeShort(selection.rangeEnd)}</span>
+            <span className="text-primary-foreground/60 text-[10px]">
+              ({(selection.rangeEnd - selection.rangeStart).toFixed(1)}s)
+            </span>
           </div>
         </>
       )}
