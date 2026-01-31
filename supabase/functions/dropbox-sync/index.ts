@@ -26,16 +26,17 @@ const DROPBOX_DELETE_URL = "https://api.dropboxapi.com/2/files/delete_v2";
 const DROPBOX_GET_METADATA_URL = "https://api.dropboxapi.com/2/files/get_metadata";
 
 // Dropbox path constants
-// NOTE: Dropbox "App folder" access automatically maps to /Apps/[AppName]/ in the UI.
-// All paths here are relative to the app sandbox root - do NOT prefix with "/Apps/Vantage".
-const VANTAGE_ROOT = "/Vantage";
-const RECORDINGS_PATH = `${VANTAGE_ROOT}/Recordings`;
-const VALIDATION_FILE_PATH = `${VANTAGE_ROOT}/.vantage_connected.txt`;
-const TEST_SYNC_FILE_PATH = `${VANTAGE_ROOT}/.vantage_sync_test.txt`;
+// NOTE: Dropbox "App folder" access roots at /Apps/Vantage/ in the Dropbox UI.
+// All API paths are RELATIVE to this sandbox root - "/" in API = "/Apps/Vantage" in UI.
+// NEVER prefix with "/Apps" or "/Vantage" - the sandbox handles this automatically.
+const RECORDINGS_PATH = "/Recordings";
+const VALIDATION_FILE_PATH = "/.vantage_connected.txt";
+const TEST_SYNC_FILE_PATH = "/.vantage_sync_test.txt";
 
-// Legacy incorrect path that may exist for some users
-const LEGACY_NESTED_PATH = "/Vantage/Apps/Vantage";
-const LEGACY_APPS_FOLDER = "/Vantage/Apps";
+// Legacy incorrect paths from previous bugs - need to migrate files from these
+const LEGACY_VANTAGE_PATH = "/Vantage";  // Was incorrectly prefixed
+const LEGACY_NESTED_PATH = "/Vantage/Recordings";  // Old recordings folder
+const LEGACY_DEEP_NESTED_PATH = "/Vantage/Apps/Vantage";  // Double-nested bug
 
 interface DropboxTokenResponse {
   access_token: string;
@@ -235,21 +236,15 @@ async function provisionDropboxStorage(accessToken: string, userEmail?: string):
     // Step 0: Check for and migrate legacy folder structure
     await migrateLegacyFolderStructure(accessToken);
 
-    // Step 1: Create /Vantage folder (maps to /Apps/Vantage in Dropbox UI)
-    const vantageFolder = await createDropboxFolder(accessToken, VANTAGE_ROOT);
-    if (!vantageFolder.success && !vantageFolder.alreadyExists) {
-      return { success: false, error: vantageFolder.error || "Failed to create Vantage folder" };
-    }
-    console.log(`[DropboxSync] Created ${VANTAGE_ROOT} folder`);
-
-    // Step 2: Create /Vantage/Recordings subfolder
+    // Step 1: Create /Recordings folder (maps to /Apps/Vantage/Recordings in Dropbox UI)
+    // Since we're in app sandbox, "/" is the root - no need for /Vantage prefix
     const recordingsFolder = await createDropboxFolder(accessToken, RECORDINGS_PATH);
     if (!recordingsFolder.success && !recordingsFolder.alreadyExists) {
       return { success: false, error: recordingsFolder.error || "Failed to create Recordings folder" };
     }
-    console.log(`[DropboxSync] Created ${RECORDINGS_PATH} folder`);
+    console.log(`[DropboxSync] Created ${RECORDINGS_PATH} folder (appears as Apps/Vantage${RECORDINGS_PATH} in Dropbox)`);
 
-    // Step 3: Upload validation file with user info
+    // Step 2: Upload validation file with user info at sandbox root
     const validationFile = await uploadValidationFile(accessToken, userEmail);
     if (!validationFile.success) {
       return { success: false, error: validationFile.error || "Failed to upload validation file" };
@@ -267,65 +262,77 @@ async function provisionDropboxStorage(accessToken: string, userEmail?: string):
 }
 
 /**
- * Migrate legacy folder structure: /Vantage/Apps/Vantage → /Vantage
- * This handles users who had the incorrect nested path from the previous bug
+ * Migrate legacy folder structure to correct sandbox-relative paths
+ * Handles files from:
+ *   /Vantage/Recordings → /Recordings (single nested)
+ *   /Vantage/Apps/Vantage → / (double nested)
  */
 async function migrateLegacyFolderStructure(accessToken: string): Promise<void> {
   console.log("[DropboxSync] Checking for legacy folder structure...");
   
   try {
-    // Check if the legacy nested path exists
-    const legacyExists = await checkFolderExists(accessToken, LEGACY_NESTED_PATH);
+    // Check for various legacy paths and migrate files to correct location
+    const legacyPaths = [
+      { path: LEGACY_NESTED_PATH, desc: "single nested /Vantage/Recordings" },
+      { path: LEGACY_DEEP_NESTED_PATH, desc: "double nested /Vantage/Apps/Vantage" },
+    ];
     
-    if (!legacyExists) {
-      console.log("[DropboxSync] No legacy folder structure found, skipping migration");
-      return;
-    }
-    
-    console.log("[DropboxSync] Legacy folder structure detected, starting migration...");
-    
-    // List all contents of the legacy folder
-    const contents = await listFolderContents(accessToken, LEGACY_NESTED_PATH);
-    
-    if (!contents || contents.length === 0) {
-      console.log("[DropboxSync] Legacy folder is empty, cleaning up...");
-      await deleteEmptyFolder(accessToken, LEGACY_NESTED_PATH);
-      await deleteEmptyFolder(accessToken, LEGACY_APPS_FOLDER);
-      return;
-    }
-    
-    console.log(`[DropboxSync] Found ${contents.length} items to migrate`);
-    
-    // Move each item from legacy path to correct path
-    let movedCount = 0;
-    let skippedCount = 0;
-    
-    for (const entry of contents) {
-      const sourcePath = entry.path_lower || entry.path_display;
-      const fileName = entry.name;
-      const destPath = `${VANTAGE_ROOT}/${fileName}`;
+    for (const legacy of legacyPaths) {
+      const exists = await checkFolderExists(accessToken, legacy.path);
       
-      // Check if destination already exists
-      const destExists = await checkPathExists(accessToken, destPath);
-      
-      if (destExists) {
-        console.log(`[DropboxSync] Skipping ${fileName} - already exists at destination`);
-        skippedCount++;
+      if (!exists) {
+        console.log(`[DropboxSync] No ${legacy.desc} found, skipping`);
         continue;
       }
       
-      // Move the file/folder
-      const moveResult = await moveDropboxItem(accessToken, sourcePath, destPath);
+      console.log(`[DropboxSync] Found ${legacy.desc}, migrating contents...`);
       
-      if (moveResult.success) {
-        console.log(`[DropboxSync] Migrated: ${fileName}`);
-        movedCount++;
-      } else {
-        console.warn(`[DropboxSync] Failed to migrate ${fileName}: ${moveResult.error}`);
+      // List all contents of the legacy folder
+      const contents = await listFolderContents(accessToken, legacy.path);
+      
+      if (!contents || contents.length === 0) {
+        console.log(`[DropboxSync] Legacy folder ${legacy.path} is empty, cleaning up...`);
+        await deleteEmptyFolder(accessToken, legacy.path);
+        continue;
       }
+      
+      console.log(`[DropboxSync] Found ${contents.length} items to migrate from ${legacy.path}`);
+      
+      // Move each item to the correct root-relative path
+      let movedCount = 0;
+      let skippedCount = 0;
+      
+      for (const entry of contents) {
+        const sourcePath = entry.path_lower || entry.path_display;
+        const fileName = entry.name;
+        // If it's a Recordings folder, move to /Recordings
+        // Otherwise move to root
+        const destPath = entry.name === "Recordings" 
+          ? RECORDINGS_PATH 
+          : `/${fileName}`;
+        
+        // Check if destination already exists
+        const destExists = await checkPathExists(accessToken, destPath);
+        
+        if (destExists) {
+          console.log(`[DropboxSync] Skipping ${fileName} - already exists at destination`);
+          skippedCount++;
+          continue;
+        }
+        
+        // Move the file/folder
+        const moveResult = await moveDropboxItem(accessToken, sourcePath, destPath);
+        
+        if (moveResult.success) {
+          console.log(`[DropboxSync] Migrated: ${sourcePath} → ${destPath}`);
+          movedCount++;
+        } else {
+          console.warn(`[DropboxSync] Failed to migrate ${fileName}: ${moveResult.error}`);
+        }
+      }
+      
+      console.log(`[DropboxSync] Migration from ${legacy.path}: ${movedCount} moved, ${skippedCount} skipped`);
     }
-    
-    console.log(`[DropboxSync] Migration complete: ${movedCount} moved, ${skippedCount} skipped`);
     
     // Clean up empty legacy folders
     await cleanupLegacyFolders(accessToken);
@@ -504,13 +511,18 @@ async function deleteEmptyFolder(accessToken: string, path: string): Promise<boo
 async function cleanupLegacyFolders(accessToken: string): Promise<void> {
   console.log("[DropboxSync] Cleaning up legacy folders...");
   
-  // Try to delete /Vantage/Apps/Vantage first (innermost)
-  const nestedDeleted = await deleteEmptyFolder(accessToken, LEGACY_NESTED_PATH);
+  // Try to delete innermost folders first, then work outward
+  // /Vantage/Apps/Vantage (deepest)
+  await deleteEmptyFolder(accessToken, LEGACY_DEEP_NESTED_PATH);
   
-  if (nestedDeleted) {
-    // If nested folder was deleted, try to delete /Vantage/Apps
-    await deleteEmptyFolder(accessToken, LEGACY_APPS_FOLDER);
-  }
+  // /Vantage/Apps
+  await deleteEmptyFolder(accessToken, "/Vantage/Apps");
+  
+  // /Vantage/Recordings
+  await deleteEmptyFolder(accessToken, LEGACY_NESTED_PATH);
+  
+  // /Vantage (outermost legacy folder)
+  await deleteEmptyFolder(accessToken, LEGACY_VANTAGE_PATH);
 }
 
 /**
