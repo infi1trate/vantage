@@ -393,11 +393,11 @@ export function ConnectedAccountsSection() {
                                     <Check className="h-3 w-3" />
                                     Connected
                                   </span>
-                                  {/* Show warning if Dropbox provisioning failed */}
-                                  {provider.id === "dropbox" && account?.provisioning_status === "failed" && (
+                                  {/* Show warning if Dropbox provisioning failed or is pending (tokens may be missing) */}
+                                  {provider.id === "dropbox" && (account?.provisioning_status === "failed" || account?.provisioning_status === "pending") && (
                                     <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full flex items-center gap-1">
                                       <AlertTriangle className="h-3 w-3" />
-                                      Setup incomplete
+                                      {account?.provisioning_status === "pending" ? "Setup pending" : "Setup incomplete"}
                                     </span>
                                   )}
                                 </>
@@ -411,10 +411,10 @@ export function ConnectedAccountsSection() {
                                     • Connected on {format(new Date(account.connected_at), "MMM d, yyyy")}
                                   </span>
                                 )}
-                                {/* Show provisioning failed hint for Dropbox */}
-                                {provider.id === "dropbox" && account.provisioning_status === "failed" && (
+                                {/* Show provisioning issue hint for Dropbox */}
+                                {provider.id === "dropbox" && (account.provisioning_status === "failed" || account.provisioning_status === "pending") && (
                                   <span className="hidden sm:inline ml-2 text-amber-500">
-                                    • Reconnect to retry setup
+                                    • Disconnect and reconnect to complete setup
                                   </span>
                                 )}
                               </p>

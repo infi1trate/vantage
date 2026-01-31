@@ -37,6 +37,7 @@ import {
   Gamepad2,
   Mic,
   Video,
+  Cloud,
   Camera,
   Volume2,
   Lock,
@@ -380,6 +381,16 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
                   <MessageSquare className="h-3 w-3" /> {cloudSession.annotation_count}
                 </Badge>
               )}
+              {/* Dropbox sync indicator for list view */}
+              {cloudSession?.dropbox_sync_status === "synced" && (
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs gap-1 bg-[#0061ff]/10 text-[#0061ff] border-[#0061ff]/20"
+                  title={`Synced to Dropbox${cloudSession.dropbox_synced_at ? ` on ${format(new Date(cloudSession.dropbox_synced_at), "MMM d")}` : ""}`}
+                >
+                  <Cloud className="h-3 w-3" />
+                </Badge>
+              )}
             </div>
           </div>
 
@@ -692,6 +703,15 @@ export const SessionCard = memo(function SessionCard({ session, onDeleted, viewM
                 <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-muted/50" title="Annotations">
                   <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">{cloudSession.annotation_count}</span>
+                </div>
+              )}
+              {/* Dropbox sync indicator - only for synced cloud sessions */}
+              {cloudSession?.dropbox_sync_status === "synced" && (
+                <div 
+                  className="p-1.5 rounded bg-[#0061ff]/10" 
+                  title={`Synced to Dropbox${cloudSession.dropbox_synced_at ? ` on ${format(new Date(cloudSession.dropbox_synced_at), "MMM d")}` : ""}`}
+                >
+                  <Cloud className="h-3.5 w-3.5 text-[#0061ff]/70" />
                 </div>
               )}
             </div>
