@@ -88,7 +88,9 @@ export function useScreenCapture(): UseScreenCaptureReturn {
             "capture:screen:first-frame"
           );
           
-          console.log(`[Perf] Screen capture ready: permission=${permissionTime.toFixed(0)}ms, resolution=${settings.width}x${settings.height}`);
+          if (import.meta.env.DEV) {
+            console.log(`[Perf] Screen capture ready: permission=${permissionTime.toFixed(0)}ms, resolution=${settings.width}x${settings.height}`);
+          }
         }
       }
 

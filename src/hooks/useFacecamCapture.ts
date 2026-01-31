@@ -109,7 +109,9 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
       if (videoTrack) {
         // Log actual negotiated settings
         const settings = videoTrack.getSettings();
-        console.log(`[Facecam] Acquired: ${settings.width}x${settings.height}@${settings.frameRate}fps`);
+        if (import.meta.env.DEV) {
+          console.log(`[Facecam] Acquired: ${settings.width}x${settings.height}@${settings.frameRate}fps`);
+        }
         
         if (settings.width && settings.height) {
           const firstFrameTime = measure(
@@ -119,7 +121,9 @@ export function useFacecamCapture(): UseFacecamCaptureReturn {
             "capture:facecam:first-frame"
           );
           
-          console.log(`[Perf] Facecam ready: permission=${permissionTime.toFixed(0)}ms, first-frame=${firstFrameTime.toFixed(0)}ms`);
+          if (import.meta.env.DEV) {
+            console.log(`[Perf] Facecam ready: permission=${permissionTime.toFixed(0)}ms, first-frame=${firstFrameTime.toFixed(0)}ms`);
+          }
         }
         
         // Monitor track state to detect unexpected stops (but don't auto-restart)

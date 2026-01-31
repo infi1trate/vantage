@@ -154,11 +154,13 @@ export function FilmRoomPlayer({
   // Video metadata loaded successfully
   const handleVideoLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
-    console.log("[FilmRoomPlayer] Video metadata loaded:", {
-      duration: video.duration,
-      width: video.videoWidth,
-      height: video.videoHeight,
-    });
+    if (import.meta.env.DEV) {
+      console.log("[FilmRoomPlayer] Video metadata loaded:", {
+        duration: video.duration,
+        width: video.videoWidth,
+        height: video.videoHeight,
+      });
+    }
     setVideoReady(true);
     setVideoDecodeError(null);
     onVideoLoaded?.(video.duration);

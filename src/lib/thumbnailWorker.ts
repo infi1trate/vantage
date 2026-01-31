@@ -48,9 +48,13 @@ function getWorker(): Worker | null {
       worker.onmessage = handleWorkerMessage;
       worker.onerror = handleWorkerError;
       
-      console.log("[ThumbnailWorker] Worker initialized");
+      if (import.meta.env.DEV) {
+        console.log("[ThumbnailWorker] Worker initialized");
+      }
     } catch (err) {
-      console.warn("[ThumbnailWorker] Failed to create worker:", err);
+      if (import.meta.env.DEV) {
+        console.warn("[ThumbnailWorker] Failed to create worker:", err);
+      }
       workerLoadFailed = true;
       return null;
     }

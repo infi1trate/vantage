@@ -88,16 +88,22 @@ function checkMemory(): void {
   // Update non-essential task pausing
   if (currentLevel === "critical" && !nonEssentialTasksPaused) {
     nonEssentialTasksPaused = true;
-    console.log("[MemoryGuard] Critical pressure - pausing non-essential tasks");
+    if (import.meta.env.DEV) {
+      console.log("[MemoryGuard] Critical pressure - pausing non-essential tasks");
+    }
   } else if (currentLevel === "normal" && nonEssentialTasksPaused) {
     nonEssentialTasksPaused = false;
-    console.log("[MemoryGuard] Pressure relieved - resuming non-essential tasks");
+    if (import.meta.env.DEV) {
+      console.log("[MemoryGuard] Pressure relieved - resuming non-essential tasks");
+    }
     flushDeferredTasks();
   }
   
   // Notify on level change
   if (currentLevel !== previousLevel) {
-    console.log(`[MemoryGuard] Pressure level: ${previousLevel} → ${currentLevel} (${(stats.usageRatio * 100).toFixed(1)}%)`);
+    if (import.meta.env.DEV) {
+      console.log(`[MemoryGuard] Pressure level: ${previousLevel} → ${currentLevel} (${(stats.usageRatio * 100).toFixed(1)}%)`);
+    }
     
     for (const callback of subscribers) {
       try {
@@ -122,7 +128,9 @@ function flushDeferredTasks(): void {
   const tasksToRun = deferredTasks.splice(0);
   
   if (tasksToRun.length > 0) {
-    console.log(`[MemoryGuard] Flushing ${tasksToRun.length} deferred tasks`);
+    if (import.meta.env.DEV) {
+      console.log(`[MemoryGuard] Flushing ${tasksToRun.length} deferred tasks`);
+    }
     
     // Run tasks using requestIdleCallback or setTimeout
     const scheduler = window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 0));
@@ -132,7 +140,9 @@ function flushDeferredTasks(): void {
         try {
           task();
         } catch (e) {
-          console.warn("[MemoryGuard] Deferred task error:", e);
+          if (import.meta.env.DEV) {
+            console.warn("[MemoryGuard] Deferred task error:", e);
+          }
         }
       });
     }
@@ -158,7 +168,9 @@ export function startMemoryMonitoring(): void {
   
   // Start polling
   pollIntervalId = setInterval(checkMemory, POLL_INTERVAL_MS);
-  console.log("[MemoryGuard] Memory monitoring started");
+  if (import.meta.env.DEV) {
+    console.log("[MemoryGuard] Memory monitoring started");
+  }
 }
 
 /**
@@ -179,7 +191,9 @@ export function stopMemoryMonitoring(): void {
   nonEssentialTasksPaused = false;
   deferredTasks.length = 0;
   
-  console.log("[MemoryGuard] Memory monitoring stopped");
+  if (import.meta.env.DEV) {
+    console.log("[MemoryGuard] Memory monitoring stopped");
+  }
 }
 
 /**
@@ -234,7 +248,9 @@ export function scheduleNonEssential(
     deferredTasks.push(task);
   } else {
     // Queue is full - drop lowest priority tasks
-    console.warn("[MemoryGuard] Deferred task queue full - task dropped");
+    if (import.meta.env.DEV) {
+      console.warn("[MemoryGuard] Deferred task queue full - task dropped");
+    }
   }
   
   return false;

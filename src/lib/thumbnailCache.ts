@@ -131,7 +131,9 @@ function openCacheDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: "key" });
         store.createIndex("createdAt", "createdAt", { unique: false });
-        console.log("[ThumbnailCache] Created thumbnail cache store");
+        if (import.meta.env.DEV) {
+          console.log("[ThumbnailCache] Created thumbnail cache store");
+        }
       }
     };
   });

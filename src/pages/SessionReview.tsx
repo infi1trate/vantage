@@ -155,7 +155,9 @@ export default function SessionReview() {
         // Check if blob was actually stored
         if (localData.status === "not_stored_locally") {
           // Session exists but blob wasn't stored - set metadata but no video URL
-          console.log("[SessionReview] Session not stored locally, no blob available");
+          if (import.meta.env.DEV) {
+            console.log("[SessionReview] Session not stored locally, no blob available");
+          }
           setVideoMeta({
             blobType: null,
             blobSize: localData.blobSize || 0,
