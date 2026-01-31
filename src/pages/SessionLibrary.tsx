@@ -8,6 +8,7 @@ import { ProcessingSessionCard } from "@/components/library/ProcessingSessionCar
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { DropboxPromoBanner } from "@/components/library/DropboxPromoBanner";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
+import { supabase } from "@/integrations/supabase/client";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
 import { markLibraryRendered } from "@/lib/processingTelemetry";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,8 @@ import {
   Filter,
   SortDesc,
   Clock,
-  Gamepad2
+  Gamepad2,
+  Cloud
 } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "longest" | "shortest" | "name";
@@ -67,6 +69,9 @@ export default function SessionLibrary() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [filterVisibility, setFilterVisibility] = useState<FilterVisibility>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  
+  // Dropbox backup status: "active" | "needs_attention" | null (not connected)
+  const [backupStatus, setBackupStatus] = useState<"active" | "needs_attention" | null>(null);
 
   // Combined loading state
   const loading = localLoading || (!!user && cloudLoading);
@@ -88,6 +93,37 @@ export default function SessionLibrary() {
   useEffect(() => {
     loadLocalSessions();
   }, []);
+  
+  // Check Dropbox backup status
+  useEffect(() => {
+    if (!user) {
+      setBackupStatus(null);
+      return;
+    }
+    
+    const checkBackupStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("connected_accounts")
+          .select("provisioning_status")
+          .eq("user_id", user.id)
+          .eq("provider", "dropbox")
+          .single();
+        
+        if (error || !data) {
+          setBackupStatus(null); // Not connected
+        } else if (data.provisioning_status === "completed") {
+          setBackupStatus("active");
+        } else {
+          setBackupStatus("needs_attention");
+        }
+      } catch {
+        setBackupStatus(null);
+      }
+    };
+    
+    checkBackupStatus();
+  }, [user]);
 
   const loadLocalSessions = async () => {
     setLocalLoading(true);
@@ -380,6 +416,23 @@ export default function SessionLibrary() {
                   <List className="h-4 w-4" />
                 </ToggleGroupItem>
               </ToggleGroup>
+              
+              {/* Backup status indicator */}
+              {backupStatus === "active" && (
+                <span className="text-xs text-muted-foreground/60 flex items-center gap-1 ml-2">
+                  <Cloud className="h-3 w-3" />
+                  Backup: On
+                </span>
+              )}
+              {backupStatus === "needs_attention" && (
+                <button 
+                  onClick={() => navigate("/settings")}
+                  className="text-xs text-muted-foreground/60 hover:text-foreground flex items-center gap-1 ml-2 transition-colors"
+                >
+                  <Cloud className="h-3 w-3" />
+                  Backup: Needs attention
+                </button>
+              )}
             </div>
           </div>
 
