@@ -628,7 +628,9 @@ export type Database = {
           file_size_bytes: number | null
           id: string
           last_attempt_at: string | null
+          max_attempts: number | null
           method_used: string | null
+          next_retry_at: string | null
           session_id: string
           started_at: string | null
           sync_status: string
@@ -649,7 +651,9 @@ export type Database = {
           file_size_bytes?: number | null
           id?: string
           last_attempt_at?: string | null
+          max_attempts?: number | null
           method_used?: string | null
+          next_retry_at?: string | null
           session_id: string
           started_at?: string | null
           sync_status?: string
@@ -670,7 +674,9 @@ export type Database = {
           file_size_bytes?: number | null
           id?: string
           last_attempt_at?: string | null
+          max_attempts?: number | null
           method_used?: string | null
+          next_retry_at?: string | null
           session_id?: string
           started_at?: string | null
           sync_status?: string

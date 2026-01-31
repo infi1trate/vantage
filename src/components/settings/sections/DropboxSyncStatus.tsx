@@ -35,6 +35,9 @@ interface SyncStats {
   lastAttemptAt: string | null;
   lastError: string | null;
   totalSizeBytes: number;
+  // New: retry info for pending items
+  pendingWithRetry: number;
+  nextRetryAt: string | null;
 }
 
 interface PendingSync {
@@ -66,14 +69,58 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     }
   }, [user, isConnected]);
 
+  // Auto-retry polling: Check for pending retries and trigger them automatically
+  useEffect(() => {
+    if (!user || !isConnected || !stats?.pending) return;
+    
+    // Check every 10 seconds for retries that are ready
+    const interval = setInterval(async () => {
+      if (!stats?.nextRetryAt) return;
+      
+      const nextRetry = new Date(stats.nextRetryAt);
+      const now = new Date();
+      
+      // If retry time has passed, trigger syncs for pending items
+      if (now >= nextRetry) {
+        console.log("[DropboxSyncStatus] Retry time reached, triggering pending syncs...");
+        
+        // Get pending sessions that need retry
+        const { data: pendingSessions } = await supabase
+          .from("dropbox_sync_status")
+          .select("session_id, next_retry_at")
+          .eq("user_id", user.id)
+          .eq("sync_status", "pending")
+          .not("next_retry_at", "is", null);
+        
+        if (pendingSessions && pendingSessions.length > 0) {
+          // Trigger retries for sessions whose retry time has passed
+          for (const session of pendingSessions) {
+            if (session.next_retry_at && new Date(session.next_retry_at) <= now) {
+              try {
+                await triggerAutoSync(session.session_id);
+              } catch (err) {
+                console.warn("[DropboxSyncStatus] Retry trigger failed:", err);
+              }
+            }
+          }
+          
+          // Refresh stats after triggering
+          await fetchSyncStats();
+        }
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [user, isConnected, stats?.pending, stats?.nextRetryAt]);
+
   const fetchSyncStats = async () => {
     if (!user) return;
 
     try {
-      // Include dropbox_file_id and dropbox_path to verify uploads actually happened
+      // Include next_retry_at for pending retry info
       const { data, error } = await supabase
         .from("dropbox_sync_status")
-        .select("sync_status, completed_at, started_at, file_size_bytes, error_message, updated_at, dropbox_file_id, dropbox_path")
+        .select("sync_status, completed_at, started_at, file_size_bytes, error_message, updated_at, dropbox_file_id, dropbox_path, next_retry_at, attempt_count")
         .eq("user_id", user.id);
 
       if (error) throw error;
@@ -124,6 +171,19 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
 
       // Calculate total synced size
       const totalSize = synced.reduce((sum, s) => sum + (s.file_size_bytes || 0), 0);
+      
+      // Count pending items with scheduled retries
+      const pendingWithRetry = pending.filter(p => p.next_retry_at).length;
+      
+      // Find next retry time
+      const pendingRetries = pending.filter(p => p.next_retry_at);
+      const soonestRetry = pendingRetries.length > 0
+        ? pendingRetries.reduce((soonest, current) => {
+            return new Date(current.next_retry_at!) < new Date(soonest.next_retry_at!)
+              ? current
+              : soonest;
+          })
+        : null;
 
       setStats({
         totalSynced: synced.length,
@@ -133,6 +193,8 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         lastAttemptAt: lastAttempt?.started_at || lastAttempt?.updated_at || null,
         lastError: lastFailed?.error_message || null,
         totalSizeBytes: totalSize,
+        pendingWithRetry,
+        nextRetryAt: soonestRetry?.next_retry_at || null,
       });
     } catch (error) {
       console.error("[DropboxSyncStatus] Failed to fetch stats:", error);
@@ -841,21 +903,32 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
             </p>
           </div>
 
-          {/* Pending */}
+          {/* Pending / Backing up */}
           <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
             <div className="flex items-center gap-2 mb-1">
-              <Clock className={cn(
-                "h-4 w-4",
-                (stats?.pending || 0) > 0 ? "text-amber-500" : "text-muted-foreground"
-              )} />
-              <span className="text-xs text-muted-foreground">Pending</span>
+              {(stats?.pending || 0) > 0 ? (
+                <Loader2 className="h-4 w-4 text-primary animate-spin" />
+              ) : (
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="text-xs text-muted-foreground">
+                {(stats?.pending || 0) > 0 ? "Backing up..." : "Pending"}
+              </span>
             </div>
             <p className={cn(
               "text-xl font-bold font-mono-data",
-              (stats?.pending || 0) > 0 ? "text-amber-500" : "text-foreground"
+              (stats?.pending || 0) > 0 ? "text-primary" : "text-foreground"
             )}>
               {stats?.pending || 0}
             </p>
+            {/* Show retry info if pending items have scheduled retries */}
+            {stats?.nextRetryAt && (stats?.pending || 0) > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {new Date(stats.nextRetryAt) > new Date()
+                  ? `Retry ${formatDistanceToNow(new Date(stats.nextRetryAt), { addSuffix: true })}`
+                  : "Retrying now..."}
+              </p>
+            )}
           </div>
 
           {/* Failed */}

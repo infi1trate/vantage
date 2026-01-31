@@ -34,6 +34,65 @@ const DROPBOX_UPLOAD_SESSION_FINISH_URL = "https://content.dropboxapi.com/2/file
 const SIMPLE_UPLOAD_MAX_SIZE = 150 * 1024 * 1024; // 150MB - Dropbox limit for simple upload
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks for session uploads (must be multiple of 4MB)
 
+// Retry configuration for transient failures
+const MAX_RETRY_ATTEMPTS = 5;
+const RETRY_BASE_DELAY_MS = 5000; // 5 seconds
+const RETRY_MAX_DELAY_MS = 120000; // 2 minutes max
+
+/**
+ * Check if an error is transient (retryable)
+ * Transient errors include: timeouts, 429 rate limits, 5xx server errors
+ */
+function isTransientError(error: string | Error | null): boolean {
+  if (!error) return false;
+  const errorStr = typeof error === "string" ? error : error.message;
+  const lowerError = errorStr.toLowerCase();
+  
+  // Timeout errors
+  if (lowerError.includes("timeout") || 
+      lowerError.includes("timed out") ||
+      lowerError.includes("deadline exceeded")) {
+    return true;
+  }
+  
+  // Rate limiting
+  if (lowerError.includes("429") || 
+      lowerError.includes("rate limit") ||
+      lowerError.includes("too many requests")) {
+    return true;
+  }
+  
+  // Server errors (5xx)
+  if (lowerError.includes("500") || 
+      lowerError.includes("502") || 
+      lowerError.includes("503") || 
+      lowerError.includes("504") ||
+      lowerError.includes("internal server error") ||
+      lowerError.includes("service unavailable") ||
+      lowerError.includes("gateway")) {
+    return true;
+  }
+  
+  // Network errors
+  if (lowerError.includes("network") ||
+      lowerError.includes("connection") ||
+      lowerError.includes("econnrefused") ||
+      lowerError.includes("enotfound")) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Calculate exponential backoff delay for retry
+ */
+function calculateRetryDelay(attemptCount: number): number {
+  // Exponential backoff: 5s, 15s, 45s, 90s, 120s (capped)
+  const delay = RETRY_BASE_DELAY_MS * Math.pow(3, attemptCount - 1);
+  return Math.min(delay, RETRY_MAX_DELAY_MS);
+}
+
 // Dropbox path constants
 // NOTE: Dropbox "App folder" access roots at /Apps/Vantage/ in the Dropbox UI.
 // All API paths are RELATIVE to this sandbox root - "/" in API = "/Apps/Vantage" in UI.
@@ -1643,13 +1702,16 @@ async function executeAutoSync(
   userId: string,
   supabase: any
 ): Promise<void> {
+  // Track attempt count at function scope for error handling
+  let currentAttemptCount = 1;
+  
   try {
     console.log(`[DropboxSync] Starting background auto-sync for session ${sessionId}`);
 
     // ===== IDEMPOTENCY CHECK FOR AUTO-SYNC =====
     const { data: existingStatus, error: statusError } = await supabase
       .from("dropbox_sync_status")
-      .select("sync_status, dropbox_file_id, started_at, attempt_count, upload_session_id, upload_offset, upload_session_started_at")
+      .select("sync_status, dropbox_file_id, started_at, attempt_count, upload_session_id, upload_offset, upload_session_started_at, next_retry_at")
       .eq("session_id", sessionId)
       .single();
 
@@ -1658,6 +1720,18 @@ async function executeAutoSync(
       if (existingStatus.sync_status === "completed" && existingStatus.dropbox_file_id) {
         console.log(`[DropboxSync] Auto-sync skipped - session ${sessionId} already synced`);
         return;
+      }
+
+      // Check if this is a pending retry that's not ready yet
+      if (existingStatus.sync_status === "pending" && existingStatus.next_retry_at) {
+        const retryAt = new Date(existingStatus.next_retry_at).getTime();
+        if (Date.now() < retryAt) {
+          const waitSecs = Math.round((retryAt - Date.now()) / 1000);
+          console.log(`[DropboxSync] Auto-sync skipped - retry scheduled in ${waitSecs}s`);
+          return;
+        }
+        // Retry time has passed, proceed with sync
+        console.log(`[DropboxSync] Retry time reached, proceeding with attempt ${(existingStatus.attempt_count || 0) + 1}`);
       }
 
       // Check for active upload (not stale) - but allow if it's resumable
@@ -1680,6 +1754,9 @@ async function executeAutoSync(
           console.log(`[DropboxSync] Found resumable session for ${sessionId} - will attempt to resume`);
         }
       }
+      
+      // Capture attempt count for use in error handling
+      currentAttemptCount = existingStatus.attempt_count || 1;
     }
     // ===== END IDEMPOTENCY CHECK =====
 
@@ -1777,7 +1854,16 @@ async function executeAutoSync(
     
     if (!uploadResult.success) {
       console.error(`[DropboxSync] Upload failed: ${uploadResult.error}`);
-      await updateSyncStatus(supabase, sessionId, "failed", uploadResult.error || "Upload failed");
+      const { retryScheduled, nextRetryAt } = await updateSyncStatus(
+        supabase, 
+        sessionId, 
+        "failed", 
+        uploadResult.error || "Upload failed",
+        currentAttemptCount
+      );
+      if (retryScheduled && nextRetryAt) {
+        console.log(`[DropboxSync] Retry scheduled for ${nextRetryAt.toISOString()}`);
+      }
       return;
     }
 
@@ -1786,7 +1872,16 @@ async function executeAutoSync(
     
     if (!verification.verified) {
       console.error(`[DropboxSync] Post-upload verification FAILED: ${verification.error}`);
-      await updateSyncStatus(supabase, sessionId, "failed", `Verification failed: ${verification.error}`);
+      const { retryScheduled, nextRetryAt } = await updateSyncStatus(
+        supabase, 
+        sessionId, 
+        "failed", 
+        `Verification failed: ${verification.error}`,
+        currentAttemptCount
+      );
+      if (retryScheduled && nextRetryAt) {
+        console.log(`[DropboxSync] Retry scheduled for ${nextRetryAt.toISOString()}`);
+      }
       return;
     }
 
@@ -1816,33 +1911,70 @@ async function executeAutoSync(
 
   } catch (error) {
     console.error("[DropboxSync] Auto-sync error:", error);
-    await updateSyncStatus(
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const { retryScheduled, nextRetryAt } = await updateSyncStatus(
       supabase, 
       sessionId, 
       "failed", 
-      error instanceof Error ? error.message : "Unknown error"
+      errorMessage,
+      currentAttemptCount
     );
+    if (retryScheduled && nextRetryAt) {
+      console.log(`[DropboxSync] Retry scheduled for ${nextRetryAt.toISOString()}`);
+    }
   }
 }
 
 /**
- * Helper to update sync status
+ * Helper to update sync status with retry logic for transient failures
+ * Returns true if a retry was scheduled
  */
 async function updateSyncStatus(
   supabase: any,
   sessionId: string,
   status: string,
-  errorMessage?: string
-): Promise<void> {
+  errorMessage?: string,
+  attemptCount?: number
+): Promise<{ retryScheduled: boolean; nextRetryAt?: Date }> {
+  // If status is "failed", check if this is a transient error that should be retried
+  if (status === "failed" && errorMessage && attemptCount !== undefined) {
+    const currentAttempt = attemptCount || 1;
+    
+    // Check if error is transient and we haven't exceeded max retries
+    if (isTransientError(errorMessage) && currentAttempt < MAX_RETRY_ATTEMPTS) {
+      const delayMs = calculateRetryDelay(currentAttempt);
+      const nextRetryAt = new Date(Date.now() + delayMs);
+      
+      console.log(`[DropboxSync] Transient error, scheduling retry ${currentAttempt + 1}/${MAX_RETRY_ATTEMPTS} in ${delayMs / 1000}s`);
+      
+      // Keep status as "pending" for retry, not "failed"
+      await supabase
+        .from("dropbox_sync_status")
+        .update({
+          sync_status: "pending",
+          error_message: `Retry ${currentAttempt}/${MAX_RETRY_ATTEMPTS}: ${errorMessage}`,
+          next_retry_at: nextRetryAt.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("session_id", sessionId);
+      
+      return { retryScheduled: true, nextRetryAt };
+    }
+  }
+  
+  // Normal status update (completed, or failed after max retries)
   await supabase
     .from("dropbox_sync_status")
     .update({
       sync_status: status,
       error_message: errorMessage || null,
+      next_retry_at: null, // Clear retry scheduling
       updated_at: new Date().toISOString(),
       ...(status === "completed" ? { completed_at: new Date().toISOString() } : {}),
     })
     .eq("session_id", sessionId);
+  
+  return { retryScheduled: false };
 }
 
 /**
