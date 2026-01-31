@@ -619,6 +619,7 @@ export type Database = {
       }
       dropbox_sync_status: {
         Row: {
+          attempt_count: number | null
           completed_at: string | null
           created_at: string
           dropbox_file_id: string | null
@@ -626,6 +627,8 @@ export type Database = {
           error_message: string | null
           file_size_bytes: number | null
           id: string
+          last_attempt_at: string | null
+          method_used: string | null
           session_id: string
           started_at: string | null
           sync_status: string
@@ -633,6 +636,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          attempt_count?: number | null
           completed_at?: string | null
           created_at?: string
           dropbox_file_id?: string | null
@@ -640,6 +644,8 @@ export type Database = {
           error_message?: string | null
           file_size_bytes?: number | null
           id?: string
+          last_attempt_at?: string | null
+          method_used?: string | null
           session_id: string
           started_at?: string | null
           sync_status?: string
@@ -647,6 +653,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          attempt_count?: number | null
           completed_at?: string | null
           created_at?: string
           dropbox_file_id?: string | null
@@ -654,6 +661,8 @@ export type Database = {
           error_message?: string | null
           file_size_bytes?: number | null
           id?: string
+          last_attempt_at?: string | null
+          method_used?: string | null
           session_id?: string
           started_at?: string | null
           sync_status?: string
