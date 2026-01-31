@@ -376,13 +376,65 @@ export function TimelineSelection({
     setDragStart(null);
   }, [isDragging, dragType, dragStart, selection, pushHistory]);
 
+  // Touch handlers for mobile support
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const time = getTimeFromPosition(touch.clientX);
+    
+    setDragStart(time);
+    setDragType("seek");
+    setIsDragging(true);
+    onSeek(time);
+  }, [getTimeFromPosition, onSeek]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isDragging || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const time = getTimeFromPosition(touch.clientX);
+    
+    if (dragType === "handle-start" && selection.rangeEnd !== undefined) {
+      const newStart = Math.min(time, selection.rangeEnd - 0.1);
+      onSelectionChange({ type: "range", rangeStart: newStart, rangeEnd: selection.rangeEnd });
+      throttledSeek(newStart);
+    } else if (dragType === "handle-end" && selection.rangeStart !== undefined) {
+      const newEnd = Math.max(time, selection.rangeStart + 0.1);
+      onSelectionChange({ type: "range", rangeStart: selection.rangeStart, rangeEnd: newEnd });
+      throttledSeek(newEnd);
+    } else if (dragType === "seek" && dragStart !== null) {
+      const diff = Math.abs(time - dragStart);
+      
+      if (diff > 0.5) {
+        setDragType("range");
+        const start = Math.min(dragStart, time);
+        const end = Math.max(dragStart, time);
+        onSelectionChange({ type: "range", rangeStart: start, rangeEnd: end });
+      } else {
+        throttledSeek(time);
+      }
+    } else if (dragType === "range" && dragStart !== null) {
+      const start = Math.min(dragStart, time);
+      const end = Math.max(dragStart, time);
+      onSelectionChange({ type: "range", rangeStart: start, rangeEnd: end });
+      throttledSeek(time);
+    }
+  }, [isDragging, dragType, dragStart, selection, getTimeFromPosition, onSelectionChange, throttledSeek]);
+
+  const handleTouchEnd = useCallback(() => {
+    handleMouseUp();
+  }, [handleMouseUp]);
+
   // Global mouse up
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (isDragging) handleMouseUp();
     };
     window.addEventListener("mouseup", handleGlobalMouseUp);
-    return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
+    window.addEventListener("touchend", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+      window.removeEventListener("touchend", handleGlobalMouseUp);
+    };
   }, [isDragging, handleMouseUp]);
 
   // Keyboard shortcuts
@@ -456,12 +508,15 @@ export function TimelineSelection({
     <div
       ref={timelineRef}
       className={cn(
-        "relative h-16 cursor-crosshair select-none rounded-lg overflow-hidden",
+        "relative h-16 cursor-crosshair select-none rounded-lg overflow-hidden touch-manipulation",
         className
       )}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => !isDragging && setHoverTime(null)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Background */}
       <div className="absolute inset-0 bg-muted/50" />
