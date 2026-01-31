@@ -69,16 +69,27 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     if (!user) return;
 
     try {
+      // Include dropbox_file_id and dropbox_path to verify uploads actually happened
       const { data, error } = await supabase
         .from("dropbox_sync_status")
-        .select("sync_status, completed_at, started_at, file_size_bytes, error_message, updated_at")
+        .select("sync_status, completed_at, started_at, file_size_bytes, error_message, updated_at, dropbox_file_id, dropbox_path")
         .eq("user_id", user.id);
 
       if (error) throw error;
 
-      const synced = data?.filter(s => s.sync_status === "completed") || [];
-      const pending = data?.filter(s => s.sync_status === "pending" || s.sync_status === "syncing") || [];
-      const failed = data?.filter(s => s.sync_status === "failed") || [];
+      // Only count as "synced" if status is completed AND file was actually uploaded
+      // (verified by presence of dropbox_file_id or dropbox_path)
+      const synced = data?.filter(s => 
+        s.sync_status === "completed" && (s.dropbox_file_id || s.dropbox_path)
+      ) || [];
+      const pending = data?.filter(s => 
+        s.sync_status === "pending" || s.sync_status === "syncing"
+      ) || [];
+      // Failed includes explicit failures AND "completed" without actual upload
+      const failed = data?.filter(s => 
+        s.sync_status === "failed" || 
+        (s.sync_status === "completed" && !s.dropbox_file_id && !s.dropbox_path)
+      ) || [];
 
       // Find most recent completed sync
       const completedSyncs = synced.filter(s => s.completed_at);
