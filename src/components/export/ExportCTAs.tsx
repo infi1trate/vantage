@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ExportDrawer, ExportTab, ExportOptions } from "./ExportDrawer";
-import { Download, Share2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Download, Share2, CloudIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ExportCTAsProps {
@@ -16,6 +17,8 @@ interface ExportCTAsProps {
   onExport?: (options: ExportOptions) => void;
   variant?: "header" | "floating";
   className?: string;
+  /** Dropbox sync status - only show indicator when "synced" */
+  dropboxSyncStatus?: "pending" | "synced" | "failed" | null;
 }
 
 /**
@@ -35,6 +38,7 @@ export function ExportCTAs({
   onExport,
   variant = "header",
   className,
+  dropboxSyncStatus,
 }: ExportCTAsProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [defaultTab, setDefaultTab] = useState<ExportTab>("download");
@@ -105,6 +109,20 @@ export function ExportCTAs({
   return (
     <>
       <div className={cn("flex items-center gap-2", className)}>
+        {/* Dropbox backup indicator - only shown when synced */}
+        {dropboxSyncStatus === "synced" && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 text-muted-foreground/60 text-xs mr-1">
+                <CloudIcon className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Backed up</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Backed up to Dropbox
+            </TooltipContent>
+          </Tooltip>
+        )}
         <Button
           onClick={handleShareClick}
           variant="outline"

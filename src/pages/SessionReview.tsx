@@ -109,6 +109,9 @@ export default function SessionReview() {
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [coachError, setCoachError] = useState<string | null>(null);
   
+  // Dropbox sync status for backup indicator
+  const [dropboxSyncStatus, setDropboxSyncStatus] = useState<"pending" | "synced" | "failed" | null>(null);
+  
   // Keyboard shortcuts overlay
   const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts();
   
@@ -213,13 +216,20 @@ export default function SessionReview() {
         return;
       }
 
-      const [sessionData, videoAssetsData, audioTracksData, facecamTracksData, annotationsData, voiceNotesData] = await Promise.all([
+      const [sessionData, videoAssetsData, audioTracksData, facecamTracksData, annotationsData, voiceNotesData, dropboxSyncData] = await Promise.all([
         getCaptureSession(sessionId!),
         getVideoAssets(sessionId!).catch(() => []),
         getAudioTracks(sessionId!).catch(() => []),
         getFacecamTracks(sessionId!).catch(() => []),
         getAnnotations(sessionId!),
         getVoiceNotes(sessionId!),
+        // Fetch Dropbox sync status
+        supabase
+          .from("dropbox_sync_status")
+          .select("sync_status")
+          .eq("session_id", sessionId!)
+          .maybeSingle()
+          .then(({ data }) => data),
       ]);
 
       setSession(sessionData);
@@ -228,6 +238,19 @@ export default function SessionReview() {
       setFacecamTracks(facecamTracksData);
       setAnnotations(annotationsData);
       setVoiceNotes(voiceNotesData);
+      
+      // Map Dropbox sync status
+      if (dropboxSyncData) {
+        if (dropboxSyncData.sync_status === "completed") {
+          setDropboxSyncStatus("synced");
+        } else if (dropboxSyncData.sync_status === "failed") {
+          setDropboxSyncStatus("failed");
+        } else {
+          setDropboxSyncStatus("pending");
+        }
+      } else {
+        setDropboxSyncStatus(null);
+      }
     } catch (error) {
       console.error("Error loading session:", error);
       toast.error("Session not found");
@@ -689,6 +712,7 @@ export default function SessionReview() {
                 hasMicTrack={audioTracks.some(t => t.track_type === "microphone")}
                 hasWebcamTrack={facecamTracks.length > 0}
                 variant="header"
+                dropboxSyncStatus={dropboxSyncStatus}
               />
             )}
             <div className="w-px h-4 bg-border/50 mx-1 hidden lg:block" />
