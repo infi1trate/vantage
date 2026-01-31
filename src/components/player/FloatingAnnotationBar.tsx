@@ -43,7 +43,8 @@ export function FloatingAnnotationBar({
       className={cn(
         "flex items-center gap-1.5 px-3 py-2 rounded-xl",
         "bg-card/95 backdrop-blur-sm border border-border/50 shadow-lg",
-        "animate-fade-in",
+        // Subtle, fast entrance animation
+        "animate-scale-in origin-bottom",
         className
       )}
       role="toolbar"

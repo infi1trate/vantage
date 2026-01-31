@@ -234,11 +234,16 @@ export function CinematicPlayer({
   }, [onVideoError, handleRetryError]);
 
   const handlePlayPause = useCallback(() => {
-    setIsPlaying(!isPlaying);
+    const willPlay = !isPlaying;
+    setIsPlaying(willPlay);
     if (videoRef.current) {
       isPlaying ? videoRef.current.pause() : videoRef.current.play();
     }
-  }, [isPlaying]);
+    // Dismiss toolbar when playback resumes
+    if (willPlay) {
+      handleSelectionChange({ type: null });
+    }
+  }, [isPlaying, handleSelectionChange]);
 
   const handleSkip = useCallback((seconds: number) => {
     const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
@@ -335,8 +340,16 @@ export function CinematicPlayer({
         isFullscreen && "fixed inset-0 z-50 bg-background"
       )}
     >
-      {/* Video area with cinematic backdrop */}
-      <div className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+      {/* Video area with cinematic backdrop - click to dismiss toolbar */}
+      <div 
+        className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+        onClick={() => {
+          // Dismiss toolbar when clicking the video area (not the video itself)
+          if (activeSelection.type !== null) {
+            handleSelectionChange({ type: null });
+          }
+        }}
+      >
         {/* Cinematic gradient backdrop */}
         <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/20 to-muted/40" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,hsl(var(--background))_70%)]" />
@@ -359,8 +372,12 @@ export function CinematicPlayer({
           <FrameClickHandler
             selection={activeSelection}
             currentTime={currentTime}
-            onFrameClick={onFrameClick}
+            onFrameClick={(x, y, time, endTime) => {
+              // Stop propagation to prevent dismissing the toolbar
+              onFrameClick?.(x, y, time, endTime);
+            }}
             className="relative z-10"
+            onClick={(e) => e.stopPropagation()}
           >
             <video
               key={`video-${videoKey}`}
