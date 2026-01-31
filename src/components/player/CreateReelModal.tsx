@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
 import { Annotation } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,6 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -27,10 +26,18 @@ import {
   Square,
   RectangleHorizontal,
   Loader2,
+  Play,
+  Download,
+  Share2,
+  ArrowLeft,
+  CheckCircle2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 interface CreateReelModalProps {
   open: boolean;
@@ -40,12 +47,20 @@ interface CreateReelModalProps {
   sessionTitle?: string;
 }
 
-type AspectRatio = "16:9" | "9:16" | "1:1";
+type AspectRatioValue = "16:9" | "9:16" | "1:1";
+type ModalStep = "create" | "preview";
 
-const ASPECT_RATIOS: { value: AspectRatio; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
-  { value: "16:9", label: "Landscape", icon: RectangleHorizontal, desc: "YouTube, Desktop" },
-  { value: "9:16", label: "Portrait", icon: Smartphone, desc: "TikTok, Reels, Shorts" },
-  { value: "1:1", label: "Square", icon: Square, desc: "Instagram, X" },
+interface GeneratedReel {
+  aspectRatio: AspectRatioValue;
+  duration: number;
+  momentCount: number;
+  previewUrl?: string;
+}
+
+const ASPECT_RATIOS: { value: AspectRatioValue; label: string; icon: React.ComponentType<{ className?: string }>; desc: string; ratio: number }[] = [
+  { value: "16:9", label: "Landscape", icon: RectangleHorizontal, desc: "YouTube, Desktop", ratio: 16/9 },
+  { value: "9:16", label: "Portrait", icon: Smartphone, desc: "TikTok, Reels, Shorts", ratio: 9/16 },
+  { value: "1:1", label: "Square", icon: Square, desc: "Instagram, X", ratio: 1 },
 ];
 
 const MOMENT_CONFIG: Record<string, { 
@@ -62,6 +77,15 @@ const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
+
+const formatDuration = (seconds: number) => {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 };
 
 // Memoized moment toggle row
@@ -152,16 +176,227 @@ const AspectButton = memo(function AspectButton({
   );
 });
 
+// Reel Preview Component - shown after generation
+function ReelPreviewContent({
+  reel,
+  onBack,
+  onClose,
+}: {
+  reel: GeneratedReel;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const isMobile = useIsMobile();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [showPlayButton, setShowPlayButton] = useState(true);
+
+  const ratioConfig = ASPECT_RATIOS.find(r => r.value === reel.aspectRatio) || ASPECT_RATIOS[0];
+  const AspectIcon = ratioConfig.icon;
+
+  // Autoplay muted on desktop
+  useEffect(() => {
+    if (!isMobile && videoRef.current) {
+      videoRef.current.muted = true;
+      videoRef.current.play().then(() => {
+        setIsPlaying(true);
+        setShowPlayButton(false);
+      }).catch(() => {
+        // Autoplay blocked, show play button
+        setShowPlayButton(true);
+      });
+    }
+  }, [isMobile]);
+
+  const handlePlayClick = useCallback(() => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        videoRef.current.play();
+        setIsPlaying(true);
+        setShowPlayButton(false);
+      }
+    }
+  }, [isPlaying]);
+
+  const handleVideoClick = useCallback(() => {
+    if (isMobile) {
+      handlePlayClick();
+    }
+  }, [isMobile, handlePlayClick]);
+
+  const toggleMute = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setIsMuted(!isMuted);
+    }
+  }, [isMuted]);
+
+  const handleDownload = useCallback(() => {
+    toast.success("Download started", {
+      description: "Your reel is being prepared for download",
+    });
+  }, []);
+
+  const handleShare = useCallback(() => {
+    toast.success("Share options", {
+      description: "Choose where to share your reel",
+    });
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full max-h-[85vh] md:max-h-[650px]">
+      {/* Success header */}
+      <div className="shrink-0 px-4 pt-3 pb-2">
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
+          <CheckCircle2 className="h-4 w-4 text-vantage-success" />
+          <span className="text-xs font-medium text-vantage-success">
+            Reel ready!
+          </span>
+          <span className="text-[10px] text-muted-foreground ml-auto">
+            {reel.momentCount} clips assembled
+          </span>
+        </div>
+      </div>
+
+      {/* Video Preview */}
+      <div className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center">
+        <div 
+          className={cn(
+            "relative w-full max-w-full overflow-hidden rounded-xl bg-black/90 shadow-2xl",
+            reel.aspectRatio === "9:16" && "max-w-[280px]",
+            reel.aspectRatio === "1:1" && "max-w-[320px]",
+            reel.aspectRatio === "16:9" && "max-w-full"
+          )}
+        >
+          <AspectRatio ratio={ratioConfig.ratio}>
+            {/* Placeholder video - in production, use actual reel URL */}
+            <div 
+              className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 flex items-center justify-center cursor-pointer"
+              onClick={handleVideoClick}
+            >
+              {/* Simulated video content */}
+              <video
+                ref={videoRef}
+                className="absolute inset-0 w-full h-full object-cover opacity-0"
+                src={reel.previewUrl}
+                loop
+                playsInline
+                muted={isMuted}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+              />
+              
+              {/* Visual placeholder since we don't have actual video */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center backdrop-blur-sm">
+                  <Film className="h-8 w-8 text-primary" />
+                </div>
+                <p className="text-xs text-muted-foreground">Preview placeholder</p>
+              </div>
+
+              {/* Play button overlay - tap to play on mobile */}
+              {(showPlayButton || !isPlaying) && (
+                <button
+                  className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40 active:bg-black/50"
+                  onClick={handlePlayClick}
+                >
+                  <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg transform transition-transform active:scale-95">
+                    <Play className="h-6 w-6 text-background ml-1" />
+                  </div>
+                </button>
+              )}
+
+              {/* Mute toggle */}
+              {isPlaying && (
+                <button
+                  className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm transition-transform active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMute();
+                  }}
+                >
+                  {isMuted ? (
+                    <VolumeX className="h-4 w-4 text-white" />
+                  ) : (
+                    <Volume2 className="h-4 w-4 text-white" />
+                  )}
+                </button>
+              )}
+            </div>
+          </AspectRatio>
+
+          {/* Aspect ratio badge */}
+          <div className="absolute top-3 left-3">
+            <Badge 
+              variant="secondary" 
+              className="bg-black/60 text-white border-0 backdrop-blur-sm gap-1 text-[10px]"
+            >
+              <AspectIcon className="h-3 w-3" />
+              {reel.aspectRatio}
+            </Badge>
+          </div>
+
+          {/* Duration badge */}
+          <div className="absolute top-3 right-3">
+            <Badge 
+              variant="secondary" 
+              className="bg-black/60 text-white border-0 backdrop-blur-sm text-[10px] font-mono"
+            >
+              {formatDuration(reel.duration)}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer actions */}
+      <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex-1 h-12 gap-2"
+            onClick={handleDownload}
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Download</span>
+          </Button>
+          <Button
+            size="lg"
+            className="flex-1 h-12 gap-2"
+            onClick={handleShare}
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+        </div>
+        <button
+          className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1"
+          onClick={onBack}
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Create another reel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReelCreatorContent({
   moments,
   sessionTitle,
+  onGenerated,
   onClose,
 }: {
   moments: Annotation[];
   sessionTitle?: string;
+  onGenerated: (reel: GeneratedReel) => void;
   onClose: () => void;
 }) {
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("9:16");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     // Auto-select all moments by default, ordered by timeline
     return new Set(moments.map(m => m.id));
@@ -212,15 +447,15 @@ function ReelCreatorContent({
     setIsGenerating(true);
     
     // Simulate generation (replace with actual API call)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
     
-    toast.success("Reel created! Check your exports.", {
-      description: `${selectedMoments.length} moments assembled into a ${aspectRatio} reel`,
+    // Transition to preview
+    onGenerated({
+      aspectRatio,
+      duration: estimatedDuration,
+      momentCount: selectedMoments.length,
     });
-    
-    setIsGenerating(false);
-    onClose();
-  }, [selectedMoments, aspectRatio, onClose]);
+  }, [selectedMoments, aspectRatio, estimatedDuration, onGenerated]);
 
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
@@ -352,6 +587,8 @@ export function CreateReelModal({
   sessionTitle,
 }: CreateReelModalProps) {
   const isMobile = useIsMobile();
+  const [step, setStep] = useState<ModalStep>("create");
+  const [generatedReel, setGeneratedReel] = useState<GeneratedReel | null>(null);
 
   // Only show moments that are reel-worthy (kill, death, highlight)
   const reelMoments = useMemo(() => {
@@ -360,9 +597,48 @@ export function CreateReelModal({
     );
   }, [moments]);
 
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      // Small delay to avoid visual glitch during close animation
+      const timer = setTimeout(() => {
+        setStep("create");
+        setGeneratedReel(null);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
   const handleClose = useCallback(() => {
     onOpenChange(false);
   }, [onOpenChange]);
+
+  const handleGenerated = useCallback((reel: GeneratedReel) => {
+    setGeneratedReel(reel);
+    setStep("preview");
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setStep("create");
+    setGeneratedReel(null);
+  }, []);
+
+  const title = step === "create" ? "Create Reel" : "Your Reel";
+
+  const content = step === "preview" && generatedReel ? (
+    <ReelPreviewContent
+      reel={generatedReel}
+      onBack={handleBack}
+      onClose={handleClose}
+    />
+  ) : (
+    <ReelCreatorContent
+      moments={reelMoments}
+      sessionTitle={sessionTitle}
+      onGenerated={handleGenerated}
+      onClose={handleClose}
+    />
+  );
 
   // Use Drawer on mobile, Dialog on desktop
   if (isMobile) {
@@ -372,14 +648,10 @@ export function CreateReelModal({
           <DrawerHeader className="pb-0">
             <DrawerTitle className="flex items-center gap-2 text-base">
               <Film className="h-5 w-5 text-primary" />
-              Create Reel
+              {title}
             </DrawerTitle>
           </DrawerHeader>
-          <ReelCreatorContent
-            moments={reelMoments}
-            sessionTitle={sessionTitle}
-            onClose={handleClose}
-          />
+          {content}
         </DrawerContent>
       </Drawer>
     );
@@ -391,14 +663,10 @@ export function CreateReelModal({
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Film className="h-5 w-5 text-primary" />
-            Create Reel
+            {title}
           </DialogTitle>
         </DialogHeader>
-        <ReelCreatorContent
-          moments={reelMoments}
-          sessionTitle={sessionTitle}
-          onClose={handleClose}
-        />
+        {content}
       </DialogContent>
     </Dialog>
   );
