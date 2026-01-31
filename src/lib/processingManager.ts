@@ -621,6 +621,16 @@ class ProcessingManager {
     // Clean up stored blobs from IndexedDB (data is now in local session storage)
     await deleteProcessingBlobs(job.id);
     
+    // Queue Dropbox sync as background task (if connected)
+    // This is fire-and-forget - doesn't block completion
+    if (cloudUploadSuccess && videoAssetId) {
+      this.queueDropboxSync(job.sessionId, videoAssetId).catch(err => {
+        if (import.meta.env.DEV) {
+          console.warn("[ProcessingManager] Dropbox sync queue failed:", err);
+        }
+      });
+    }
+    
     // Complete
     const completed = updateProcessingJob(job.id, {
       status: "completed",
@@ -636,6 +646,54 @@ class ProcessingManager {
     
     if (import.meta.env.DEV) {
       console.log("[ProcessingManager] Job completed:", job.id);
+    }
+  }
+  
+  /**
+   * Queue a session for Dropbox sync (background, non-blocking)
+   * Called after successful cloud upload
+   */
+  private async queueDropboxSync(sessionId: string, videoAssetId: string): Promise<void> {
+    try {
+      // Dynamic import to avoid circular dependencies and only load when needed
+      const { queueDropboxSync, isDropboxConnected } = await import("./dropboxSync");
+      
+      // Check if Dropbox is connected
+      const connected = await isDropboxConnected();
+      if (!connected) {
+        if (import.meta.env.DEV) {
+          console.log("[ProcessingManager] Dropbox not connected, skipping sync");
+        }
+        return;
+      }
+      
+      // Get the video URL from the video asset
+      const { data: asset } = await supabase
+        .from("video_assets")
+        .select("storage_url")
+        .eq("id", videoAssetId)
+        .single();
+      
+      if (!asset?.storage_url) {
+        console.warn("[ProcessingManager] No video URL found for Dropbox sync");
+        return;
+      }
+      
+      // Queue for background sync
+      const result = await queueDropboxSync(sessionId, asset.storage_url);
+      
+      if (result.success) {
+        if (import.meta.env.DEV) {
+          console.log("[ProcessingManager] Queued Dropbox sync for session:", sessionId);
+        }
+      } else if (result.error) {
+        console.warn("[ProcessingManager] Dropbox sync queue failed:", result.error);
+      }
+    } catch (error) {
+      // Non-fatal - don't block main processing
+      if (import.meta.env.DEV) {
+        console.warn("[ProcessingManager] Dropbox sync error:", error);
+      }
     }
   }
   

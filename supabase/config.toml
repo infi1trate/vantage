@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.settings-api]
 verify_jwt = false
+
+[functions.dropbox-sync]
+verify_jwt = false
