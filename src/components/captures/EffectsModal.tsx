@@ -170,6 +170,7 @@ export function EffectsModal({
                   backgroundColor={backgroundColor}
                   backgroundImage={backgroundImage}
                   flipCamera={flipCamera}
+                  isGeneratingBackground={aiGenerating}
                 />
                 {!includeFacecam && (
                   <p className="text-xs text-muted-foreground/60 text-center mt-3">
@@ -454,21 +455,19 @@ export function EffectsModal({
                             />
                             <Button
                               size="sm"
+                              variant={aiGenerating ? "ghost" : "default"}
                               onClick={handleAiGenerate}
                               disabled={disabled || aiGenerating || !aiPrompt.trim()}
-                              className="w-full h-8 text-xs"
-                            >
-                              {aiGenerating ? (
-                                <>
-                                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                                  Generating...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="h-3 w-3 mr-1.5" />
-                                  Generate Background
-                                </>
+                              className={cn(
+                                "w-full h-8 text-xs transition-all duration-150",
+                                aiGenerating && "opacity-60"
                               )}
+                            >
+                              <Sparkles className={cn(
+                                "h-3 w-3 mr-1.5",
+                                aiGenerating && "animate-pulse"
+                              )} />
+                              {aiGenerating ? "Creating background..." : "Generate"}
                             </Button>
                           </div>
                         )}
