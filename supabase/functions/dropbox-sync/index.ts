@@ -1450,6 +1450,34 @@ async function executeAutoSync(
   try {
     console.log(`[DropboxSync] Starting background auto-sync for session ${sessionId}`);
 
+    // ===== IDEMPOTENCY CHECK FOR AUTO-SYNC =====
+    const { data: existingStatus, error: statusError } = await supabase
+      .from("dropbox_sync_status")
+      .select("sync_status, dropbox_file_id, started_at")
+      .eq("session_id", sessionId)
+      .single();
+
+    if (!statusError && existingStatus) {
+      // Already synced - skip
+      if (existingStatus.sync_status === "completed" && existingStatus.dropbox_file_id) {
+        console.log(`[DropboxSync] Auto-sync skipped - session ${sessionId} already synced`);
+        return;
+      }
+
+      // Check for active upload (not stale)
+      if (existingStatus.sync_status === "syncing" && existingStatus.started_at) {
+        const startedAt = new Date(existingStatus.started_at).getTime();
+        const elapsedMs = Date.now() - startedAt;
+        const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+        if (elapsedMs < STALE_THRESHOLD_MS) {
+          console.log(`[DropboxSync] Auto-sync skipped - session ${sessionId} has active upload`);
+          return;
+        }
+      }
+    }
+    // ===== END IDEMPOTENCY CHECK =====
+
     // Get valid access token
     const tokenResult = await getValidAccessToken(userId, supabase);
     if (!tokenResult.accessToken) {
@@ -1478,8 +1506,8 @@ async function executeAutoSync(
       .eq("id", sessionId)
       .single();
 
-    // Update sync status to syncing
-    await supabase
+    // ===== ATOMIC LOCK: Acquire sync lock =====
+    const { error: lockError } = await supabase
       .from("dropbox_sync_status")
       .upsert({
         user_id: userId,
@@ -1487,9 +1515,16 @@ async function executeAutoSync(
         sync_status: "syncing",
         started_at: new Date().toISOString(),
         error_message: null,
+        attempt_count: (existingStatus?.attempt_count || 0) + 1,
+        last_attempt_at: new Date().toISOString(),
       }, {
         onConflict: "session_id",
       });
+
+    if (lockError) {
+      console.error(`[DropboxSync] Auto-sync failed to acquire lock for session ${sessionId}:`, lockError);
+      return;
+    }
 
     // Build Dropbox path with human-readable filename
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
@@ -1610,6 +1645,65 @@ async function handleSync(
 
   console.log(`[DropboxSync] Manual sync for session ${sessionId}`);
 
+  // ===== IDEMPOTENCY CHECK =====
+  // Check current sync status BEFORE doing anything else
+  const { data: existingStatus, error: statusError } = await supabase
+    .from("dropbox_sync_status")
+    .select("sync_status, dropbox_file_id, dropbox_path, completed_at, started_at")
+    .eq("session_id", sessionId)
+    .single();
+
+  if (!statusError && existingStatus) {
+    // Case 1: Already synced AND verified (has dropbox_file_id) => return immediately
+    if (existingStatus.sync_status === "completed" && existingStatus.dropbox_file_id) {
+      console.log(`[DropboxSync] Session ${sessionId} already synced - returning cached result`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          already_synced: true,
+          method_used: "cached",
+          target_path: existingStatus.dropbox_path,
+          dropbox_file_id: existingStatus.dropbox_file_id,
+          verified_exists: true,
+          error: null,
+          message: "Already synced to Dropbox",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Case 2: Currently syncing => check if it's a stale lock (>5 minutes) or active
+    if (existingStatus.sync_status === "syncing" && existingStatus.started_at) {
+      const startedAt = new Date(existingStatus.started_at).getTime();
+      const now = Date.now();
+      const elapsedMs = now - startedAt;
+      const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+      if (elapsedMs < STALE_THRESHOLD_MS) {
+        // Active upload in progress - don't start another
+        console.log(`[DropboxSync] Session ${sessionId} has upload in progress (started ${Math.round(elapsedMs / 1000)}s ago)`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            in_progress: true,
+            method_used: null,
+            target_path: null,
+            dropbox_file_id: null,
+            verified_exists: false,
+            error: null,
+            message: "Upload already in progress",
+            started_seconds_ago: Math.round(elapsedMs / 1000),
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } else {
+        // Stale lock - reset to allow retry
+        console.log(`[DropboxSync] Session ${sessionId} has stale lock (${Math.round(elapsedMs / 1000)}s old) - allowing retry`);
+      }
+    }
+  }
+  // ===== END IDEMPOTENCY CHECK =====
+
   // Get access token - use provided or retrieve stored
   let accessToken: string;
   
@@ -1656,8 +1750,9 @@ async function handleSync(
     });
   }
 
-  // Create or update sync status
-  await supabase
+  // ===== ATOMIC LOCK: Set status to syncing with started_at timestamp =====
+  // Use atomic update to claim the upload lock
+  const { error: lockError } = await supabase
     .from("dropbox_sync_status")
     .upsert({
       user_id: userId,
@@ -1665,9 +1760,19 @@ async function handleSync(
       sync_status: "syncing",
       started_at: new Date().toISOString(),
       error_message: null,
+      attempt_count: (existingStatus?.attempt_count || 0) + 1,
+      last_attempt_at: new Date().toISOString(),
     }, {
       onConflict: "session_id",
     });
+
+  if (lockError) {
+    console.error(`[DropboxSync] Failed to acquire lock for session ${sessionId}:`, lockError);
+    return new Response(JSON.stringify({ error: "Failed to start sync" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // Build Dropbox path with human-readable filename
   const filename = sanitizeFilename(session?.title || "Recording", sessionId);
