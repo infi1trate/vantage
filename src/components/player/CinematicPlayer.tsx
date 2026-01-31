@@ -3,7 +3,7 @@ import { VoiceNote } from "@/lib/captures";
 import { startTiming, endTiming, recordMetric } from "@/lib/performanceMetrics";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { useVideoRetry, isPermanentError } from "@/hooks/useVideoRetry";
-import { TimelineSelection, SelectionState } from "./TimelineSelection";
+import { TimelineSelection, SelectionState, ReactionMarker } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
 import { FrameClickHandler } from "./FrameClickHandler";
 import { FramePins, FramePin } from "./FramePins";
@@ -258,17 +258,38 @@ export function CinematicPlayer({
   }, []);
 
   // Timeline interaction
-  // Build markers for timeline
-  const timelineMarkers = [
-    ...annotations.map(a => ({
+  // Build markers for timeline - moments (kill/death/highlight)
+  const timelineMarkers = annotations
+    .filter(a => ["kill", "death", "highlight"].includes(a.annotation_type))
+    .map(a => ({
       id: a.id,
       time: a.timestamp_seconds,
       color: getMarkerColor(a.annotation_type),
-    })),
+    }));
+
+  // Build reaction markers for timeline - non-moment annotations and voice notes
+  const reactionMarkers: ReactionMarker[] = [
+    // Text/emoji reactions from annotations
+    ...annotations
+      .filter(a => !["kill", "death", "highlight"].includes(a.annotation_type))
+      .map(a => {
+        const content = a.title || a.content || "";
+        const emojiOnlyPattern = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]+$/u;
+        const isEmoji = content.length <= 8 && emojiOnlyPattern.test(content);
+        
+        return {
+          id: a.id,
+          time: a.timestamp_seconds,
+          type: isEmoji ? "emoji" as const : "text" as const,
+          content: content || "Note",
+        };
+      }),
+    // Voice notes
     ...voiceNotes.map(v => ({
       id: v.id,
       time: v.timestamp_seconds,
-      color: "bg-accent",
+      type: "voice" as const,
+      content: v.transcription || "Voice note",
     })),
   ];
 
@@ -486,6 +507,8 @@ export function CinematicPlayer({
             onSelectionChange={handleSelectionChange}
             markers={timelineMarkers}
             onMarkerClick={(id, time) => onMarkerClick?.(time)}
+            reactionMarkers={reactionMarkers}
+            onReactionClick={(id, time) => onMarkerClick?.(time)}
             suggestions={suggestions}
             onSuggestionAccept={onSuggestionAccept}
             onSuggestionDismiss={onSuggestionDismiss}
