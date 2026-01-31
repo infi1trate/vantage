@@ -122,9 +122,11 @@ export async function queueDropboxSync(
       });
 
     if (insertError) {
-      console.error("[DropboxSync] Failed to queue sync:", insertError);
+      console.error("[DropboxSync] Failed to create pending status:", insertError);
       return { success: false, error: insertError.message };
     }
+
+    console.log(`[DropboxSync] Created pending status, triggering auto-sync...`);
 
     // Trigger background sync (fire-and-forget)
     triggerAutoSync(sessionId).catch(err => {

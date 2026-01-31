@@ -983,15 +983,15 @@ async function executeAutoSync(
       return;
     }
 
-    // Get the video URL from video_assets
+    // Get the video storage path from video_assets (NOT the signed URL which expires)
     const { data: asset, error: assetError } = await supabase
       .from("video_assets")
-      .select("storage_url, session_id")
+      .select("storage_path, storage_url, session_id")
       .eq("session_id", sessionId)
       .single();
 
-    if (assetError || !asset?.storage_url) {
-      console.warn(`[DropboxSync] No video asset found for session ${sessionId}`);
+    if (assetError || !asset) {
+      console.warn(`[DropboxSync] No video asset found for session ${sessionId}:`, assetError);
       await updateSyncStatus(supabase, sessionId, "failed", "No video found");
       return;
     }
@@ -1020,18 +1020,37 @@ async function executeAutoSync(
     const filename = sanitizeFilename(session?.title || "Recording", sessionId);
     const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
-    // Download video from storage
-    console.log(`[DropboxSync] Downloading video for auto-sync`);
+    // Download video from storage using service role (more reliable than signed URLs)
+    console.log(`[DropboxSync] Downloading video for auto-sync from path: ${asset.storage_path}`);
     
-    const videoResponse = await fetch(asset.storage_url);
-    if (!videoResponse.ok) {
-      throw new Error(`Failed to download video: ${videoResponse.status}`);
+    let videoBlob: ArrayBuffer;
+    
+    if (asset.storage_path) {
+      // Preferred: Download using storage path with service role
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from("video-assets")
+        .download(asset.storage_path);
+      
+      if (downloadError || !fileData) {
+        console.error(`[DropboxSync] Storage download failed:`, downloadError);
+        throw new Error(`Failed to download from storage: ${downloadError?.message || "No data"}`);
+      }
+      
+      videoBlob = await fileData.arrayBuffer();
+    } else if (asset.storage_url) {
+      // Fallback: Try the storage URL (may be expired)
+      console.log(`[DropboxSync] Falling back to storage_url`);
+      const videoResponse = await fetch(asset.storage_url);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.status}`);
+      }
+      videoBlob = await videoResponse.arrayBuffer();
+    } else {
+      throw new Error("No storage path or URL available");
     }
     
-    const videoBlob = await videoResponse.arrayBuffer();
     const fileSize = videoBlob.byteLength;
-
-    console.log(`[DropboxSync] Uploading ${fileSize} bytes to Dropbox: ${dropboxPath}`);
+    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to Dropbox: ${dropboxPath}`);
 
     // Upload to Dropbox
     const uploadResponse = await fetch(DROPBOX_UPLOAD_URL, {
@@ -1123,12 +1142,14 @@ async function handleSync(
   const body = await req.json();
   const { sessionId, videoUrl, fileName, accessToken: providedToken } = body;
 
-  if (!sessionId || !videoUrl) {
-    return new Response(JSON.stringify({ error: "sessionId and videoUrl required" }), {
+  if (!sessionId) {
+    return new Response(JSON.stringify({ error: "sessionId required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  console.log(`[DropboxSync] Manual sync for session ${sessionId}`);
 
   // Get access token - use provided or retrieve stored
   let accessToken: string;
@@ -1146,7 +1167,7 @@ async function handleSync(
     accessToken = tokenResult.accessToken;
   }
 
-  // Verify session ownership
+  // Get session info and verify ownership
   const { data: session, error: sessionError } = await supabase
     .from("capture_sessions")
     .select("id, title, user_id")
@@ -1156,6 +1177,21 @@ async function handleSync(
 
   if (sessionError || !session) {
     return new Response(JSON.stringify({ error: "Session not found or access denied" }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Get video asset with storage path
+  const { data: asset, error: assetError } = await supabase
+    .from("video_assets")
+    .select("storage_path, storage_url")
+    .eq("session_id", sessionId)
+    .single();
+
+  if (assetError || !asset) {
+    console.error(`[DropboxSync] No video asset for session ${sessionId}:`, assetError);
+    return new Response(JSON.stringify({ error: "No video found for session" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -1179,16 +1215,38 @@ async function handleSync(
   const dropboxPath = `${RECORDINGS_PATH}/${filename}.webm`;
 
   try {
-    // Download video from storage
-    console.log(`[DropboxSync] Downloading video for session ${sessionId}`);
+    // Download video from storage using service role (preferred) or URL (fallback)
+    console.log(`[DropboxSync] Downloading video for session ${sessionId} from path: ${asset.storage_path}`);
     
-    const videoResponse = await fetch(videoUrl);
-    if (!videoResponse.ok) {
-      throw new Error(`Failed to download video: ${videoResponse.status}`);
+    let videoBlob: ArrayBuffer;
+    
+    if (asset.storage_path) {
+      // Preferred: Download using storage path with service role
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from("video-assets")
+        .download(asset.storage_path);
+      
+      if (downloadError || !fileData) {
+        console.error(`[DropboxSync] Storage download failed:`, downloadError);
+        throw new Error(`Failed to download from storage: ${downloadError?.message || "No data"}`);
+      }
+      
+      videoBlob = await fileData.arrayBuffer();
+    } else if (videoUrl || asset.storage_url) {
+      // Fallback: Try the provided URL or stored URL
+      const urlToUse = videoUrl || asset.storage_url;
+      console.log(`[DropboxSync] Falling back to URL fetch`);
+      const videoResponse = await fetch(urlToUse);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.status}`);
+      }
+      videoBlob = await videoResponse.arrayBuffer();
+    } else {
+      throw new Error("No storage path or URL available");
     }
     
-    const videoBlob = await videoResponse.arrayBuffer();
     const fileSize = videoBlob.byteLength;
+    console.log(`[DropboxSync] Downloaded ${fileSize} bytes, uploading to Dropbox: ${dropboxPath}`);
 
     console.log(`[DropboxSync] Uploading ${fileSize} bytes to Dropbox: ${dropboxPath}`);
 
