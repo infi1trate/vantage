@@ -1,3 +1,14 @@
+/**
+ * Security Section - Password Management
+ * 
+ * QA Checklist:
+ * - Verify password min 8 chars requirement
+ * - Verify confirm password matches
+ * - Handle incorrect current password with clear error message
+ * - Show/hide toggles have aria-labels
+ * - Toast: "Password updated."
+ */
+
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SettingsCard } from "../SettingsCard";

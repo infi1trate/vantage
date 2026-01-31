@@ -1,7 +1,16 @@
+/**
+ * Sessions Section - Active Session Management
+ * 
+ * QA Checklist:
+ * - Show current session at minimum
+ * - Handle slow network with inline spinners on revoke button
+ * - Optimistic UI updates with rollback on error
+ */
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { SettingsCard, SettingsCardSkeleton } from "../SettingsCard";
+import { SettingsCard } from "../SettingsCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -13,7 +22,6 @@ import {
   Loader2, 
   Shield,
   Clock,
-  MapPin,
   Globe
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -198,12 +206,12 @@ export function SessionsSection() {
       >
         {sessions.length === 0 ? (
           <div className="py-8 text-center">
-            <Shield className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+            <Shield className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" aria-hidden="true" />
             <p className="text-sm text-muted-foreground">
-              No active sessions tracked
+              No active sessions tracked.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Sessions will appear here as you use Vantage
+              Sessions will appear here as you use Vantage.
             </p>
           </div>
         ) : (
@@ -229,7 +237,7 @@ export function SessionsSection() {
                           "p-2.5 rounded-lg shrink-0",
                           session.is_current ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                         )}>
-                          <DeviceIcon className="h-5 w-5" />
+                          <DeviceIcon className="h-5 w-5" aria-hidden="true" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -247,11 +255,13 @@ export function SessionsSection() {
                               {parsed.browser}
                             </span>
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Globe className="h-3 w-3" />
+                              <Globe className="h-3 w-3" aria-hidden="true" />
+                              <span className="sr-only">Location:</span>
                               {location}
                             </span>
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
+                              <Clock className="h-3 w-3" aria-hidden="true" />
+                              <span className="sr-only">Last active:</span>
                               {formatDistanceToNow(new Date(session.last_active_at), { addSuffix: true })}
                             </span>
                           </div>
@@ -264,9 +274,10 @@ export function SessionsSection() {
                           onClick={() => setConfirmingRevoke(session.id)}
                           disabled={revoking === session.id}
                           className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          aria-label={`Revoke session on ${parsed.device}`}
                         >
                           {revoking === session.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                           ) : (
                             "Revoke"
                           )}
