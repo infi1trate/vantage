@@ -269,17 +269,22 @@ export function EffectsModal({
                     </div>
                   </div>
 
-                  {/* Background Mask */}
+                  {/* Background Replace */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Background Mask
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Background Replace
+                        </p>
+                        {backgroundImage && (
+                          <span className="text-xs text-vantage-500/80 font-medium">
+                            Image active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground/60">
+                        Replace your background with a color or image
                       </p>
-                      {backgroundImage && (
-                        <span className="text-xs text-vantage-500/80 font-medium">
-                          Image active
-                        </span>
-                      )}
                     </div>
                     
                     {/* Color Swatches - 12 preset colors in 6x2 grid */}
