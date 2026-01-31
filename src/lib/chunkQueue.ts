@@ -7,9 +7,11 @@
  * - Applies backpressure when queue is too deep
  * - Never drops chunks
  * - Uses requestIdleCallback for non-urgent processing
+ * - Integrates with memory guard for long recordings
  */
 
 import { recordMetric, adjustThumbnailQueue } from "@/lib/performanceMetrics";
+import { shouldPauseNonEssential, scheduleNonEssential } from "@/lib/memoryGuard";
 
 // Queue configuration
 const MAX_QUEUE_DEPTH = 50; // Pause non-essential work when queue exceeds this
@@ -188,6 +190,13 @@ export class ChunkQueue {
 
   private scheduleProcessing(): void {
     if (this.isDestroyed) return;
+
+    // Check memory pressure before scheduling
+    if (shouldPauseNonEssential()) {
+      // Under memory pressure - process immediately to clear queue faster
+      setTimeout(() => this.processNext(), 0);
+      return;
+    }
 
     // Use requestIdleCallback if available for non-urgent processing
     // Fall back to setTimeout for Safari
