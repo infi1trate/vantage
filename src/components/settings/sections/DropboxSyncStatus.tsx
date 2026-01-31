@@ -60,6 +60,9 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
   const [debugUploading, setDebugUploading] = useState(false);
   const [listingFiles, setListingFiles] = useState(false);
   const [debugLog, setDebugLog] = useState<string | null>(null);
+  
+  // Track if any upload/sync is actively in progress (from DB state)
+  const [activeUploadInProgress, setActiveUploadInProgress] = useState(false);
 
   useEffect(() => {
     if (user && isConnected) {
@@ -138,6 +141,17 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
         s.sync_status === "failed" || 
         (s.sync_status === "completed" && !s.dropbox_file_id && !s.dropbox_path)
       ) || [];
+
+      // Check if there's an active "syncing" status (not stale)
+      const activelySyncing = data?.filter(s => {
+        if (s.sync_status !== "syncing") return false;
+        if (!s.started_at) return false;
+        // Consider stale if started more than 10 minutes ago
+        const elapsedMs = Date.now() - new Date(s.started_at).getTime();
+        return elapsedMs < 10 * 60 * 1000; // 10 minutes
+      }) || [];
+      
+      setActiveUploadInProgress(activelySyncing.length > 0);
 
       // Find most recent completed sync
       const completedSyncs = synced.filter(s => s.completed_at);
@@ -1068,12 +1082,17 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
             variant="outline"
             size="sm"
             onClick={handleSyncExisting}
-            disabled={syncingAll}
+            disabled={syncingAll || activeUploadInProgress}
           >
             {syncingAll ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Syncing...
+                Syncing…
+              </>
+            ) : activeUploadInProgress ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Sync in progress
               </>
             ) : (
               <>
@@ -1088,13 +1107,18 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
             variant="outline"
             size="sm"
             onClick={handleDebugUploadFirst}
-            disabled={debugUploading || listingFiles}
+            disabled={debugUploading || listingFiles || activeUploadInProgress}
             className="border-dashed border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
           >
             {debugUploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Uploading...
+                Uploading…
+              </>
+            ) : activeUploadInProgress ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Upload in progress
               </>
             ) : (
               <>
