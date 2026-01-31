@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { SessionCard, UnifiedSession } from "@/components/library/SessionCard";
 import { ProcessingSessionCard } from "@/components/library/ProcessingSessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
+import { DropboxPromoBanner } from "@/components/library/DropboxPromoBanner";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
 import { markLibraryRendered } from "@/lib/processingTelemetry";
@@ -241,6 +242,9 @@ export default function SessionLibrary() {
       <Header />
       
       <main className="container py-8">
+        {/* Dropbox promo banner - only shows if not connected and not dismissed */}
+        <DropboxPromoBanner />
+        
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
           <div>
