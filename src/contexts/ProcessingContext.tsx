@@ -30,7 +30,7 @@ interface ProcessingContextValue {
   completedJobs: ProcessingJob[];
   activeCount: number;
   
-  // Queue a new processing job
+  // Queue a new processing job (returns immediately, processing is async)
   queueProcessing: (params: {
     sessionId: string;
     sessionTitle: string;
@@ -45,7 +45,7 @@ interface ProcessingContextValue {
     hasSystemAudio: boolean;
     userId?: string;
     gameName?: string | null;
-  }) => Promise<ProcessingJob>;
+  }) => ProcessingJob;
   
   // Actions
   cancelJob: (jobId: string) => void;
@@ -258,7 +258,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
     });
   }, []);
   
-  const queueProcessing = useCallback(async (params: {
+  const queueProcessing = useCallback((params: {
     sessionId: string;
     sessionTitle: string;
     blob: Blob;
@@ -272,8 +272,8 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
     hasSystemAudio: boolean;
     userId?: string;
     gameName?: string | null;
-  }): Promise<ProcessingJob> => {
-    // Create job
+  }): ProcessingJob => {
+    // Create job immediately (synchronous, just localStorage)
     const job = createProcessingJob({
       sessionId: params.sessionId,
       sessionTitle: params.sessionTitle,
@@ -287,22 +287,45 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
       userId: params.userId,
     });
     
-    // Store blobs in IndexedDB
-    const { blobKey, thumbnailKey } = await storeProcessingBlob(
-      job.id,
-      params.blob,
-      params.thumbnailBlob
-    );
+    // Update UI state immediately
+    setJobs(prev => [job, ...prev.filter(j => j.id !== job.id)]);
     
-    // Update job with blob keys
-    const updatedJob = updateProcessingJob(job.id, { blobKey, thumbnailKey })!;
+    // Store blobs and start processing ASYNCHRONOUSLY (don't block navigation)
+    // This runs in the background after the function returns
+    (async () => {
+      try {
+        const { blobKey, thumbnailKey } = await storeProcessingBlob(
+          job.id,
+          params.blob,
+          params.thumbnailBlob
+        );
+        
+        // Update job with blob keys
+        const updatedJob = updateProcessingJob(job.id, { blobKey, thumbnailKey })!;
+        
+        setJobs(prev => {
+          const index = prev.findIndex(j => j.id === job.id);
+          if (index === -1) return [...prev, updatedJob];
+          const next = [...prev];
+          next[index] = updatedJob;
+          return next;
+        });
+        
+        // Start processing after blobs are stored
+        startProcessing(updatedJob);
+      } catch (error) {
+        console.error("[Processing] Failed to store blobs:", error);
+        updateProcessingJob(job.id, {
+          status: "failed",
+          errorMessage: "Failed to store recording data",
+          completedAt: new Date().toISOString(),
+        });
+        setJobs(loadProcessingJobs());
+      }
+    })();
     
-    setJobs(prev => [updatedJob, ...prev.filter(j => j.id !== job.id)]);
-    
-    // Start processing
-    startProcessing(updatedJob);
-    
-    return updatedJob;
+    // Return immediately - navigation can proceed
+    return job;
   }, [startProcessing]);
   
   const handleCancel = useCallback((jobId: string) => {
