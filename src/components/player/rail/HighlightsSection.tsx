@@ -1,4 +1,4 @@
-import { useMemo, memo, useCallback } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 import { Annotation } from "@/lib/captures";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,11 @@ import {
   Star,
   ChevronRight,
   Trash2,
+  Film,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CreateReelModal } from "../CreateReelModal";
 
 interface MomentsSectionProps {
   annotations: Annotation[];
@@ -17,6 +20,8 @@ interface MomentsSectionProps {
   onAnnotationClick?: (annotation: Annotation) => void;
   onMarkerClick: (time: number) => void;
   onAnnotationDelete?: (annotationId: string) => void;
+  sessionId?: string;
+  sessionTitle?: string;
 }
 
 // Unified Moment type configuration
@@ -126,7 +131,10 @@ export const HighlightsSection = memo(function HighlightsSection({
   onAnnotationClick,
   onMarkerClick,
   onAnnotationDelete,
+  sessionId = "",
+  sessionTitle,
 }: MomentsSectionProps) {
+  const [reelModalOpen, setReelModalOpen] = useState(false);
   // Sort moments chronologically
   const moments = useMemo(() => {
     return [...annotations].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds);
@@ -172,6 +180,20 @@ export const HighlightsSection = memo(function HighlightsSection({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Create Reel CTA - prominent but not overwhelming */}
+      <div className="shrink-0 px-3 pt-3 pb-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-10 gap-2 bg-gradient-to-r from-primary/5 via-transparent to-accent/5 border-primary/20 hover:border-primary/40 hover:bg-primary/10 transition-all group"
+          onClick={() => setReelModalOpen(true)}
+        >
+          <Sparkles className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
+          <span className="text-sm font-medium">Create Reel</span>
+          <Film className="h-3.5 w-3.5 text-muted-foreground ml-auto" />
+        </Button>
+      </div>
+
       {/* Summary bar with counts */}
       <div className="shrink-0 px-3 py-2.5 border-b border-border/20 bg-muted/5">
         <div className="flex gap-4 justify-center flex-wrap">
@@ -219,6 +241,15 @@ export const HighlightsSection = memo(function HighlightsSection({
           </div>
         </div>
       </ScrollArea>
+
+      {/* Create Reel Modal */}
+      <CreateReelModal
+        open={reelModalOpen}
+        onOpenChange={setReelModalOpen}
+        moments={moments}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+      />
     </div>
   );
 });

@@ -186,6 +186,7 @@ export const SessionRightRail = memo(function SessionRightRail({
             onAnnotationClick={onAnnotationClick}
             onMarkerClick={onMarkerClick}
             onAnnotationDelete={onAnnotationDelete}
+            sessionId={sessionId}
           />
         </TabsContent>
 
