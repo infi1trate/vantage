@@ -279,100 +279,222 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     if (!user) return;
 
     setSyncingAll(true);
+    setDebugLog(null);
+
+    const log = (msg: string) => {
+      console.log(`[SyncAll] ${msg}`);
+      setDebugLog(prev => (prev ? `${prev}\n${msg}` : msg));
+    };
 
     try {
+      log("Fetching recordings to sync...");
+      
       // Get all sessions with "ready" status
       const { data: allSessions, error: sessionsError } = await supabase
         .from("capture_sessions")
-        .select("id")
+        .select("id, title")
         .eq("user_id", user.id)
         .eq("status", "ready");
 
       if (sessionsError) throw sessionsError;
 
       if (!allSessions || allSessions.length === 0) {
+        log("No recordings found");
         toast.info("No recordings to sync");
         setSyncingAll(false);
         return;
       }
 
+      log(`Found ${allSessions.length} total recordings`);
+
       // Get existing sync records with their status
       const { data: existingSyncs, error: syncsError } = await supabase
         .from("dropbox_sync_status")
-        .select("session_id, sync_status")
+        .select("session_id, sync_status, dropbox_file_id, dropbox_path")
         .eq("user_id", user.id);
 
       if (syncsError) throw syncsError;
 
-      // Build a map of session_id -> sync_status
-      const syncStatusMap = new Map<string, string>();
+      // Build a map of session_id -> sync info
+      const syncStatusMap = new Map<string, { status: string; verified: boolean }>();
       for (const sync of existingSyncs || []) {
-        syncStatusMap.set(sync.session_id, sync.sync_status);
+        const verified = !!(sync.dropbox_file_id || sync.dropbox_path);
+        syncStatusMap.set(sync.session_id, { 
+          status: sync.sync_status,
+          verified: sync.sync_status === "completed" && verified,
+        });
       }
 
       // Find sessions that need syncing:
       // 1. No sync record at all (never attempted)
       // 2. sync_status = "pending" (stuck pending)
       // 3. sync_status = "failed" (previously failed)
+      // 4. sync_status = "completed" but not verified (completed without actual file)
       const sessionsToSync = allSessions.filter(s => {
-        const status = syncStatusMap.get(s.id);
-        // No record, or pending, or failed = needs sync
-        return !status || status === "pending" || status === "failed";
+        const info = syncStatusMap.get(s.id);
+        if (!info) return true; // Never attempted
+        if (info.status === "pending" || info.status === "failed") return true;
+        if (info.status === "completed" && !info.verified) return true; // Ghost completed
+        return false;
       });
 
       if (sessionsToSync.length === 0) {
-        toast.info("All recordings are already synced or syncing");
+        log("All recordings are already verified synced");
+        toast.info("All recordings are already synced");
         setSyncingAll(false);
         return;
       }
 
-      toast.success("Syncing existing recordings in the background", {
-        description: `Queuing ${sessionsToSync.length} recording(s)...`,
+      log(`${sessionsToSync.length} recordings need syncing`);
+      log("");
+      log("─── SYNC PROGRESS ───");
+
+      toast.info(`Syncing ${sessionsToSync.length} recording(s)...`, {
+        description: "This may take a while for large files",
       });
 
-      // Process sequentially with a small delay to avoid overwhelming the server
-      // This runs in the background - don't await all of them
-      let triggeredCount = 0;
-      const processQueue = async () => {
-        for (const session of sessionsToSync) {
-          try {
-            // Create or update pending record
+      // Track results
+      let successCount = 0;
+      let failCount = 0;
+
+      // Process each recording synchronously to get real results
+      for (let i = 0; i < sessionsToSync.length; i++) {
+        const session = sessionsToSync[i];
+        const progress = `[${i + 1}/${sessionsToSync.length}]`;
+        
+        log(`${progress} Syncing: ${session.title || session.id.slice(0, 8)}...`);
+
+        try {
+          // Update attempt tracking
+          await supabase
+            .from("dropbox_sync_status")
+            .upsert({
+              session_id: session.id,
+              user_id: user.id,
+              sync_status: "syncing",
+              last_attempt_at: new Date().toISOString(),
+              error_message: null,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: "session_id",
+            });
+
+          // Use SYNCHRONOUS /sync endpoint (not /sync/auto)
+          const startTime = Date.now();
+          const response = await supabase.functions.invoke("dropbox-sync", {
+            body: { sessionId: session.id },
+            headers: { "x-custom-path": "/sync" },
+          });
+          const elapsed = Date.now() - startTime;
+
+          if (response.error) {
+            // Edge function returned an error
+            log(`${progress} ✗ FAILED (${elapsed}ms): ${response.error.message}`);
+            
             await supabase
               .from("dropbox_sync_status")
-              .upsert({
-                session_id: session.id,
-                user_id: user.id,
-                sync_status: "pending",
+              .update({
+                sync_status: "failed",
+                error_message: response.error.message,
+                last_attempt_at: new Date().toISOString(),
+                attempt_count: supabase.rpc ? undefined : 1, // Increment handled separately if needed
+                updated_at: new Date().toISOString(),
+              })
+              .eq("session_id", session.id);
+            
+            failCount++;
+            continue;
+          }
+
+          const data = response.data;
+
+          // Check if upload was verified
+          if (data?.verified_exists && data?.dropbox_file_id) {
+            log(`${progress} ✓ SUCCESS (${elapsed}ms)`);
+            log(`    Method: ${data.method_used || "unknown"}`);
+            log(`    Path: ${data.target_path || "(unknown)"}`);
+            log(`    Size: ${data.size_bytes ? `${(data.size_bytes / 1024 / 1024).toFixed(2)} MB` : "(unknown)"}`);
+            
+            // Update with verified data and method used
+            await supabase
+              .from("dropbox_sync_status")
+              .update({
+                sync_status: "completed",
+                dropbox_path: data.target_path,
+                dropbox_file_id: data.dropbox_file_id,
+                file_size_bytes: data.size_bytes,
+                method_used: data.method_used,
+                completed_at: new Date().toISOString(),
                 error_message: null,
                 updated_at: new Date().toISOString(),
-              }, {
-                onConflict: "session_id",
-              });
-
-            // Trigger sync
-            await triggerAutoSync(session.id);
-            triggeredCount++;
-
-            // Small delay between triggers to avoid rate limiting (500ms)
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } catch (err) {
-            console.warn(`[DropboxSyncStatus] Failed to queue sync for ${session.id}:`, err);
+              })
+              .eq("session_id", session.id);
+            
+            successCount++;
+          } else {
+            // Returned success but not verified
+            const errorMsg = data?.error || "Upload returned but verification failed";
+            log(`${progress} ⚠ UNVERIFIED (${elapsed}ms): ${errorMsg}`);
+            
+            await supabase
+              .from("dropbox_sync_status")
+              .update({
+                sync_status: "failed",
+                error_message: errorMsg,
+                method_used: data?.method_used,
+                last_attempt_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("session_id", session.id);
+            
+            failCount++;
           }
+
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : "Unknown error";
+          log(`${progress} ✗ EXCEPTION: ${errorMsg}`);
+          
+          await supabase
+            .from("dropbox_sync_status")
+            .update({
+              sync_status: "failed",
+              error_message: errorMsg,
+              last_attempt_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("session_id", session.id);
+          
+          failCount++;
         }
 
-        console.log(`[DropboxSyncStatus] Finished queuing ${triggeredCount} recordings for sync`);
-      };
+        // Small delay between requests to avoid rate limiting
+        if (i < sessionsToSync.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
 
-      // Start processing in background (don't block UI)
-      processQueue().finally(() => {
-        fetchSyncStats();
-      });
+      log("");
+      log("─── SYNC COMPLETE ───");
+      log(`Success: ${successCount}`);
+      log(`Failed: ${failCount}`);
+      log("─────────────────────");
 
-      // Refresh stats after a short delay
-      setTimeout(() => fetchSyncStats(), 1000);
+      // Show summary toast
+      if (successCount > 0 && failCount === 0) {
+        toast.success(`All ${successCount} recording(s) synced successfully!`);
+      } else if (successCount > 0) {
+        toast.warning(`Synced ${successCount} recording(s), ${failCount} failed`);
+      } else {
+        toast.error(`All ${failCount} recording(s) failed to sync`);
+      }
+
+      // Refresh stats
+      await fetchSyncStats();
+
     } catch (error) {
-      console.error("[DropboxSyncStatus] Sync existing error:", error);
-      toast.error("Failed to sync existing recordings");
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log(`EXCEPTION: ${msg}`);
+      toast.error("Failed to sync recordings", { description: msg });
     } finally {
       setSyncingAll(false);
     }
