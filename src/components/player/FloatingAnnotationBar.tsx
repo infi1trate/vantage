@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SelectionState } from "./TimelineSelection";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { 
   Target, 
   Skull, 
@@ -26,6 +27,8 @@ export function FloatingAnnotationBar({
   onOpenVoice,
   className,
 }: FloatingAnnotationBarProps) {
+  const isMobile = useIsMobile();
+  
   if (selection.type === null) return null;
 
   const formatTime = (seconds: number) => {
@@ -38,12 +41,96 @@ export function FloatingAnnotationBar({
     ? `${formatTime(selection.rangeStart!)} – ${formatTime(selection.rangeEnd!)}`
     : formatTime(selection.point!);
 
+  // Mobile: compact 2-row layout with icon-only primary actions
+  if (isMobile) {
+    return (
+      <div
+        className={cn(
+          "flex flex-col gap-2 p-3 rounded-xl",
+          "bg-card/95 backdrop-blur-sm border border-border/50 shadow-lg",
+          "animate-scale-in origin-bottom",
+          className
+        )}
+        role="toolbar"
+        aria-label="Moment actions"
+      >
+        {/* Selection indicator */}
+        <div className="flex items-center justify-center">
+          <span className="px-3 py-1.5 text-xs font-mono text-muted-foreground tabular-nums bg-muted/30 rounded-md">
+            {selectionLabel}
+          </span>
+        </div>
+
+        {/* Action buttons - responsive grid */}
+        <div className="grid grid-cols-6 gap-1">
+          {/* Moment types */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full text-vantage-success hover:text-vantage-success hover:bg-vantage-success/10 touch-manipulation"
+            onClick={() => onCreateMarker("kill")}
+            aria-label="Mark as Kill"
+          >
+            <Target className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full text-destructive hover:text-destructive hover:bg-destructive/10 touch-manipulation"
+            onClick={() => onCreateMarker("death")}
+            aria-label="Mark as Death"
+          >
+            <Skull className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full text-vantage-warning hover:text-vantage-warning hover:bg-vantage-warning/10 touch-manipulation"
+            onClick={() => onCreateMarker("highlight")}
+            aria-label="Mark as Highlight"
+          >
+            <Star className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full touch-manipulation"
+            onClick={() => onCreateMarker("marker")}
+            aria-label="Add Marker"
+          >
+            <Bookmark className="h-5 w-5" />
+          </Button>
+          
+          {/* Reactions */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full touch-manipulation"
+            onClick={onOpenNote}
+            aria-label="Add text note"
+          >
+            <FileText className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-full touch-manipulation"
+            onClick={onOpenVoice}
+            aria-label="Add voice note"
+          >
+            <Mic className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop: horizontal layout with labels
   return (
     <div
       className={cn(
         "flex items-center gap-1.5 px-3 py-2 rounded-xl",
         "bg-card/95 backdrop-blur-sm border border-border/50 shadow-lg",
-        // Subtle, fast entrance animation
         "animate-scale-in origin-bottom",
         className
       )}

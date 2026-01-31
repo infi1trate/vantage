@@ -65,11 +65,11 @@ const MomentRow = memo(function MomentRow({
     <button
       className={cn(
         // Generous tap target for mobile (min-h-14)
-        "w-full flex items-center gap-3 p-3 min-h-14 rounded-xl text-left transition-all group",
+        "w-full flex items-center gap-3 p-3 min-h-14 rounded-xl text-left transition-all group touch-manipulation",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
         isActive 
           ? "bg-primary/10 border border-primary/30" 
-          : "hover:bg-muted/30 border border-transparent"
+          : "hover:bg-muted/30 active:bg-muted/40 border border-transparent"
       )}
       onClick={onClick}
     >
@@ -100,13 +100,19 @@ const MomentRow = memo(function MomentRow({
         </span>
       </div>
       
-      {/* Delete action (desktop hover) */}
+      {/* Delete action - visible on mobile via active state, hover on desktop */}
       <div className="shrink-0 flex items-center gap-1">
         {onDelete && (
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+            className={cn(
+              "h-10 w-10 transition-opacity touch-manipulation",
+              // Always visible on mobile when active, hover-reveal on desktop
+              isActive 
+                ? "opacity-100" 
+                : "opacity-0 group-hover:opacity-100 sm:opacity-0"
+            )}
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
@@ -117,7 +123,7 @@ const MomentRow = memo(function MomentRow({
           </Button>
         )}
         <ChevronRight className={cn(
-          "h-4 w-4 transition-opacity",
+          "h-4 w-4 transition-opacity hidden sm:block",
           isActive ? "opacity-100 text-primary" : "opacity-0 group-hover:opacity-40 text-muted-foreground"
         )} />
       </div>

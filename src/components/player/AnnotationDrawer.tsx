@@ -478,10 +478,10 @@ export function AnnotationDrawer({
                 <button
                   key={event.type}
                   className={cn(
-                    "flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg transition-all",
+                    "flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg transition-all touch-manipulation",
                     eventType === event.type
                       ? "bg-primary/10 text-primary ring-1 ring-primary/30"
-                      : "hover:bg-muted/40 text-muted-foreground hover:text-foreground"
+                      : "hover:bg-muted/40 active:bg-muted/50 text-muted-foreground hover:text-foreground"
                   )}
                   onClick={() => handleTypeChange(event.type)}
                 >
@@ -501,7 +501,7 @@ export function AnnotationDrawer({
               Timing
             </h3>
             <button
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors w-full text-left"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 active:bg-muted/50 transition-colors w-full text-left touch-manipulation min-h-12"
               onClick={() => onSeek(timestamp)}
             >
               <currentEventConfig.icon className={cn("h-4 w-4 shrink-0", currentEventConfig.color)} />

@@ -80,10 +80,10 @@ const MomentToggleRow = memo(function MomentToggleRow({
   return (
     <button
       className={cn(
-        "w-full flex items-center gap-3 p-3 min-h-12 rounded-lg text-left transition-all",
+        "w-full flex items-center gap-3 p-3 min-h-12 rounded-lg text-left transition-all touch-manipulation",
         selected 
           ? "bg-primary/10 border border-primary/30" 
-          : "bg-muted/20 border border-transparent opacity-50 hover:opacity-70"
+          : "bg-muted/20 border border-transparent opacity-50 hover:opacity-70 active:opacity-90"
       )}
       onClick={onToggle}
     >
