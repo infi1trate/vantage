@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { 
   AlertTriangle, 
   Download, 
@@ -11,6 +12,7 @@ import {
   FileVideo,
   Clock,
   HardDrive,
+  RefreshCw,
 } from "lucide-react";
 import { formatBytes } from "@/lib/localSessionStorage";
 import { VideoDecodeError, VideoMetaInfo } from "./FilmRoomPlayer";
@@ -20,6 +22,11 @@ export interface PlaybackFallbackCardProps {
   videoMeta?: VideoMetaInfo | null;
   sessionDuration?: number;
   onDownload?: () => void;
+  onRetry?: () => void;
+  /** Whether a retry is currently in progress */
+  isRetrying?: boolean;
+  /** Whether retry is available (transient error) */
+  canRetry?: boolean;
 }
 
 export function PlaybackFallbackCard({
@@ -27,6 +34,9 @@ export function PlaybackFallbackCard({
   videoMeta,
   sessionDuration,
   onDownload,
+  onRetry,
+  isRetrying = false,
+  canRetry = false,
 }: PlaybackFallbackCardProps) {
   const [copied, setCopied] = useState(false);
 
@@ -176,6 +186,19 @@ export function PlaybackFallbackCard({
 
           {/* Action buttons */}
           <div className="flex flex-col gap-2 pt-2">
+            {/* Retry button - only for network errors */}
+            {canRetry && onRetry && (
+              <Button 
+                onClick={onRetry} 
+                variant="outline"
+                disabled={isRetrying}
+                className="w-full gap-2"
+              >
+                <RefreshCw className={cn("h-4 w-4", isRetrying && "animate-spin")} />
+                {isRetrying ? "Retrying..." : "Try Again"}
+              </Button>
+            )}
+            
             {onDownload && (
               <Button onClick={onDownload} className="w-full gap-2">
                 <Download className="h-4 w-4" />

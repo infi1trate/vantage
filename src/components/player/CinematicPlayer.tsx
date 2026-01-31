@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { VoiceNote } from "@/lib/captures";
 import { startTiming, endTiming, recordMetric } from "@/lib/performanceMetrics";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
+import { useVideoRetry, isPermanentError } from "@/hooks/useVideoRetry";
 import { TimelineSelection, SelectionState } from "./TimelineSelection";
 import { FloatingAnnotationBar } from "./FloatingAnnotationBar";
 import { FrameClickHandler } from "./FrameClickHandler";
@@ -115,6 +116,23 @@ export function CinematicPlayer({
   const [videoDecodeError, setVideoDecodeError] = useState<VideoDecodeError | null>(null);
   const [internalSelection, setInternalSelection] = useState<SelectionState>({ type: null });
   const [isDragging, setIsDragging] = useState(false);
+
+  // Video retry logic for transient errors
+  const {
+    state: retryState,
+    handleError: handleRetryError,
+    videoKey,
+    forceRetry,
+  } = useVideoRetry(videoUrl, {
+    maxAttempts: 3,
+    baseDelay: 500,
+    onRetry: (attempt) => {
+      if (import.meta.env.DEV) {
+        console.log(`[CinematicPlayer] Retry attempt ${attempt}`);
+      }
+      setVideoDecodeError(null);
+    },
+  });
   
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -179,6 +197,16 @@ export function CinematicPlayer({
 
   const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const mediaError = e.currentTarget.error;
+    
+    // Try to recover from transient errors
+    const isRetrying = handleRetryError(mediaError);
+    if (isRetrying) {
+      if (import.meta.env.DEV) {
+        console.log("[CinematicPlayer] Transient error, retrying...");
+      }
+      return;
+    }
+    
     let errorType: VideoDecodeError["type"] = "unknown";
     let message = "An error occurred.";
     
@@ -194,7 +222,7 @@ export function CinematicPlayer({
           break;
         case MediaError.MEDIA_ERR_NETWORK:
           errorType = "network";
-          message = "Network error.";
+          message = "Network error. Please check your connection.";
           break;
       }
     }
@@ -203,7 +231,7 @@ export function CinematicPlayer({
     setVideoDecodeError(error);
     setVideoReady(false);
     onVideoError?.(error);
-  }, [onVideoError]);
+  }, [onVideoError, handleRetryError]);
 
   const handlePlayPause = useCallback(() => {
     setIsPlaying(!isPlaying);
@@ -299,11 +327,14 @@ export function CinematicPlayer({
             videoMeta={videoMeta}
             sessionDuration={duration}
             onDownload={onDownloadRequest}
+            onRetry={forceRetry}
+            isRetrying={retryState.isRetrying}
+            canRetry={videoDecodeError.type === "network" || videoDecodeError.type === "unknown"}
           />
         )}
 
-        {/* Video with frame click handler */}
-        {videoUrl && !videoDecodeError ? (
+        {/* Video with frame click handler - key forces remount on retry */}
+        {videoUrl && !videoDecodeError && !retryState.isRetrying ? (
           <FrameClickHandler
             selection={activeSelection}
             currentTime={currentTime}
@@ -311,6 +342,7 @@ export function CinematicPlayer({
             className="relative z-10"
           >
             <video
+              key={`video-${videoKey}`}
               ref={videoRef}
               src={videoUrl}
               className="max-w-full max-h-full rounded-lg shadow-2xl"
@@ -339,6 +371,18 @@ export function CinematicPlayer({
               onPinClick={onPinClick}
             />
           </FrameClickHandler>
+        ) : retryState.isRetrying ? (
+          <div className="relative z-10 w-full max-w-2xl aspect-video flex items-center justify-center bg-muted/30 rounded-lg border border-border/20">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+                <Play className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-muted-foreground text-sm">Retrying playback...</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                Attempt {retryState.attempt} of {retryState.maxAttempts}
+              </p>
+            </div>
+          </div>
         ) : !videoUrl ? (
           <div className="relative z-10 w-full max-w-2xl aspect-video flex items-center justify-center bg-muted/30 rounded-lg border border-border/20">
             <div className="text-center opacity-50">
