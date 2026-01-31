@@ -20,7 +20,8 @@ import {
   Clock,
   Loader2,
   AlertCircle,
-  FileUp
+  FileUp,
+  Bug
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,8 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
   const [retryingPending, setRetryingPending] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [debugUploading, setDebugUploading] = useState(false);
+  const [debugLog, setDebugLog] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && isConnected) {
@@ -363,6 +366,147 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     }
   };
 
+  /**
+   * DEBUG: Upload first (oldest) recording to Dropbox with detailed logging
+   * This is a diagnostic tool to verify the sync pipeline works end-to-end.
+   */
+  const handleDebugUploadFirst = async () => {
+    if (!user) return;
+
+    setDebugUploading(true);
+    setDebugLog(null);
+
+    const log = (msg: string) => {
+      console.log(`[DebugUpload] ${msg}`);
+      setDebugLog(prev => (prev ? `${prev}\n${msg}` : msg));
+    };
+
+    try {
+      log("Finding oldest recording...");
+
+      // Get the oldest ready session
+      const { data: sessions, error: sessionError } = await supabase
+        .from("capture_sessions")
+        .select("id, title, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "ready")
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (sessionError) {
+        log(`ERROR: Failed to query sessions: ${sessionError.message}`);
+        return;
+      }
+
+      if (!sessions || sessions.length === 0) {
+        log("No ready recordings found");
+        toast.info("No recordings available to upload");
+        return;
+      }
+
+      const session = sessions[0];
+      log(`Selected session: ${session.id}`);
+      log(`Title: "${session.title}"`);
+      log(`Created: ${session.created_at}`);
+
+      // Get video asset info
+      const { data: asset, error: assetError } = await supabase
+        .from("video_assets")
+        .select("id, storage_path, storage_url, file_size_bytes, status")
+        .eq("session_id", session.id)
+        .single();
+
+      if (assetError) {
+        log(`ERROR: No video asset found: ${assetError.message}`);
+        return;
+      }
+
+      log(`Video asset ID: ${asset.id}`);
+      log(`Storage path: ${asset.storage_path || "(none)"}`);
+      log(`Storage URL: ${asset.storage_url ? "(present)" : "(none)"}`);
+      log(`File size: ${asset.file_size_bytes ? `${(asset.file_size_bytes / 1024 / 1024).toFixed(2)} MB` : "(unknown)"}`);
+      log(`Asset status: ${asset.status}`);
+
+      // Create/update sync status to pending
+      log("Creating sync status record...");
+      const { error: upsertError } = await supabase
+        .from("dropbox_sync_status")
+        .upsert({
+          session_id: session.id,
+          user_id: user.id,
+          sync_status: "pending",
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "session_id",
+        });
+
+      if (upsertError) {
+        log(`ERROR: Failed to create sync status: ${upsertError.message}`);
+        return;
+      }
+
+      log("Triggering Dropbox sync via edge function...");
+      
+      // Call the sync endpoint directly with more detail
+      const startTime = Date.now();
+      const response = await supabase.functions.invoke("dropbox-sync", {
+        body: { sessionId: session.id },
+        headers: { "x-custom-path": "/sync/auto" },
+      });
+
+      const elapsed = Date.now() - startTime;
+      log(`Edge function responded in ${elapsed}ms`);
+
+      if (response.error) {
+        log(`ERROR: Edge function error: ${response.error.message}`);
+        toast.error("Debug upload failed", {
+          description: response.error.message,
+        });
+        return;
+      }
+
+      log(`Response: ${JSON.stringify(response.data)}`);
+
+      // Check final sync status
+      const { data: finalStatus } = await supabase
+        .from("dropbox_sync_status")
+        .select("sync_status, dropbox_path, error_message, file_size_bytes")
+        .eq("session_id", session.id)
+        .single();
+
+      if (finalStatus) {
+        log(`Final status: ${finalStatus.sync_status}`);
+        if (finalStatus.dropbox_path) {
+          log(`Dropbox path: ${finalStatus.dropbox_path}`);
+        }
+        if (finalStatus.file_size_bytes) {
+          log(`Uploaded size: ${(finalStatus.file_size_bytes / 1024 / 1024).toFixed(2)} MB`);
+        }
+        if (finalStatus.error_message) {
+          log(`Error: ${finalStatus.error_message}`);
+        }
+      }
+
+      if (response.data?.success || finalStatus?.sync_status === "completed") {
+        log("SUCCESS: Upload completed!");
+        toast.success("Debug upload succeeded");
+      } else {
+        log("Upload may still be processing in background...");
+        toast.info("Upload triggered - check logs for result");
+      }
+
+      // Refresh stats
+      await fetchSyncStats();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log(`EXCEPTION: ${msg}`);
+      toast.error("Debug upload failed", { description: msg });
+    } finally {
+      setDebugUploading(false);
+    }
+  };
+
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -580,7 +724,48 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
               </>
             )}
           </Button>
+
+          {/* Debug: Upload first recording button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDebugUploadFirst}
+            disabled={debugUploading}
+            className="border-dashed border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+          >
+            {debugUploading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Bug className="h-4 w-4 mr-2" />
+                Upload first recording now
+              </>
+            )}
+          </Button>
         </div>
+
+        {/* Debug log output */}
+        {debugLog && (
+          <div className="mt-4 p-3 rounded-lg bg-muted/50 border border-border/50 font-mono text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-muted-foreground font-sans text-sm">Debug Log</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs"
+                onClick={() => setDebugLog(null)}
+              >
+                Clear
+              </Button>
+            </div>
+            <pre className="whitespace-pre-wrap text-foreground/80 overflow-x-auto max-h-48 overflow-y-auto">
+              {debugLog}
+            </pre>
+          </div>
+        )}
       </div>
     </SettingsCard>
   );
