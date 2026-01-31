@@ -261,6 +261,8 @@ export default function CapturePage() {
         hasCam: capture.captureConfig.hasCam,
         hasMic: capture.captureConfig.hasMic,
         hasSystemAudio: capture.captureConfig.hasSystemAudio,
+        hasGameAudio: recordedData.hasGameAudio,
+        audioMixSettings: recordedData.audioMixSettings,
         userId: user?.id,
         gameName: session.game_name,
       });

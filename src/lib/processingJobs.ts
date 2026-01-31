@@ -49,6 +49,8 @@ export interface ProcessingJob {
   hasCam: boolean;
   hasMic: boolean;
   hasSystemAudio: boolean;
+  hasGameAudio?: boolean;                      // Whether game/system audio was actually captured
+  audioMixSettings?: Record<string, number>;   // Applied audio mixing settings
   
   // User info
   userId?: string;
@@ -256,6 +258,8 @@ export function createProcessingJob(params: {
   hasCam: boolean;
   hasMic: boolean;
   hasSystemAudio: boolean;
+  hasGameAudio?: boolean;
+  audioMixSettings?: Record<string, number>;
   userId?: string;
 }): ProcessingJob {
   const now = new Date().toISOString();
@@ -275,6 +279,8 @@ export function createProcessingJob(params: {
     hasCam: params.hasCam,
     hasMic: params.hasMic,
     hasSystemAudio: params.hasSystemAudio,
+    hasGameAudio: params.hasGameAudio,
+    audioMixSettings: params.audioMixSettings,
     userId: params.userId,
     errorMessage: null,
     outputReady: false,

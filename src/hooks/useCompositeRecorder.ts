@@ -1,6 +1,8 @@
 import { useRef, useCallback, useEffect } from "react";
 import { recordMetric, createFPSCounter } from "@/lib/performanceMetrics";
 import { generateThumbnailFromCanvas } from "@/lib/thumbnailWorker";
+import { createAudioMixer, serializeMixSettings, AudioMixerResult, AudioMixSettings } from "@/lib/audioMixer";
+
 export interface CompositeRecorderConfig {
   screenStream: MediaStream;
   microphoneStream?: MediaStream | null;
@@ -9,6 +11,8 @@ export interface CompositeRecorderConfig {
   canvasWidth?: number;
   canvasHeight?: number;
   frameRate?: number;
+  /** Custom audio mix settings (optional) */
+  audioMixSettings?: Partial<AudioMixSettings>;
 }
 
 export interface CompositeRecorderReturn {
@@ -21,6 +25,10 @@ export interface CompositeRecorderReturn {
   /** Capture thumbnail as Blob (for IndexedDB storage) */
   captureThumbnailBlob: (maxWidth?: number, quality?: number) => Promise<Blob | null>;
   stopCompositing: () => void;
+  /** Whether system/game audio is included in the mix */
+  hasGameAudio: boolean;
+  /** Applied audio mix settings (for session metadata) */
+  getAppliedMixSettings: () => Record<string, number> | null;
 }
 
 // Get best supported mime type for composited video
@@ -47,8 +55,9 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
   const animationFrameRef = useRef<number | null>(null);
   const compositeStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const audioMixerRef = useRef<AudioMixerResult | null>(null);
   const isCompositingRef = useRef(false);
+  const hasGameAudioRef = useRef(false);
   
   // Video elements for drawing
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -247,31 +256,29 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
         facecamVideoRef.current = createVideoElement(config.facecamStream);
       }
       
-      // Set up Web Audio API for mixing
+      // Set up Web Audio API mixing pipeline
       audioContextRef.current = new AudioContext();
-      audioDestinationRef.current = audioContextRef.current.createMediaStreamDestination();
       
-      // Connect microphone to audio destination
-      if (config.microphoneStream) {
-        const micSource = audioContextRef.current.createMediaStreamSource(config.microphoneStream);
-        // Add a gain node for potential level control
-        const micGain = audioContextRef.current.createGain();
-        micGain.gain.value = 1.0;
-        micSource.connect(micGain);
-        micGain.connect(audioDestinationRef.current);
-        console.log("[Composite] Microphone connected to audio mixer");
-      }
-      
-      // Connect system/tab audio if available from screen capture
+      // Extract game/system audio from screen capture (may not be available)
       const screenAudioTracks = config.screenStream.getAudioTracks();
-      if (screenAudioTracks.length > 0) {
-        const screenAudioStream = new MediaStream(screenAudioTracks);
-        const screenAudioSource = audioContextRef.current.createMediaStreamSource(screenAudioStream);
-        const screenGain = audioContextRef.current.createGain();
-        screenGain.gain.value = 1.0;
-        screenAudioSource.connect(screenGain);
-        screenGain.connect(audioDestinationRef.current);
-        console.log("[Composite] System audio connected to audio mixer");
+      const gameAudioStream = screenAudioTracks.length > 0 
+        ? new MediaStream(screenAudioTracks) 
+        : null;
+      
+      // Create the audio mixing pipeline
+      const mixer = createAudioMixer({
+        audioContext: audioContextRef.current,
+        microphoneStream: config.microphoneStream || null,
+        gameAudioStream,
+        settings: config.audioMixSettings,
+      });
+      
+      audioMixerRef.current = mixer;
+      hasGameAudioRef.current = mixer.hasGameAudio;
+      
+      console.log(`[Composite] Audio mixer created - hasGameAudio: ${mixer.hasGameAudio}`);
+      if (!mixer.hasGameAudio) {
+        console.log("[Composite] Game audio: Not available (mic-only recording)");
       }
       
       // Start compositing loop
@@ -291,11 +298,15 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
         console.log(`[Composite] Added video track: ${track.label}`);
       });
       
-      // Add mixed audio track
-      audioDestinationRef.current.stream.getAudioTracks().forEach(track => {
+      // Add mixed audio track from the mixer (always exactly 1 track)
+      mixer.destinationStream.getAudioTracks().forEach(track => {
         combinedStream.addTrack(track);
         console.log(`[Composite] Added mixed audio track: ${track.label}`);
       });
+      
+      // Verify we have exactly 1 audio track
+      const audioTrackCount = combinedStream.getAudioTracks().length;
+      console.log(`[Composite] Combined stream has ${audioTrackCount} audio track(s)`);
       
       compositeStreamRef.current = combinedStream;
       
@@ -334,12 +345,20 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
       facecamVideoRef.current = null;
     }
     
+    // Cleanup audio mixer
+    if (audioMixerRef.current) {
+      audioMixerRef.current.dispose();
+      audioMixerRef.current = null;
+    }
+    
     // Cleanup audio context
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(console.warn);
       audioContextRef.current = null;
     }
-    audioDestinationRef.current = null;
+    
+    // Reset game audio flag
+    hasGameAudioRef.current = false;
     
     // Stop composite stream tracks
     if (compositeStreamRef.current) {
@@ -440,6 +459,12 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     }
   }, []);
 
+  // Get applied mix settings for session metadata
+  const getAppliedMixSettings = useCallback((): Record<string, number> | null => {
+    if (!audioMixerRef.current) return null;
+    return serializeMixSettings(audioMixerRef.current.appliedSettings);
+  }, []);
+
   return {
     getCanvas: () => canvasRef.current,
     compositeStream: compositeStreamRef.current,
@@ -448,5 +473,7 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     stopCompositing,
     captureThumbnail,
     captureThumbnailBlob,
+    hasGameAudio: hasGameAudioRef.current,
+    getAppliedMixSettings,
   };
 }
