@@ -306,6 +306,16 @@ function ReelPreviewContent({
     }
   }, []);
 
+  // Re-export (reset and export again)
+  const handleReExport = useCallback(() => {
+    setExportPhase("idle");
+    setExportProgress(0);
+    // Trigger export after state reset
+    setTimeout(() => {
+      handleExport();
+    }, 50);
+  }, [handleExport]);
+
   const isProcessing = exportPhase === "preparing" || exportPhase === "exporting";
 
   return (
@@ -430,16 +440,26 @@ function ReelPreviewContent({
           </div>
         )}
 
-        {/* Complete state - visual confirmation */}
+        {/* Complete state - satisfying confirmation */}
         {exportPhase === "complete" && (
-          <div className="mb-3 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
-            <CheckCircle2 className="h-4 w-4 text-vantage-success" />
-            <span className="text-xs font-medium text-vantage-success">
-              Ready to download
-            </span>
-            <span className="text-[10px] text-muted-foreground ml-auto">
-              {reel.aspectRatio} • MP4
-            </span>
+          <div className="mb-4">
+            <div className="flex items-center gap-2 px-3 py-3 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
+              <CheckCircle2 className="h-5 w-5 text-vantage-success" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-vantage-success block">
+                  Reel exported
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  Ready to post anywhere
+                </span>
+              </div>
+              <Badge 
+                variant="secondary" 
+                className="text-[10px] bg-muted/50"
+              >
+                {reel.aspectRatio} MP4
+              </Badge>
+            </div>
           </div>
         )}
 
@@ -503,15 +523,25 @@ function ReelPreviewContent({
           )}
         </div>
         
-        {/* Back link */}
+        {/* Footer actions - contextual */}
         {exportPhase === "complete" ? (
-          <button
-            className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
-            onClick={onClose}
-          >
-            <Check className="h-3 w-3" />
-            Done
-          </button>
+          <div className="flex items-center justify-center gap-4 mt-3">
+            <button
+              className="py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 touch-manipulation"
+              onClick={handleReExport}
+            >
+              <Film className="h-3 w-3" />
+              Export again
+            </button>
+            <span className="text-muted-foreground/30">•</span>
+            <button
+              className="py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 touch-manipulation"
+              onClick={onClose}
+            >
+              <Check className="h-3 w-3" />
+              Done
+            </button>
+          </div>
         ) : (
           <button
             className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
