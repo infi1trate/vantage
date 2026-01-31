@@ -499,6 +499,53 @@ export async function getVideoAssets(sessionId: string) {
   return data as VideoAsset[];
 }
 
+/**
+ * Get a fresh signed URL for a video asset
+ * This should be used instead of the stored storage_url which may be expired
+ */
+export async function getVideoAssetUrl(asset: VideoAsset): Promise<string | null> {
+  // If storage_path is available, generate a fresh signed URL
+  if (asset.storage_path) {
+    const { data, error } = await supabase.storage
+      .from("video-assets")
+      .createSignedUrl(asset.storage_path, 3600); // 1 hour expiry
+    
+    if (error) {
+      console.error("[captures] Failed to generate signed URL:", error);
+      // Fall back to stored URL (might be expired but worth trying)
+      return asset.storage_url;
+    }
+    
+    return data.signedUrl;
+  }
+  
+  // Fall back to stored URL if no storage_path
+  return asset.storage_url;
+}
+
+/**
+ * Get video assets with fresh signed URLs
+ * Automatically regenerates signed URLs to prevent expiration issues
+ */
+export async function getVideoAssetsWithFreshUrls(sessionId: string): Promise<VideoAsset[]> {
+  const assets = await getVideoAssets(sessionId);
+  
+  // Generate fresh signed URLs for all assets with storage_path
+  const assetsWithFreshUrls = await Promise.all(
+    assets.map(async (asset) => {
+      if (asset.storage_path) {
+        const freshUrl = await getVideoAssetUrl(asset);
+        if (freshUrl) {
+          return { ...asset, storage_url: freshUrl };
+        }
+      }
+      return asset;
+    })
+  );
+  
+  return assetsWithFreshUrls;
+}
+
 // Audio Tracks
 export async function createAudioTrack(data: Omit<AudioTrack, "id" | "created_at" | "updated_at">) {
   const { data: track, error } = await supabase
