@@ -15,6 +15,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { 
   Target, 
   Skull, 
@@ -29,6 +34,8 @@ import {
   Trash2,
   ArrowLeft,
   MapPin,
+  ChevronDown,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -457,187 +464,222 @@ export function AnnotationDrawer({
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-5">
-          {/* Event Type */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Event Type</Label>
-            <div className="grid grid-cols-3 gap-2">
+        <div className="p-5 space-y-6">
+          
+          {/* ═══════════════════════════════════════════════════════════════
+              SECTION 1: Event Type
+              ═══════════════════════════════════════════════════════════════ */}
+          <section className="space-y-3">
+            <h3 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">
+              Event Type
+            </h3>
+            <div className="grid grid-cols-3 gap-1.5">
               {EVENT_TYPES.map((event) => (
                 <button
                   key={event.type}
                   className={cn(
-                    "flex items-center gap-2 p-2.5 rounded-lg border transition-all text-left",
+                    "flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg transition-all",
                     eventType === event.type
-                      ? "bg-primary/10 border-primary/40 text-primary"
-                      : "border-border/40 hover:border-border hover:bg-muted/30"
+                      ? "bg-primary/10 text-primary ring-1 ring-primary/30"
+                      : "hover:bg-muted/40 text-muted-foreground hover:text-foreground"
                   )}
                   onClick={() => handleTypeChange(event.type)}
                 >
                   <event.icon className={cn("h-4 w-4", eventType === event.type ? "" : event.color)} />
-                  <span className="text-xs font-medium">{event.label}</span>
+                  <span className="text-[11px] font-medium">{event.label}</span>
                 </button>
               ))}
             </div>
-          </div>
+          </section>
 
-          {/* Timestamp */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Timestamp</Label>
+          {/* ═══════════════════════════════════════════════════════════════
+              SECTION 2: Timing
+              ═══════════════════════════════════════════════════════════════ */}
+          <section className="space-y-3">
+            <h3 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide flex items-center gap-1.5">
+              <Clock className="h-3 w-3" />
+              Timing
+            </h3>
             <button
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-sm font-mono"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors w-full text-left"
               onClick={() => onSeek(timestamp)}
             >
-              <currentEventConfig.icon className={cn("h-4 w-4", currentEventConfig.color)} />
-              <span>{formatTime(timestamp)}</span>
+              <currentEventConfig.icon className={cn("h-4 w-4 shrink-0", currentEventConfig.color)} />
+              <span className="text-sm font-mono tabular-nums">{formatTime(timestamp)}</span>
               {endTimestamp && (
                 <>
-                  <span className="text-muted-foreground">–</span>
-                  <span>{formatTime(endTimestamp)}</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Title */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Title</Label>
-            <Input
-              placeholder="Add a title..."
-              value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              className="bg-background h-9"
-            />
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Notes</Label>
-            <Textarea
-              placeholder="Add notes..."
-              value={notes}
-              onChange={(e) => handleNotesChange(e.target.value)}
-              className="bg-background resize-none min-h-[100px]"
-            />
-          </div>
-
-          {/* Voice Note */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Voice Note</Label>
-            
-            {/* Existing voice notes */}
-            {linkedVoiceNotes.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {linkedVoiceNotes.map((vn) => (
-                  <div 
-                    key={vn.id} 
-                    className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 text-sm"
-                  >
-                    <Mic className="h-3.5 w-3.5 text-accent" />
-                    <span className="text-xs text-muted-foreground">
-                      {vn.duration_seconds.toFixed(1)}s
-                    </span>
-                    {vn.transcription && (
-                      <span className="text-xs truncate flex-1">{vn.transcription}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* Recording controls */}
-            <div className="flex items-center gap-2">
-              {!isRecording && !audioUrl && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={startRecording}
-                >
-                  <Mic className="h-4 w-4" />
-                  Record
-                </Button>
-              )}
-              
-              {isRecording && (
-                <>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="gap-2"
-                    onClick={stopRecording}
-                  >
-                    <Square className="h-3 w-3" />
-                    Stop
-                  </Button>
-                  <span className="text-xs font-mono text-destructive animate-pulse">
-                    {formatTime(recordingDuration)}
+                  <span className="text-muted-foreground/60">→</span>
+                  <span className="text-sm font-mono tabular-nums">{formatTime(endTimestamp)}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {(endTimestamp - timestamp).toFixed(1)}s
                   </span>
                 </>
               )}
+            </button>
+          </section>
+
+          {/* Subtle divider */}
+          <div className="border-t border-border/20" />
+
+          {/* ═══════════════════════════════════════════════════════════════
+              SECTION 3: Reactions (Text + Voice)
+              ═══════════════════════════════════════════════════════════════ */}
+          <section className="space-y-4">
+            <h3 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">
+              Add Your Thoughts
+            </h3>
+            
+            {/* Title - minimal styling */}
+            <div className="space-y-1.5">
+              <Input
+                placeholder="Title (optional)"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                className="border-0 bg-transparent px-0 h-8 text-sm font-medium placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+            </div>
+
+            {/* Notes - minimal styling */}
+            <div className="space-y-1.5">
+              <Textarea
+                placeholder="Jot down your thoughts..."
+                value={notes}
+                onChange={(e) => handleNotesChange(e.target.value)}
+                className="border-0 bg-muted/20 focus:bg-muted/30 resize-none min-h-[80px] text-sm placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-primary/20"
+              />
+            </div>
+
+            {/* Voice Note - compact */}
+            <div className="space-y-2">
+              {/* Existing voice notes */}
+              {linkedVoiceNotes.length > 0 && (
+                <div className="space-y-1">
+                  {linkedVoiceNotes.map((vn) => (
+                    <div 
+                      key={vn.id} 
+                      className="flex items-center gap-2 p-2 rounded-md bg-accent/10 text-sm"
+                    >
+                      <Mic className="h-3 w-3 text-accent shrink-0" />
+                      <span className="text-[11px] text-muted-foreground font-mono">
+                        {vn.duration_seconds.toFixed(1)}s
+                      </span>
+                      {vn.transcription && (
+                        <span className="text-xs truncate flex-1 text-muted-foreground">{vn.transcription}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               
-              {audioUrl && !isRecording && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={isPlaying ? stopAudio : playAudio}
-                  >
-                    {isPlaying ? (
-                      <>
-                        <Square className="h-3 w-3" />
-                        Stop
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-3 w-3" />
-                        Play
-                      </>
-                    )}
-                  </Button>
+              {/* Recording controls - inline */}
+              <div className="flex items-center gap-2">
+                {!isRecording && !audioUrl && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      if (audioUrl) URL.revokeObjectURL(audioUrl);
-                      setAudioUrl(null);
-                      setAudioBlob(null);
-                    }}
+                    className="gap-1.5 text-muted-foreground hover:text-foreground h-8 px-2"
+                    onClick={startRecording}
+                  >
+                    <Mic className="h-3.5 w-3.5" />
+                    <span className="text-xs">Add voice note</span>
+                  </Button>
+                )}
+                
+                {isRecording && (
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-destructive/10">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/20 h-7 px-2"
+                      onClick={stopRecording}
+                    >
+                      <Square className="h-3 w-3" />
+                      <span className="text-xs">Stop</span>
+                    </Button>
+                    <span className="text-xs font-mono text-destructive animate-pulse">
+                      {formatTime(recordingDuration)}
+                    </span>
+                  </div>
+                )}
+                
+                {audioUrl && !isRecording && (
+                  <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-muted/30">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 h-7 px-2"
+                      onClick={isPlaying ? stopAudio : playAudio}
+                    >
+                      {isPlaying ? (
+                        <>
+                          <Square className="h-3 w-3" />
+                          <span className="text-xs">Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3 w-3" />
+                          <span className="text-xs">Play</span>
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        if (audioUrl) URL.revokeObjectURL(audioUrl);
+                        setAudioUrl(null);
+                        setAudioBlob(null);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              SECTION 4: Advanced Options (Progressive Disclosure)
+              ═══════════════════════════════════════════════════════════════ */}
+          {(drawerAnnotation?.framePosition || annotationId) && (
+            <Collapsible className="space-y-2">
+              <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group w-full">
+                <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" />
+                <span>Advanced options</span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 pt-2">
+                {/* Frame Position Toggle */}
+                {drawerAnnotation?.framePosition && (
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/20">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Label className="text-xs text-muted-foreground">Attach to frame position</Label>
+                    </div>
+                    <Switch
+                      checked={attachFramePosition}
+                      onCheckedChange={setAttachFramePosition}
+                      className="scale-90"
+                    />
+                  </div>
+                )}
+
+                {/* Delete */}
+                {annotationId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive/70 hover:text-destructive hover:bg-destructive/10 gap-1.5 w-full justify-start h-8 text-xs"
+                    onClick={handleDelete}
+                    disabled={deleting}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
+                    {deleting ? "Deleting..." : "Delete this moment"}
                   </Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Frame Position Toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <Label className="text-sm">Attach frame position</Label>
-            </div>
-            <Switch
-              checked={attachFramePosition}
-              onCheckedChange={setAttachFramePosition}
-              disabled={!drawerAnnotation?.framePosition}
-            />
-          </div>
-
-          {/* Delete */}
-          {annotationId && (
-            <div className="pt-4 border-t border-border/30">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-2 w-full justify-start"
-                onClick={handleDelete}
-                disabled={deleting}
-              >
-                <Trash2 className="h-4 w-4" />
-                {deleting ? "Deleting..." : "Delete Moment"}
-              </Button>
-            </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           )}
         </div>
       </ScrollArea>
