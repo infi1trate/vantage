@@ -633,6 +633,10 @@ export type Database = {
           started_at: string | null
           sync_status: string
           updated_at: string
+          upload_offset: number | null
+          upload_session_id: string | null
+          upload_session_started_at: string | null
+          upload_total_bytes: number | null
           user_id: string
         }
         Insert: {
@@ -650,6 +654,10 @@ export type Database = {
           started_at?: string | null
           sync_status?: string
           updated_at?: string
+          upload_offset?: number | null
+          upload_session_id?: string | null
+          upload_session_started_at?: string | null
+          upload_total_bytes?: number | null
           user_id: string
         }
         Update: {
@@ -667,6 +675,10 @@ export type Database = {
           started_at?: string | null
           sync_status?: string
           updated_at?: string
+          upload_offset?: number | null
+          upload_session_id?: string | null
+          upload_session_started_at?: string | null
+          upload_total_bytes?: number | null
           user_id?: string
         }
         Relationships: [
