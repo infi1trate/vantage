@@ -3,12 +3,18 @@
  * 
  * Fixed footer showing background processing jobs.
  * Persists across navigation, lightweight, responsive.
+ * 
+ * Design:
+ * - Collapsed: "Processing video (1)" + spinner + chevron
+ * - Expanded: list of jobs with progress, status, actions
+ * - xs/sm: full-width sheet style
+ * - lg+: docked panel at bottom-right
  */
 
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useProcessing } from "@/contexts/ProcessingContext";
-import { ProcessingJob, ProcessingStatus } from "@/lib/processingJobs";
+import { ProcessingJob } from "@/lib/processingJobs";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { 
@@ -22,9 +28,17 @@ import {
   Eye,
   Upload,
   HardDrive,
+  AlertCircle,
+  EyeOff,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "@/lib/localSessionStorage";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Memoized job item to prevent re-render storms
 const ProcessingJobItem = memo(function ProcessingJobItem({
@@ -32,32 +46,38 @@ const ProcessingJobItem = memo(function ProcessingJobItem({
   onDismiss,
   onRetry,
   onCancel,
+  onHide,
+  compact = false,
 }: {
   job: ProcessingJob;
   onDismiss: (id: string) => void;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
+  onHide: (id: string) => void;
+  compact?: boolean;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
+  
   const isActive = job.status === "queued" || job.status === "processing" || job.status === "uploading";
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
+  const isCancelled = job.status === "cancelled";
   
-  // Use direct progress from job (set by ProcessingManager)
   const progress = job.progress;
-  
-  // Use step label from job
   const currentStageLabel = job.step || (job.status === "queued" ? "Queued" : "Processing");
   
   const statusIcon = useMemo(() => {
     switch (job.status) {
       case "completed":
-        return <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />;
+        return <CheckCircle2 className="h-4 w-4 text-vantage-success shrink-0" />;
       case "failed":
         return <XCircle className="h-4 w-4 text-destructive shrink-0" />;
       case "uploading":
         return <Upload className="h-4 w-4 text-primary animate-pulse shrink-0" />;
       case "processing":
         return <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />;
+      case "cancelled":
+        return <X className="h-4 w-4 text-muted-foreground shrink-0" />;
       default:
         return <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />;
     }
@@ -65,99 +85,174 @@ const ProcessingJobItem = memo(function ProcessingJobItem({
   
   return (
     <div className={cn(
-      "flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-colors",
-      "bg-card/50 border border-border/50",
-      isFailed && "border-destructive/30 bg-destructive/5"
+      "flex flex-col gap-1.5 p-3 rounded-lg transition-all duration-150",
+      "bg-card/80 border border-border/60",
+      isFailed && "border-destructive/40 bg-destructive/5",
+      isCompleted && "border-vantage-success/30 bg-vantage-success/5",
+      compact && "p-2"
     )}>
-      {statusIcon}
-      
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm truncate max-w-[120px] sm:max-w-[180px] md:max-w-[240px]">
-            {job.sessionTitle}
-          </span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">
-            {formatBytes(job.blobSize)}
-          </span>
+      <div className="flex items-center gap-2.5">
+        {statusIcon}
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "font-medium truncate",
+              compact ? "text-xs max-w-[100px]" : "text-sm max-w-[140px] sm:max-w-[200px] lg:max-w-[280px]"
+            )}>
+              {job.sessionTitle}
+            </span>
+            {!compact && (
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {formatBytes(job.blobSize)}
+              </span>
+            )}
+          </div>
         </div>
         
-        {isActive && (
-          <div className="mt-1.5 space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{currentStageLabel}</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <Progress value={progress} className="h-1" />
-          </div>
-        )}
-        
-        {isFailed && (
-          <p className="text-xs text-destructive mt-1 truncate">
-            {job.errorMessage || "Processing failed"}
-          </p>
-        )}
-        
-        {isCompleted && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {job.localSaveSuccess ? "Saved locally" : ""}
-            {job.cloudUploadSuccess ? " • Uploaded" : ""}
-          </p>
-        )}
+        {/* Actions */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {/* Completed: View & Annotate */}
+          {isCompleted && (
+            <Button
+              variant="default"
+              size="sm"
+              className={cn("h-7 text-xs", compact ? "px-2" : "px-3")}
+              asChild
+            >
+              <Link to={`/session/${job.sessionId}`}>
+                <Eye className="h-3.5 w-3.5 mr-1" />
+                {!compact && <span>View & Annotate</span>}
+                {compact && <span>View</span>}
+              </Link>
+            </Button>
+          )}
+          
+          {/* Failed: Retry + Details */}
+          {isFailed && (
+            <>
+              {job.retryCount < job.maxRetries && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => onRetry(job.id)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {!compact && <span className="ml-1.5">Retry</span>}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Retry processing</TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setShowDetails(!showDetails)}
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    {!compact && <span className="ml-1.5">Details</span>}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View error details</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+          
+          {/* Active: Hide + Cancel */}
+          {isActive && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground"
+                    onClick={() => onHide(job.id)}
+                  >
+                    <EyeOff className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Hide (continues in background)</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground hover:text-destructive"
+                    onClick={() => onCancel(job.id)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Cancel processing</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+          
+          {/* Completed/Failed/Cancelled: Dismiss */}
+          {(isCompleted || isFailed || isCancelled) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-muted-foreground"
+                  onClick={() => onDismiss(job.id)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Dismiss</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
       
-      {/* Actions */}
-      <div className="flex items-center gap-1 shrink-0">
-        {isCompleted && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            asChild
-          >
-            <Link to={`/session/${job.sessionId}`}>
-              <Eye className="h-3.5 w-3.5 mr-1" />
-              <span className="hidden sm:inline">View</span>
-            </Link>
-          </Button>
-        )}
-        
-        {isFailed && job.retryCount < job.maxRetries && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onRetry(job.id)}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        
-        {isActive && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-muted-foreground hover:text-destructive"
-            onClick={() => onCancel(job.id)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        
-        {(isCompleted || isFailed || job.status === "cancelled") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-muted-foreground"
-            onClick={() => onDismiss(job.id)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
+      {/* Progress bar for active jobs */}
+      {isActive && (
+        <div className="space-y-1 pl-6.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{currentStageLabel}</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <Progress value={progress} className="h-1.5" />
+        </div>
+      )}
+      
+      {/* Error details for failed jobs */}
+      {isFailed && showDetails && (
+        <div className="mt-1 pl-6.5">
+          <div className="flex items-start gap-2 p-2 rounded bg-destructive/10 border border-destructive/20">
+            <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+            <p className="text-xs text-destructive">
+              {job.errorMessage || "An unknown error occurred during processing."}
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Success info for completed jobs */}
+      {isCompleted && !compact && (
+        <div className="pl-6.5">
+          <p className="text-xs text-muted-foreground">
+            {job.localSaveSuccess && "Saved locally"}
+            {job.localSaveSuccess && job.cloudUploadSuccess && " • "}
+            {job.cloudUploadSuccess && "Uploaded to cloud"}
+          </p>
+        </div>
+      )}
     </div>
   );
 });
 
+// Main footer component
 export const ProcessingFooter = memo(function ProcessingFooter() {
   const { 
     jobs, 
@@ -171,128 +266,200 @@ export const ProcessingFooter = memo(function ProcessingFooter() {
     cancelJob,
   } = useProcessing();
   
+  // Track hidden jobs (still processing but not shown)
+  const [hiddenJobIds, setHiddenJobIds] = useState<Set<string>>(new Set());
+  
   const handleDismiss = useCallback((id: string) => dismissJob(id), [dismissJob]);
   const handleRetry = useCallback((id: string) => retryJob(id), [retryJob]);
   const handleCancel = useCallback((id: string) => cancelJob(id), [cancelJob]);
+  const handleHide = useCallback((id: string) => {
+    setHiddenJobIds(prev => new Set([...prev, id]));
+  }, []);
   
-  const activeCount = activeJobs.length;
+  // Filter out hidden active jobs
+  const visibleActiveJobs = useMemo(() => 
+    activeJobs.filter(j => !hiddenJobIds.has(j.id)),
+    [activeJobs, hiddenJobIds]
+  );
+  
+  // Failed jobs always show (not hideable)
+  const failedJobs = useMemo(() => 
+    jobs.filter(j => j.status === "failed"),
+    [jobs]
+  );
+  
+  const activeCount = visibleActiveJobs.length;
+  const failedCount = failedJobs.length;
   const hasCompleted = completedJobs.some(j => j.status === "completed");
-  const hasFailed = completedJobs.some(j => j.status === "failed");
+  const hasFailed = failedCount > 0;
+  
+  // Jobs to show (active + failed + recent completed)
+  const visibleJobs = useMemo(() => {
+    const active = visibleActiveJobs;
+    const failed = failedJobs;
+    const completed = completedJobs
+      .filter(j => j.status === "completed")
+      .slice(0, 3);
+    return [...active, ...failed, ...completed];
+  }, [visibleActiveJobs, failedJobs, completedJobs]);
   
   // Summary for collapsed state
   const summaryText = useMemo(() => {
     if (activeCount > 0) {
-      return `Processing ${activeCount} video${activeCount > 1 ? "s" : ""}...`;
+      return `Processing video${activeCount > 1 ? `s (${activeCount})` : ""}`;
     }
     if (hasFailed) {
-      return "Processing failed";
+      return `Processing failed (${failedCount})`;
     }
     if (hasCompleted) {
       return "Processing complete";
     }
     return "Processing";
-  }, [activeCount, hasCompleted, hasFailed]);
+  }, [activeCount, failedCount, hasCompleted, hasFailed]);
   
-  // Don't render if no jobs - AFTER all hooks
-  if (!isFooterVisible || jobs.length === 0) {
+  // Don't render if no visible jobs
+  if (!isFooterVisible || visibleJobs.length === 0) {
     return null;
   }
   
+  // Find latest completed job for quick action
+  const latestCompletedJob = completedJobs.find(j => j.status === "completed");
+  
   return (
-    <div 
-      className={cn(
-        "fixed bottom-0 left-0 right-0 z-50",
-        "bg-background/95 backdrop-blur-md border-t border-border",
-        "shadow-[0_-4px_20px_rgba(0,0,0,0.15)]",
-        "transition-all duration-200 ease-out",
-        // Responsive padding
-        "px-3 sm:px-4 md:px-6",
-        // Max height when expanded
-        isFooterExpanded ? "max-h-[50vh] sm:max-h-[40vh]" : "max-h-16"
-      )}
-    >
-      {/* Header - always visible */}
+    <>
+      {/* Spacer to prevent content overlap - add padding to body */}
       <div 
         className={cn(
-          "flex items-center justify-between py-3 cursor-pointer",
-          "hover:bg-muted/30 -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6",
-          "transition-colors"
-        )}
-        onClick={() => setFooterExpanded(!isFooterExpanded)}
-      >
-        <div className="flex items-center gap-2 sm:gap-3">
-          {activeCount > 0 ? (
-            <Loader2 className="h-4 w-4 text-primary animate-spin" />
-          ) : hasFailed ? (
-            <XCircle className="h-4 w-4 text-destructive" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          )}
-          
-          <span className="font-medium text-sm">{summaryText}</span>
-          
-          {jobs.length > 1 && (
-            <span className="text-xs text-muted-foreground">
-              ({jobs.length} total)
-            </span>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {/* Quick action for latest completed job */}
-          {!isFooterExpanded && hasCompleted && activeCount === 0 && (
-            <Button
-              variant="default"
-              size="sm"
-              className="h-7 text-xs"
-              asChild
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Link to={`/session/${completedJobs.find(j => j.status === "completed")?.sessionId}`}>
-                View & Annotate
-              </Link>
-            </Button>
-          )}
-          
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-            {isFooterExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronUp className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </div>
+          "fixed bottom-0 left-0 right-0 pointer-events-none",
+          isFooterExpanded ? "h-[50vh] lg:h-auto" : "h-14"
+        )} 
+        aria-hidden="true"
+      />
       
-      {/* Expanded content */}
-      {isFooterExpanded && (
-        <div className="pb-3 overflow-y-auto max-h-[calc(50vh-60px)] sm:max-h-[calc(40vh-60px)]">
-          <div className="space-y-2">
-            {/* Active jobs first */}
-            {activeJobs.map(job => (
-              <ProcessingJobItem
-                key={job.id}
-                job={job}
-                onDismiss={handleDismiss}
-                onRetry={handleRetry}
-                onCancel={handleCancel}
-              />
-            ))}
+      {/* Footer container */}
+      <div 
+        className={cn(
+          "fixed z-50 transition-all duration-200 ease-out",
+          // Mobile/tablet: full-width bottom sheet
+          "bottom-0 left-0 right-0",
+          // Desktop: docked panel at bottom-right when expanded
+          isFooterExpanded && "lg:left-auto lg:right-4 lg:bottom-4 lg:w-[420px] lg:rounded-xl",
+          // Background and border
+          "bg-background/95 backdrop-blur-md border-t border-border",
+          isFooterExpanded && "lg:border lg:shadow-2xl",
+          !isFooterExpanded && "shadow-[0_-4px_20px_rgba(0,0,0,0.12)]",
+          // Safe area inset for mobile
+          "pb-safe"
+        )}
+        role="region"
+        aria-label="Video processing status"
+      >
+        {/* Collapsed header bar - always visible */}
+        <div 
+          className={cn(
+            "flex items-center justify-between cursor-pointer",
+            "px-3 sm:px-4 lg:px-4 py-3",
+            "hover:bg-muted/40 active:bg-muted/60",
+            "transition-colors duration-100",
+            isFooterExpanded && "border-b border-border/50"
+          )}
+          onClick={() => setFooterExpanded(!isFooterExpanded)}
+          role="button"
+          aria-expanded={isFooterExpanded}
+          aria-controls="processing-jobs-list"
+        >
+          <div className="flex items-center gap-2.5">
+            {/* Status indicator */}
+            {activeCount > 0 ? (
+              <div className="relative">
+                <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                {activeCount > 1 && (
+                  <span className="absolute -top-1 -right-1 h-3 w-3 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
+                    {activeCount}
+                  </span>
+                )}
+              </div>
+            ) : hasFailed ? (
+              <div className="relative">
+                <XCircle className="h-4 w-4 text-destructive" />
+                {failedCount > 1 && (
+                  <span className="absolute -top-1 -right-1 h-3 w-3 text-[9px] font-bold bg-destructive text-destructive-foreground rounded-full flex items-center justify-center">
+                    {failedCount}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <CheckCircle2 className="h-4 w-4 text-vantage-success" />
+            )}
             
-            {/* Then completed/failed */}
-            {completedJobs.slice(0, 5).map(job => (
-              <ProcessingJobItem
-                key={job.id}
-                job={job}
-                onDismiss={handleDismiss}
-                onRetry={handleRetry}
-                onCancel={handleCancel}
-              />
-            ))}
+            <span className="font-medium text-sm">{summaryText}</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Quick action for latest completed job (collapsed state only) */}
+            {!isFooterExpanded && hasCompleted && activeCount === 0 && !hasFailed && latestCompletedJob && (
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7 px-3 text-xs"
+                asChild
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Link to={`/session/${latestCompletedJob.sessionId}`}>
+                  View & Annotate
+                </Link>
+              </Button>
+            )}
+            
+            {/* Expand/collapse chevron */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-7 w-7 p-0"
+              tabIndex={-1}
+            >
+              {isFooterExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
-      )}
-    </div>
+        
+        {/* Expanded job list */}
+        {isFooterExpanded && (
+          <div 
+            id="processing-jobs-list"
+            className={cn(
+              "overflow-y-auto overscroll-contain",
+              "px-3 sm:px-4 lg:px-4 py-3",
+              // Height constraints
+              "max-h-[calc(50vh-60px)] sm:max-h-[40vh] lg:max-h-[50vh]"
+            )}
+          >
+            <div className="space-y-2">
+              {visibleJobs.map(job => (
+                <ProcessingJobItem
+                  key={job.id}
+                  job={job}
+                  onDismiss={handleDismiss}
+                  onRetry={handleRetry}
+                  onCancel={handleCancel}
+                  onHide={handleHide}
+                />
+              ))}
+              
+              {visibleJobs.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No active processing jobs
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 });
 

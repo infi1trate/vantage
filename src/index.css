@@ -423,3 +423,25 @@
     opacity: 1 !important;
   }
 }
+
+/* Safe area padding for notched devices */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Processing footer content spacer */
+.has-processing-footer {
+  padding-bottom: 4rem;
+}
+
+.has-processing-footer-expanded {
+  padding-bottom: 50vh;
+}
+
+@media (min-width: 1024px) {
+  .has-processing-footer-expanded {
+    padding-bottom: 4rem;
+  }
+}
