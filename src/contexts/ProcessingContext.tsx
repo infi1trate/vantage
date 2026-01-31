@@ -38,6 +38,8 @@ interface ProcessingContextValue {
     hasCam: boolean;
     hasMic: boolean;
     hasSystemAudio: boolean;
+    hasGameAudio?: boolean;
+    audioMixSettings?: Record<string, number> | null;
     userId?: string;
     gameName?: string | null;
   }) => ProcessingJob;
@@ -148,6 +150,8 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
     hasCam: boolean;
     hasMic: boolean;
     hasSystemAudio: boolean;
+    hasGameAudio?: boolean;
+    audioMixSettings?: Record<string, number> | null;
     userId?: string;
     gameName?: string | null;
   }): ProcessingJob => {

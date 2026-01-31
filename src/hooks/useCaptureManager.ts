@@ -66,6 +66,10 @@ export interface RecordedData {
   facecamBlob: Blob | null;
   systemAudioBlob: Blob | null;
   duration: number;
+  /** Whether system/game audio was available in the recording */
+  hasGameAudio: boolean;
+  /** Applied audio mix settings (for session metadata) */
+  audioMixSettings: Record<string, number> | null;
 }
 
 // Re-export CaptureError type for consumers
@@ -114,7 +118,7 @@ export interface UseCaptureManagerReturn {
   captureThumbnailBlob: () => Promise<Blob | null>;
   
   // Config info for saving
-  captureConfig: { hasCam: boolean; hasMic: boolean; hasSystemAudio: boolean };
+  captureConfig: { hasCam: boolean; hasMic: boolean; hasSystemAudio: boolean; hasGameAudio: boolean };
   
   // Debug info (for diagnostics panel)
   debugInfo: {
@@ -967,6 +971,8 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         facecamBlob: null,
         systemAudioBlob: null,
         duration: finalDuration,
+        hasGameAudio: composite.hasGameAudio,
+        audioMixSettings: composite.getAppliedMixSettings(),
       };
     } catch (err: any) {
       console.error("Failed to finalize recording:", err);
@@ -1086,6 +1092,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       hasCam: config.enableFacecam && facecam.stream !== null,
       hasMic: microphone.stream !== null,
       hasSystemAudio: config.enableSystemAudio,
+      hasGameAudio: composite.hasGameAudio,
     },
     
     // Debug info for diagnostics panel

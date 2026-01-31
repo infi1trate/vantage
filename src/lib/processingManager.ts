@@ -153,6 +153,8 @@ class ProcessingManager {
     hasCam: boolean;
     hasMic: boolean;
     hasSystemAudio: boolean;
+    hasGameAudio?: boolean;
+    audioMixSettings?: Record<string, number> | null;
     userId?: string;
     gameName?: string | null;
   }): ProcessingJob {
@@ -167,6 +169,8 @@ class ProcessingManager {
       hasCam: params.hasCam,
       hasMic: params.hasMic,
       hasSystemAudio: params.hasSystemAudio,
+      hasGameAudio: params.hasGameAudio,
+      audioMixSettings: params.audioMixSettings || undefined,
       userId: params.userId,
     });
     
@@ -579,13 +583,22 @@ class ProcessingManager {
               videoAssetId = assetData.id;
             }
             
-            // Update session status
+            // Update session status with audio mix metadata
+            const metadata: Record<string, any> = {};
+            if (job.audioMixSettings) {
+              metadata.audio_mix = job.audioMixSettings;
+            }
+            if (job.hasGameAudio !== undefined) {
+              metadata.has_game_audio = job.hasGameAudio;
+            }
+            
             await supabase
               .from("capture_sessions")
               .update({
                 status: "ready",
                 duration_seconds: job.duration,
                 thumbnail_url: thumbnailDataUrl || null,
+                metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
               })
               .eq("id", job.sessionId);
           }
