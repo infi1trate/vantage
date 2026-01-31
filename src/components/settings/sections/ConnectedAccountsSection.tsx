@@ -19,6 +19,7 @@ import { Loader2, Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { startDropboxOAuth, disconnectDropbox } from "@/lib/dropboxOAuth";
+import { DropboxSyncStatus } from "./DropboxSyncStatus";
 
 interface ConnectedAccount {
   id: string;
@@ -333,8 +334,14 @@ export function ConnectedAccountsSection() {
     );
   }
 
+  // Check if Dropbox is connected for sync status display
+  const dropboxConnected = isConnected("dropbox");
+
   return (
     <div className="space-y-6">
+      {/* Dropbox Sync Status - only shown when connected */}
+      <DropboxSyncStatus isConnected={dropboxConnected} />
+
       <SettingsCard 
         title="Connected accounts" 
         description="Connect your accounts to import identity and share exports faster."
