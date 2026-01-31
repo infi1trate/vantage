@@ -21,7 +21,7 @@ import {
   getCaptureSession,
   getAnnotations,
   getVoiceNotes,
-  getVideoAssets,
+  getVideoAssetsWithFreshUrls,
   getAudioTracks,
   getFacecamTracks,
   deleteAnnotation,
@@ -218,7 +218,7 @@ export default function SessionReview() {
 
       const [sessionData, videoAssetsData, audioTracksData, facecamTracksData, annotationsData, voiceNotesData, dropboxSyncData] = await Promise.all([
         getCaptureSession(sessionId!),
-        getVideoAssets(sessionId!).catch(() => []),
+        getVideoAssetsWithFreshUrls(sessionId!).catch(() => []),
         getAudioTracks(sessionId!).catch(() => []),
         getFacecamTracks(sessionId!).catch(() => []),
         getAnnotations(sessionId!),
