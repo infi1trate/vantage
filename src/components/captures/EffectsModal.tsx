@@ -475,7 +475,7 @@ export function EffectsModal({
                           disabled={disabled}
                         >
                           <Sparkles className="h-3.5 w-3.5" />
-                          <span>Generate with AI</span>
+                          <span>AI background</span>
                           <ChevronDown className={cn(
                             "h-3 w-3 ml-auto transition-transform duration-150",
                             aiExpanded && "rotate-180"
@@ -511,7 +511,7 @@ export function EffectsModal({
                                 "h-3 w-3 mr-1.5",
                                 aiGenerating && "animate-pulse"
                               )} />
-                              {aiGenerating ? "Creating background..." : "Generate"}
+                              {aiGenerating ? "Generating..." : "Generate"}
                             </Button>
                           </div>
                         )}
