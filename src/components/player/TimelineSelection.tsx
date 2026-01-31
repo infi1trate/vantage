@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SuggestionMarkers, AnnotationSuggestion } from "./SuggestionMarkers";
 import { recordMetric } from "@/lib/performanceMetrics";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Smile, MessageCircle, Mic } from "lucide-react";
+import { Smile, MessageCircle, Mic, Circle } from "lucide-react";
 
 export interface SelectionState {
   type: "point" | "range" | null;
@@ -60,14 +60,34 @@ const TimelineMarker = memo(function TimelineMarker({
   }, [id, time, onSeek, onMarkerClick]);
 
   return (
-    <button
-      className={cn(
-        "absolute top-2 bottom-6 w-1 rounded-full transition-transform hover:scale-x-150 z-10",
-        color || "bg-primary"
-      )}
-      style={{ left: `${(time / duration) * 100}%` }}
-      onClick={handleClick}
-    />
+    <Tooltip delayDuration={100}>
+      <TooltipTrigger asChild>
+        <button
+          className={cn(
+            // Outer touch target: 44px for accessibility
+            "absolute top-0 w-11 h-11 -translate-x-1/2 transition-all z-15",
+            "flex items-center justify-center",
+            "hover:scale-110 active:scale-95",
+            "touch-manipulation"
+          )}
+          style={{ left: `${(time / duration) * 100}%` }}
+          onClick={handleClick}
+        >
+          {/* Visual indicator - solid diamond shape for Moments */}
+          <div
+            className={cn(
+              "w-3 h-3 rotate-45 shadow-md transition-transform",
+              color || "bg-primary",
+              // High contrast border for visibility
+              "ring-1 ring-background/50"
+            )}
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs" sideOffset={8}>
+        <span className="font-mono text-[10px]">Moment</span>
+      </TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -112,24 +132,24 @@ const TimelineReactionMarker = memo(function TimelineReactionMarker({
           style={{ left: `${(marker.time / duration) * 100}%` }}
           onClick={handleClick}
         >
-          {/* Visual indicator - smaller than touch target */}
+          {/* Visual indicator - outlined circle for Reactions (distinct from solid Moments) */}
           <div
             className={cn(
-              "w-6 h-6 rounded-full flex items-center justify-center",
-              // Subtle glow effect consistent with Vantage branding
+              "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+              // Outlined style with higher contrast for reactions
               isEmoji 
-                ? "bg-card/90 border border-border/50 shadow-sm group-hover:shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]"
+                ? "bg-background/95 border-2 border-accent/60 shadow-md hover:shadow-lg hover:border-accent"
                 : isVoice
-                  ? "bg-accent/20 border border-accent/30"
-                  : "bg-muted/80 border border-border/40"
+                  ? "bg-background/90 border-2 border-accent/50 shadow-md"
+                  : "bg-background/90 border-2 border-muted-foreground/40 shadow-md"
             )}
           >
             {isEmoji ? (
-              <span className="text-sm leading-none">{marker.content}</span>
+              <span className="text-base leading-none">{marker.content}</span>
             ) : isVoice ? (
-              <Mic className="h-3 w-3 text-accent" />
+              <Mic className="h-3.5 w-3.5 text-accent" />
             ) : (
-              <MessageCircle className="h-3 w-3 text-muted-foreground" />
+              <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </div>
         </button>
