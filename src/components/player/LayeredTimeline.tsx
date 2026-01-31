@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback, memo } from "react";
 import { TimelineEvent, Annotation, VoiceNote } from "@/lib/captures";
 import { 
   Crosshair, 
@@ -74,6 +74,64 @@ const EVENT_COLORS: Record<string, string> = {
   objective: "bg-accent",
 };
 
+// Memoized track item to prevent re-renders
+const TrackItem = memo(function TrackItem({
+  item,
+  duration,
+  onSeek,
+}: {
+  item: TimelineItem;
+  duration: number;
+  onSeek: (time: number) => void;
+}) {
+  const startPercent = (item.startTime / duration) * 100;
+  const endPercent = item.endTime 
+    ? ((item.endTime - item.startTime) / duration) * 100 
+    : 1;
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSeek(item.startTime);
+  }, [item.startTime, onSeek]);
+
+  return (
+    <div
+      className={cn(
+        "absolute top-1 h-4 rounded-sm flex items-center justify-center",
+        "hover:ring-2 hover:ring-primary/50 transition-all cursor-pointer z-10",
+        item.color
+      )}
+      style={{
+        left: `${startPercent}%`,
+        width: item.endTime ? `${endPercent}%` : "16px",
+        minWidth: "16px",
+      }}
+      onClick={handleClick}
+      title={item.label}
+    >
+      {item.icon && (
+        <span className="text-white drop-shadow-sm">
+          {item.icon}
+        </span>
+      )}
+    </div>
+  );
+});
+
+// Memoized playhead - uses ref to avoid re-renders
+const Playhead = memo(function Playhead({ 
+  percentage 
+}: { 
+  percentage: number;
+}) {
+  return (
+    <div 
+      className="absolute top-0 w-0.5 h-full bg-primary z-20 pointer-events-none"
+      style={{ left: `${percentage}%` }}
+    />
+  );
+});
+
 export function LayeredTimeline({
   duration,
   currentTime,
@@ -147,13 +205,13 @@ export function LayeredTimeline({
     return result;
   }, [events, annotations, voiceNotes, showTracks]);
 
-  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>, trackElement: HTMLDivElement) => {
+  const handleTrackClick = useCallback((e: React.MouseEvent<HTMLDivElement>, trackElement: HTMLDivElement) => {
     const rect = trackElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = x / rect.width;
     const time = percentage * duration;
     onSeek(Math.max(0, Math.min(duration, time)));
-  };
+  }, [duration, onSeek]);
 
   const progressPercentage = (currentTime / duration) * 100;
 
@@ -177,46 +235,18 @@ export function LayeredTimeline({
               style={{ width: `${progressPercentage}%` }}
             />
             
-            {/* Playhead */}
-            <div 
-              className="absolute top-0 w-0.5 h-full bg-primary z-20 pointer-events-none"
-              style={{ left: `${progressPercentage}%` }}
-            />
+            {/* Playhead - memoized */}
+            <Playhead percentage={progressPercentage} />
 
-            {/* Items */}
-            {track.items.map((item) => {
-              const startPercent = (item.startTime / duration) * 100;
-              const endPercent = item.endTime 
-                ? ((item.endTime - item.startTime) / duration) * 100 
-                : 1;
-
-              return (
-                <div
-                  key={item.id}
-                  className={cn(
-                    "absolute top-1 h-4 rounded-sm flex items-center justify-center",
-                    "hover:ring-2 hover:ring-primary/50 transition-all cursor-pointer z-10",
-                    item.color
-                  )}
-                  style={{
-                    left: `${startPercent}%`,
-                    width: item.endTime ? `${endPercent}%` : "16px",
-                    minWidth: "16px",
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSeek(item.startTime);
-                  }}
-                  title={item.label}
-                >
-                  {item.icon && (
-                    <span className="text-white drop-shadow-sm">
-                      {item.icon}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {/* Items - memoized components */}
+            {track.items.map((item) => (
+              <TrackItem
+                key={item.id}
+                item={item}
+                duration={duration}
+                onSeek={onSeek}
+              />
+            ))}
 
             {/* Empty state */}
             {track.items.length === 0 && (
