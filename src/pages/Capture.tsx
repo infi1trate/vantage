@@ -48,7 +48,7 @@ export default function CapturePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
-  const { queueProcessing } = useProcessing();
+  const { queueProcessing, setCapturing } = useProcessing();
   const navigate = useNavigate();
   
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -92,6 +92,11 @@ export default function CapturePage() {
     capture.captureState === "recording" || 
     capture.captureState === "paused" || 
     capture.captureState === "finalizing";
+
+  // Notify ProcessingManager of capture state to pause heavy processing during recording
+  useEffect(() => {
+    setCapturing(isRecordingOrFinalizing);
+  }, [isRecordingOrFinalizing, setCapturing]);
 
   // Block navigation when recording
   const blocker = useBlocker(
