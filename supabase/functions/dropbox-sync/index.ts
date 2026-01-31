@@ -30,6 +30,30 @@ interface DropboxTokenResponse {
   uid?: string;
 }
 
+/**
+ * Sanitize a session title for use as a Dropbox filename
+ * - Removes invalid characters (<>:"/\|?*)
+ * - Replaces spaces with underscores
+ * - Limits length to 80 characters
+ * - Appends short session ID for uniqueness
+ */
+function sanitizeFilename(title: string, sessionId: string): string {
+  const sanitized = title
+    .replace(/[<>:"/\\|?*]/g, "")  // Remove invalid filename characters
+    .replace(/\s+/g, "_")          // Replace spaces with underscores
+    .replace(/_+/g, "_")           // Collapse multiple underscores
+    .replace(/^_|_$/g, "")         // Remove leading/trailing underscores
+    .slice(0, 80);                 // Limit length
+  
+  // Use first 8 chars of UUID for uniqueness
+  const shortId = sessionId.split("-")[0];
+  
+  // Fallback if title becomes empty after sanitization
+  const finalTitle = sanitized || "Recording";
+  
+  return `${finalTitle}_${shortId}`;
+}
+
 interface ProvisioningResult {
   success: boolean;
   error?: string;
@@ -719,8 +743,9 @@ async function executeAutoSync(
         onConflict: "session_id",
       });
 
-    // Build Dropbox path: /Apps/Vantage/Recordings/{session_id}.webm
-    const dropboxPath = `/Apps/Vantage/Recordings/${sessionId}.webm`;
+    // Build Dropbox path with human-readable filename
+    const filename = sanitizeFilename(session?.title || "Recording", sessionId);
+    const dropboxPath = `/Apps/Vantage/Recordings/${filename}.webm`;
 
     // Download video from storage
     console.log(`[DropboxSync] Downloading video for auto-sync`);
@@ -876,8 +901,9 @@ async function handleSync(
       onConflict: "session_id",
     });
 
-  // Dropbox path: /Apps/Vantage/Recordings/{session_id}.webm
-  const dropboxPath = `/Apps/Vantage/Recordings/${sessionId}.webm`;
+  // Build Dropbox path with human-readable filename
+  const filename = sanitizeFilename(session?.title || "Recording", sessionId);
+  const dropboxPath = `/Apps/Vantage/Recordings/${filename}.webm`;
 
   try {
     // Download video from storage
