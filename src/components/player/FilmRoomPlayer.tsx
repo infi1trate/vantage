@@ -5,6 +5,7 @@ import { LayeredTimeline } from "./LayeredTimeline";
 import { DrawingCanvas } from "./DrawingCanvas";
 import { PlaybackFallbackCard } from "./PlaybackFallbackCard";
 import { useVoiceAnnotationSync } from "@/hooks/useVoiceAnnotationSync";
+import { useVideoRetry, isPermanentError } from "@/hooks/useVideoRetry";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
@@ -124,6 +125,29 @@ export function FilmRoomPlayer({
   const [voiceSyncEnabled, setVoiceSyncEnabled] = useState(true);
   const [videoReady, setVideoReady] = useState(false);
   const [videoDecodeError, setVideoDecodeError] = useState<VideoDecodeError | null>(null);
+
+  // Video retry logic for transient errors
+  const {
+    state: retryState,
+    handleError: handleRetryError,
+    videoKey,
+    forceRetry,
+  } = useVideoRetry(videoUrl, {
+    maxAttempts: 3,
+    baseDelay: 500,
+    onRetry: (attempt) => {
+      if (import.meta.env.DEV) {
+        console.log(`[FilmRoomPlayer] Retry attempt ${attempt}`);
+      }
+      // Clear error state for retry
+      setVideoDecodeError(null);
+    },
+    onExhausted: (lastError) => {
+      if (import.meta.env.DEV) {
+        console.log("[FilmRoomPlayer] All retries exhausted");
+      }
+    },
+  });
   
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -166,11 +190,23 @@ export function FilmRoomPlayer({
     onVideoLoaded?.(video.duration);
   }, [onVideoLoaded]);
 
-  // Video decode/playback error
+  // Video decode/playback error with retry logic
   const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     const mediaError = video.error;
     
+    // Try to recover from transient errors
+    const isRetrying = handleRetryError(mediaError);
+    
+    // If retrying, don't show error state yet
+    if (isRetrying) {
+      if (import.meta.env.DEV) {
+        console.log("[FilmRoomPlayer] Transient error, retrying...");
+      }
+      return;
+    }
+    
+    // Build error info for permanent errors or exhausted retries
     let errorType: VideoDecodeError["type"] = "unknown";
     let message = "An unknown error occurred while loading the video.";
     
@@ -182,7 +218,7 @@ export function FilmRoomPlayer({
           break;
         case MediaError.MEDIA_ERR_NETWORK:
           errorType = "network";
-          message = "A network error occurred while loading the video.";
+          message = "A network error occurred while loading the video. Please check your connection and try again.";
           break;
         case MediaError.MEDIA_ERR_DECODE:
           errorType = "decode";
@@ -200,7 +236,7 @@ export function FilmRoomPlayer({
     setVideoDecodeError(error);
     setVideoReady(false);
     onVideoError?.(error);
-  }, [onVideoError]);
+  }, [onVideoError, handleRetryError]);
 
 
   // Pause video when opening drawing canvas
@@ -520,12 +556,16 @@ export function FilmRoomPlayer({
             videoMeta={videoMeta}
             sessionDuration={duration}
             onDownload={onDownloadRequest}
+            onRetry={forceRetry}
+            isRetrying={retryState.isRetrying}
+            canRetry={videoDecodeError.type === "network" || videoDecodeError.type === "unknown"}
           />
         )}
 
-        {/* Video or placeholder */}
-        {videoUrl && !videoDecodeError ? (
+        {/* Video or placeholder - key forces remount on retry */}
+        {videoUrl && !videoDecodeError && !retryState.isRetrying ? (
           <video
+            key={`video-${videoKey}`}
             ref={videoRef}
             src={videoUrl}
             className="w-full h-full object-contain"
@@ -536,6 +576,18 @@ export function FilmRoomPlayer({
             onError={handleVideoError}
             onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
           />
+        ) : retryState.isRetrying ? (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted via-background to-muted">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+                <Video className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-muted-foreground text-sm">Retrying playback...</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                Attempt {retryState.attempt} of {retryState.maxAttempts}
+              </p>
+            </div>
+          </div>
         ) : !videoUrl ? (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted via-background to-muted">
             <div className="text-center">
