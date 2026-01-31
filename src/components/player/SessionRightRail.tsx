@@ -4,19 +4,19 @@ import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { CoachSection } from "./rail/CoachSection";
-import { AnnotationsSection } from "./rail/AnnotationsSection";
+import { ReactionsSection } from "./rail/ReactionsSection";
 import { CommentsSection } from "./rail/CommentsSection";
 import { HighlightsSection } from "./rail/HighlightsSection";
 import { 
   Brain, 
-  Bookmark, 
+  Smile, 
   MessageSquare, 
   Star,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type RailSection = "coach" | "annotations" | "comments" | "highlights";
+export type RailSection = "coach" | "reactions" | "comments" | "highlights";
 
 interface SessionRightRailProps {
   sessionId: string;
@@ -37,6 +37,9 @@ interface SessionRightRailProps {
   // Comments (optional feature flag)
   commentsEnabled?: boolean;
   onSeekTo?: (time: number) => void;
+  // Reactions
+  onCreateReaction?: (type: "emoji" | "text" | "voice", content: string, timestamp: number) => void;
+  onOpenVoice?: () => void;
 }
 
 export const SessionRightRail = memo(function SessionRightRail({
@@ -56,6 +59,8 @@ export const SessionRightRail = memo(function SessionRightRail({
   coachError,
   commentsEnabled = false,
   onSeekTo,
+  onCreateReaction,
+  onOpenVoice,
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
@@ -97,9 +102,9 @@ export const SessionRightRail = memo(function SessionRightRail({
       count: momentCount,
     },
     { 
-      id: "annotations", 
-      label: "Notes", 
-      icon: Bookmark,
+      id: "reactions", 
+      label: "Reactions", 
+      icon: Smile,
       count: annotationCount,
     },
     { 
@@ -177,8 +182,8 @@ export const SessionRightRail = memo(function SessionRightRail({
           />
         </TabsContent>
 
-        <TabsContent value="annotations" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <AnnotationsSection
+        <TabsContent value="reactions" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
+          <ReactionsSection
             annotations={annotations.filter(a => 
               !["kill", "death", "highlight"].includes(a.annotation_type)
             )}
@@ -188,6 +193,8 @@ export const SessionRightRail = memo(function SessionRightRail({
             onVoiceNoteClick={onVoiceNoteClick}
             onMarkerClick={onMarkerClick}
             onAnnotationDelete={onAnnotationDelete}
+            onCreateReaction={onCreateReaction}
+            onOpenVoice={onOpenVoice}
           />
         </TabsContent>
 
