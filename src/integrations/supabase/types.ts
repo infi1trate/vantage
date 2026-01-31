@@ -911,6 +911,10 @@ export type Database = {
         Row: {
           allow_ai_analysis: boolean | null
           auto_skip_dead_time: boolean | null
+          camera_device_id: string | null
+          camera_fps: string | null
+          camera_mirror: boolean | null
+          camera_resolution: string | null
           created_at: string
           default_game: string | null
           default_playback_speed: number | null
@@ -932,6 +936,10 @@ export type Database = {
         Insert: {
           allow_ai_analysis?: boolean | null
           auto_skip_dead_time?: boolean | null
+          camera_device_id?: string | null
+          camera_fps?: string | null
+          camera_mirror?: boolean | null
+          camera_resolution?: string | null
           created_at?: string
           default_game?: string | null
           default_playback_speed?: number | null
@@ -953,6 +961,10 @@ export type Database = {
         Update: {
           allow_ai_analysis?: boolean | null
           auto_skip_dead_time?: boolean | null
+          camera_device_id?: string | null
+          camera_fps?: string | null
+          camera_mirror?: boolean | null
+          camera_resolution?: string | null
           created_at?: string
           default_game?: string | null
           default_playback_speed?: number | null
