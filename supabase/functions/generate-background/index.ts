@@ -25,6 +25,13 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    // Normalize user input into an optimized background prompt
+    // Rules: wide DOF, soft lighting, no focal subjects, no text/logos, background plate aesthetic
+    const normalizedPrompt = `A softly lit, wide-angle ${prompt.toLowerCase().trim()} environment with subtle depth and low contrast. Blurred background plate aesthetic, no people, no faces, no text, no logos, no readable objects, no focal subjects. Designed as a clean video call background with gentle ambient lighting and muted tones.`;
+    
+    console.log("[generate-background] User input:", prompt);
+    console.log("[generate-background] Normalized prompt:", normalizedPrompt);
+
     // Generate a background image using the image generation model
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -37,7 +44,7 @@ serve(async (req) => {
         messages: [
           {
             role: "user",
-            content: `Generate a simple, clean background image suitable for video calls or streaming. The background should be: ${prompt}. Make it visually appealing but not distracting - it will appear behind a person on camera. No text, no people, just the background environment.`,
+            content: normalizedPrompt,
           },
         ],
         modalities: ["image", "text"],
