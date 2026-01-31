@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
 import { SessionCard } from "@/components/library/SessionCard";
+import { ProcessingSessionCard } from "@/components/library/ProcessingSessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { SessionWithAssets } from "@/lib/sessionLibrary";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
@@ -47,6 +49,9 @@ export default function SessionLibrary() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   
+  // Processing jobs from context
+  const { activeJobs, cancelJob, retryJob } = useProcessing();
+  
   // Use React Query for cloud sessions - automatic caching and deduplication
   const { 
     data: cloudSessions = [], 
@@ -69,6 +74,15 @@ export default function SessionLibrary() {
 
   // Combined loading state
   const loading = localLoading || (!!user && cloudLoading);
+  
+  // Get processing jobs that aren't yet in local sessions (avoid duplicates)
+  const processingJobsToShow = useMemo(() => {
+    const localSessionIds = new Set(localSessions.map(s => s.id));
+    return activeJobs.filter(job => 
+      !localSessionIds.has(job.sessionId) && 
+      (job.status === "queued" || job.status === "processing" || job.status === "uploading" || job.status === "failed")
+    );
+  }, [activeJobs, localSessions]);
 
   useEffect(() => {
     loadLocalSessions();
@@ -174,18 +188,20 @@ export default function SessionLibrary() {
     return result;
   }, [cloudSessions, searchQuery, sortBy, filterStatus, filterVisibility]);
 
-  // Stats
+  // Stats - include processing jobs in count
   const localStats = useMemo(() => {
     const totalDuration = localSessions.reduce((acc, s) => acc + s.duration, 0);
+    const processingDuration = processingJobsToShow.reduce((acc, j) => acc + j.duration, 0);
     const uniqueGames = new Set(localSessions.filter(s => s.gameName).map(s => s.gameName)).size;
     
     return {
-      total: localSessions.length,
-      totalDuration,
+      total: localSessions.length + processingJobsToShow.length,
+      processing: processingJobsToShow.length,
+      totalDuration: totalDuration + processingDuration,
       uniqueGames,
       storageUsed: storageUsage.totalBytes,
     };
-  }, [localSessions, storageUsage]);
+  }, [localSessions, processingJobsToShow, storageUsage]);
 
   const cloudStats = useMemo(() => {
     const totalDuration = cloudSessions.reduce((acc, s) => acc + s.duration_seconds, 0);
@@ -362,11 +378,11 @@ export default function SessionLibrary() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : filteredLocalSessions.length === 0 ? (
+            ) : filteredLocalSessions.length === 0 && processingJobsToShow.length === 0 ? (
               <Card className="p-12 bg-card border-border/50 border-dashed">
                 <div className="text-center">
                   <Video className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                  {localSessions.length === 0 ? (
+                  {localSessions.length === 0 && processingJobsToShow.length === 0 ? (
                     <>
                       <h3 className="text-lg font-semibold mb-2">No recordings yet</h3>
                       <p className="text-muted-foreground mb-6">
@@ -392,6 +408,17 @@ export default function SessionLibrary() {
               </Card>
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {/* Processing jobs shown first */}
+                {processingJobsToShow.map((job) => (
+                  <ProcessingSessionCard
+                    key={`processing-${job.id}`}
+                    job={job}
+                    viewMode="grid"
+                    onCancel={cancelJob}
+                    onRetry={retryJob}
+                  />
+                ))}
+                {/* Then completed local sessions */}
                 {filteredLocalSessions.map((session) => (
                   <SessionCard 
                     key={session.id} 
@@ -403,6 +430,17 @@ export default function SessionLibrary() {
               </div>
             ) : (
               <div className="space-y-3">
+                {/* Processing jobs shown first */}
+                {processingJobsToShow.map((job) => (
+                  <ProcessingSessionCard
+                    key={`processing-${job.id}`}
+                    job={job}
+                    viewMode="list"
+                    onCancel={cancelJob}
+                    onRetry={retryJob}
+                  />
+                ))}
+                {/* Then completed local sessions */}
                 {filteredLocalSessions.map((session) => (
                   <SessionCard 
                     key={session.id} 
