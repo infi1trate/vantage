@@ -176,8 +176,8 @@ const AspectButton = memo(function AspectButton({
   );
 });
 
-// Export status type
-type ExportStatus = "idle" | "exporting" | "complete" | "error";
+// Export status type with specific phases
+type ExportPhase = "idle" | "preparing" | "exporting" | "complete" | "error";
 
 // Reel Preview Component - shown after generation
 // Minimal controls only: play/pause, mute. No scrubbing or editing.
@@ -195,12 +195,22 @@ function ReelPreviewContent({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   
-  // Export state
-  const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
+  // Export state with phases
+  const [exportPhase, setExportPhase] = useState<ExportPhase>("idle");
   const [exportProgress, setExportProgress] = useState(0);
 
   const ratioConfig = ASPECT_RATIOS.find(r => r.value === reel.aspectRatio) || ASPECT_RATIOS[0];
   const AspectIcon = ratioConfig.icon;
+
+  // Phase labels for user feedback
+  const getPhaseLabel = useCallback(() => {
+    switch (exportPhase) {
+      case "preparing": return "Preparing reel…";
+      case "exporting": return "Exporting…";
+      case "complete": return "Ready to download";
+      default: return "";
+    }
+  }, [exportPhase]);
 
   // Autoplay muted on desktop
   useEffect(() => {
@@ -236,47 +246,54 @@ function ReelPreviewContent({
     setIsMuted(!isMuted);
   }, [isMuted]);
 
-  // Export with inline progress
+  // Export with phased progress
   const handleExport = useCallback(async () => {
-    if (exportStatus === "exporting") return;
-    
-    setExportStatus("exporting");
-    setExportProgress(0);
-    
-    // Simulate export progress (replace with actual export logic)
-    const progressInterval = setInterval(() => {
-      setExportProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(progressInterval);
-          return prev;
-        }
-        return prev + Math.random() * 15;
-      });
-    }, 200);
+    if (exportPhase !== "idle") return;
     
     try {
-      // Simulate export time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Phase 1: Preparing
+      setExportPhase("preparing");
+      setExportProgress(0);
       
-      clearInterval(progressInterval);
+      // Simulate preparation (assembling clips)
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setExportProgress(25);
+      
+      // Phase 2: Exporting
+      setExportPhase("exporting");
+      
+      // Simulate export progress
+      const progressSteps = [40, 55, 70, 85, 95];
+      for (const step of progressSteps) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        setExportProgress(step);
+      }
+      
+      // Final step
+      await new Promise(resolve => setTimeout(resolve, 400));
       setExportProgress(100);
-      setExportStatus("complete");
       
-      toast.success("Reel exported!", {
-        description: "Your reel is ready to share",
-      });
+      // Phase 3: Complete
+      setExportPhase("complete");
+      
     } catch (error) {
-      clearInterval(progressInterval);
-      setExportStatus("error");
+      setExportPhase("error");
       toast.error("Export failed", {
         description: "Please try again",
       });
     }
-  }, [exportStatus]);
+  }, [exportPhase]);
+
+  // Download the exported file
+  const handleDownload = useCallback(() => {
+    // In production, this would trigger actual file download
+    toast.success("Downloading MP4", {
+      description: `Vantage_Reel_${reel.aspectRatio.replace(":", "x")}.mp4`,
+    });
+  }, [reel.aspectRatio]);
 
   // Share link
   const handleShareLink = useCallback(async () => {
-    // In production, this would copy a share link
     try {
       await navigator.clipboard.writeText("https://vantage.app/reel/abc123");
       toast.success("Link copied!", {
@@ -288,6 +305,8 @@ function ReelPreviewContent({
       });
     }
   }, []);
+
+  const isProcessing = exportPhase === "preparing" || exportPhase === "exporting";
 
   return (
     <div className="flex flex-col h-full max-h-[85vh] md:max-h-[650px]">
@@ -390,70 +409,76 @@ function ReelPreviewContent({
         </div>
       </div>
 
-      {/* Footer actions with export progress */}
+      {/* Footer actions with inline export progress */}
       <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
-        {/* Export progress indicator */}
-        {exportStatus === "exporting" && (
+        {/* Export progress - inline, never sends user away */}
+        {isProcessing && (
           <div className="mb-3">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-foreground">Exporting reel...</span>
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span className="text-xs font-medium text-foreground">{getPhaseLabel()}</span>
+              </div>
               <span className="text-xs font-mono text-muted-foreground">{Math.round(exportProgress)}%</span>
             </div>
             <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div 
-                className="h-full bg-primary rounded-full transition-all duration-200 ease-out"
+                className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${exportProgress}%` }}
               />
             </div>
           </div>
         )}
 
-        {/* Export complete state */}
-        {exportStatus === "complete" && (
-          <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
+        {/* Complete state - visual confirmation */}
+        {exportPhase === "complete" && (
+          <div className="mb-3 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-vantage-success/10 border border-vantage-success/20">
             <CheckCircle2 className="h-4 w-4 text-vantage-success" />
             <span className="text-xs font-medium text-vantage-success">
-              Export complete!
+              Ready to download
+            </span>
+            <span className="text-[10px] text-muted-foreground ml-auto">
+              {reel.aspectRatio} • MP4
             </span>
           </div>
         )}
 
         {/* Action buttons */}
         <div className="flex gap-2">
-          {exportStatus === "complete" ? (
+          {exportPhase === "complete" ? (
             <>
-              {/* After export: Share link becomes primary */}
+              {/* Complete: Download MP4 is primary */}
               <Button
                 size="lg"
                 className="flex-1 h-12 gap-2"
-                onClick={handleShareLink}
+                onClick={handleDownload}
               >
-                <Share2 className="h-4 w-4" />
-                Share Link
+                <Download className="h-4 w-4" />
+                Download MP4
               </Button>
               <Button
                 variant="outline"
                 size="lg"
                 className="h-12 gap-2 px-4"
-                onClick={onClose}
+                onClick={handleShareLink}
               >
-                <Check className="h-4 w-4" />
-                <span className="hidden sm:inline">Done</span>
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Share</span>
               </Button>
             </>
           ) : (
             <>
-              {/* Primary: Export Reel */}
+              {/* Default: Export Reel is primary */}
               <Button
                 size="lg"
                 className="flex-1 h-12 gap-2"
                 onClick={handleExport}
-                disabled={exportStatus === "exporting"}
+                disabled={isProcessing}
               >
-                {exportStatus === "exporting" ? (
+                {isProcessing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Exporting...
+                    {exportPhase === "preparing" ? "Preparing…" : "Exporting…"}
                   </>
                 ) : (
                   <>
@@ -469,7 +494,7 @@ function ReelPreviewContent({
                 size="lg"
                 className="h-12 gap-2 px-4"
                 onClick={handleShareLink}
-                disabled={exportStatus === "exporting"}
+                disabled={isProcessing}
               >
                 <Share2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Share</span>
@@ -479,14 +504,24 @@ function ReelPreviewContent({
         </div>
         
         {/* Back link */}
-        <button
-          className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
-          onClick={onBack}
-          disabled={exportStatus === "exporting"}
-        >
-          <ArrowLeft className="h-3 w-3" />
-          Create another reel
-        </button>
+        {exportPhase === "complete" ? (
+          <button
+            className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
+            onClick={onClose}
+          >
+            <Check className="h-3 w-3" />
+            Done
+          </button>
+        ) : (
+          <button
+            className="w-full mt-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 touch-manipulation"
+            onClick={onBack}
+            disabled={isProcessing}
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Create another reel
+          </button>
+        )}
       </div>
     </div>
   );
