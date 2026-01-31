@@ -55,6 +55,7 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
   const [testing, setTesting] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [debugUploading, setDebugUploading] = useState(false);
+  const [listingFiles, setListingFiles] = useState(false);
   const [debugLog, setDebugLog] = useState<string | null>(null);
 
   useEffect(() => {
@@ -544,6 +545,81 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
     }
   };
 
+  const handleListDropboxFiles = async () => {
+    if (!user) return;
+
+    setListingFiles(true);
+    setDebugLog(null);
+
+    const log = (msg: string) => {
+      console.log(`[ListDropbox] ${msg}`);
+      setDebugLog(prev => (prev ? `${prev}\n${msg}` : msg));
+    };
+
+    try {
+      log("Fetching Dropbox Recordings folder contents...");
+      
+      const response = await supabase.functions.invoke("dropbox-sync", {
+        headers: { "x-custom-path": "/list-recordings" },
+      });
+
+      if (response.error) {
+        log(`ERROR: ${response.error.message}`);
+        toast.error("Failed to list Dropbox files", {
+          description: response.error.message,
+        });
+        return;
+      }
+
+      const data = response.data;
+      
+      log("─── DROPBOX FOLDER STATUS ───");
+      log(`folder_reachable: ${data?.folder_reachable ?? false}`);
+      log(`folder_exists: ${data?.folder_exists ?? false}`);
+      log(`folder_path: ${data?.folder_path ?? "(unknown)"}`);
+      log(`file_count: ${data?.file_count ?? 0}`);
+      
+      if (data?.message) {
+        log(`message: ${data.message}`);
+      }
+      
+      if (data?.error) {
+        log(`error: ${data.error}`);
+      }
+
+      log("───────────────────────────");
+
+      if (data?.files && data.files.length > 0) {
+        log("");
+        log("─── FILES IN DROPBOX ───");
+        for (const file of data.files) {
+          const sizeStr = formatBytes(file.size_bytes || 0);
+          const dateStr = file.modified 
+            ? new Date(file.modified).toLocaleString() 
+            : "(unknown date)";
+          log(`• ${file.name}`);
+          log(`  Size: ${sizeStr}`);
+          log(`  Modified: ${dateStr}`);
+          log(`  ID: ${file.id || "(none)"}`);
+        }
+        log("────────────────────────");
+        
+        toast.success(`Found ${data.files.length} file(s) in Dropbox`);
+      } else if (data?.folder_reachable) {
+        toast.info("Dropbox folder reachable but empty");
+      } else {
+        toast.warning("Could not reach Dropbox folder");
+      }
+
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log(`EXCEPTION: ${msg}`);
+      toast.error("Failed to list Dropbox files", { description: msg });
+    } finally {
+      setListingFiles(false);
+    }
+  };
+
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -767,7 +843,7 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
             variant="outline"
             size="sm"
             onClick={handleDebugUploadFirst}
-            disabled={debugUploading}
+            disabled={debugUploading || listingFiles}
             className="border-dashed border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
           >
             {debugUploading ? (
@@ -779,6 +855,27 @@ export function DropboxSyncStatus({ isConnected }: DropboxSyncStatusProps) {
               <>
                 <Bug className="h-4 w-4 mr-2" />
                 Upload first recording now
+              </>
+            )}
+          </Button>
+
+          {/* Debug: List Dropbox recordings button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleListDropboxFiles}
+            disabled={listingFiles || debugUploading}
+            className="border-dashed border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+          >
+            {listingFiles ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Listing...
+              </>
+            ) : (
+              <>
+                <CloudIcon className="h-4 w-4 mr-2" />
+                List Dropbox recordings
               </>
             )}
           </Button>
