@@ -697,6 +697,105 @@ export type Database = {
           },
         ]
       }
+      extension_auth_codes: {
+        Row: {
+          code: string
+          created_at: string
+          device_id: string | null
+          expires_at: string
+          id: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          device_id?: string | null
+          expires_at: string
+          id?: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          device_id?: string | null
+          expires_at?: string
+          id?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      extension_recordings: {
+        Row: {
+          audio_codec: string | null
+          capture_source: string | null
+          client: string | null
+          container: string
+          created_at: string
+          error_message: string | null
+          file_size_bytes: number | null
+          has_cam: boolean | null
+          has_mic: boolean | null
+          id: string
+          max_size_bytes: number | null
+          mime_type: string
+          session_id: string | null
+          status: string
+          storage_path: string
+          updated_at: string
+          upload_url_expires_at: string
+          uploaded_at: string | null
+          user_id: string
+          video_codec: string | null
+        }
+        Insert: {
+          audio_codec?: string | null
+          capture_source?: string | null
+          client?: string | null
+          container?: string
+          created_at?: string
+          error_message?: string | null
+          file_size_bytes?: number | null
+          has_cam?: boolean | null
+          has_mic?: boolean | null
+          id?: string
+          max_size_bytes?: number | null
+          mime_type?: string
+          session_id?: string | null
+          status?: string
+          storage_path: string
+          updated_at?: string
+          upload_url_expires_at: string
+          uploaded_at?: string | null
+          user_id: string
+          video_codec?: string | null
+        }
+        Update: {
+          audio_codec?: string | null
+          capture_source?: string | null
+          client?: string | null
+          container?: string
+          created_at?: string
+          error_message?: string | null
+          file_size_bytes?: number | null
+          has_cam?: boolean | null
+          has_mic?: boolean | null
+          id?: string
+          max_size_bytes?: number | null
+          mime_type?: string
+          session_id?: string | null
+          status?: string
+          storage_path?: string
+          updated_at?: string
+          upload_url_expires_at?: string
+          uploaded_at?: string | null
+          user_id?: string
+          video_codec?: string | null
+        }
+        Relationships: []
+      }
       facecam_tracks: {
         Row: {
           border_radius: number | null
