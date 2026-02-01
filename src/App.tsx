@@ -11,6 +11,7 @@ import { RouteErrorFallback } from "@/components/ErrorBoundary";
 import { DevPerfOverlay } from "@/components/dev/DevPerfOverlay";
 import { ProcessingFooter } from "@/components/processing/ProcessingFooter";
 import { Loader2 } from "lucide-react";
+import ExtensionAuth from "./pages/ExtensionAuth";
 
 // Eagerly load landing page for fast initial render
 import Index from "./pages/Index";
@@ -53,6 +54,7 @@ const queryClient = new QueryClient();
 const router = createBrowserRouter([
   { path: "/", element: <Index />, errorElement: <RouteErrorFallback /> },
   { path: "/auth", element: <Auth />, errorElement: <RouteErrorFallback /> },
+  { path: "/extension-auth", element: <ExtensionAuth />,},
   { path: "/dashboard", element: withSuspense(Dashboard), errorElement: <RouteErrorFallback /> },
   { path: "/library", element: withSuspense(SessionLibrary), errorElement: <RouteErrorFallback /> },
   { path: "/insights", element: withSuspense(Insights), errorElement: <RouteErrorFallback /> },
