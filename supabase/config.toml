@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.extension-recordings]
 verify_jwt = false
+
+[functions.extension-auth]
+verify_jwt = false
+
+[functions.extension-me]
+verify_jwt = false

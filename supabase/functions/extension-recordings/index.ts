@@ -4,6 +4,8 @@
  * Handles video upload flow from Chrome extension:
  * - POST /create: Generate signed upload URL
  * - POST /complete: Mark upload complete, trigger processing
+ * 
+ * CORS: Only allows chrome-extension:// origins
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -13,11 +15,57 @@ declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
 };
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-custom-path, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+/**
+ * Extension CORS Configuration
+ * 
+ * Configurable allowlist of extension IDs. Set to empty array to allow all chrome-extension:// origins.
+ * To restrict to specific extensions, add their IDs:
+ * const ALLOWED_EXTENSION_IDS = ["abcdefghijklmnop", "qrstuvwxyz123456"];
+ */
+const ALLOWED_EXTENSION_IDS: string[] = [];
+
+/**
+ * Validates if the origin is an allowed Chrome extension
+ */
+function isAllowedExtensionOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  
+  // Must be a chrome-extension:// origin
+  if (!origin.startsWith("chrome-extension://")) {
+    return false;
+  }
+  
+  // If no specific IDs configured, allow all chrome extensions
+  if (ALLOWED_EXTENSION_IDS.length === 0) {
+    return true;
+  }
+  
+  // Extract extension ID from origin (chrome-extension://EXTENSION_ID)
+  const extensionId = origin.replace("chrome-extension://", "");
+  return ALLOWED_EXTENSION_IDS.includes(extensionId);
+}
+
+/**
+ * Gets CORS headers for the request
+ * Only returns Access-Control-Allow-Origin for valid extension origins
+ */
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin");
+  
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, x-custom-path",
+    "Access-Control-Max-Age": "86400",
+  };
+  
+  // Only set Allow-Origin for valid extension origins
+  if (isAllowedExtensionOrigin(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin!;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+  
+  return headers;
+}
 
 // 15 minute upload window
 const UPLOAD_URL_TTL_SECONDS = 900;
@@ -44,9 +92,21 @@ interface CompleteRecordingRequest {
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
+
+  // Verify origin for non-preflight requests
+  const origin = req.headers.get("Origin");
+  if (!isAllowedExtensionOrigin(origin)) {
+    console.warn(`[extension-recordings] Rejected origin: ${origin}`);
+    return new Response(
+      JSON.stringify({ error: "Forbidden" }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
   }
 
   if (req.method !== "POST") {
@@ -99,16 +159,16 @@ Deno.serve(async (req) => {
     const pathSegment = url.pathname.split("/").pop() || customPath;
 
     if (pathSegment === "create" || customPath === "create") {
-      return await handleCreate(req, supabase, supabaseAdmin, userId);
+      return await handleCreate(req, supabase, supabaseAdmin, userId, corsHeaders);
     } else if (pathSegment === "complete" || customPath === "complete") {
-      return await handleComplete(req, supabase, supabaseAdmin, userId);
+      return await handleComplete(req, supabase, supabaseAdmin, userId, corsHeaders);
     } else {
       // Default to create if no path specified
       const body = await req.json().catch(() => ({}));
       if ("recordingId" in body) {
-        return await handleCompleteWithBody(body, supabase, supabaseAdmin, userId);
+        return await handleCompleteWithBody(body, supabase, supabaseAdmin, userId, corsHeaders);
       } else {
-        return await handleCreateWithBody(body, supabase, supabaseAdmin, userId);
+        return await handleCreateWithBody(body, supabase, supabaseAdmin, userId, corsHeaders);
       }
     }
   } catch (error) {
@@ -124,17 +184,19 @@ async function handleCreate(
   req: Request,
   supabase: AnySupabaseClient,
   supabaseAdmin: AnySupabaseClient,
-  userId: string
+  userId: string,
+  corsHeaders: Record<string, string>
 ) {
   const body: CreateRecordingRequest = await req.json().catch(() => ({}));
-  return handleCreateWithBody(body, supabase, supabaseAdmin, userId);
+  return handleCreateWithBody(body, supabase, supabaseAdmin, userId, corsHeaders);
 }
 
 async function handleCreateWithBody(
   body: CreateRecordingRequest,
   supabase: AnySupabaseClient,
   supabaseAdmin: AnySupabaseClient,
-  userId: string
+  userId: string,
+  corsHeaders: Record<string, string>
 ) {
   const {
     mimeType = "video/webm",
@@ -224,17 +286,19 @@ async function handleComplete(
   req: Request,
   supabase: AnySupabaseClient,
   supabaseAdmin: AnySupabaseClient,
-  userId: string
+  userId: string,
+  corsHeaders: Record<string, string>
 ) {
   const body: CompleteRecordingRequest = await req.json().catch(() => ({ recordingId: "" }));
-  return handleCompleteWithBody(body, supabase, supabaseAdmin, userId);
+  return handleCompleteWithBody(body, supabase, supabaseAdmin, userId, corsHeaders);
 }
 
 async function handleCompleteWithBody(
   body: CompleteRecordingRequest,
   supabase: AnySupabaseClient,
   supabaseAdmin: AnySupabaseClient,
-  userId: string
+  userId: string,
+  corsHeaders: Record<string, string>
 ) {
   const { recordingId } = body;
 
