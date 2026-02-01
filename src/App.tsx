@@ -60,7 +60,11 @@ const router = createBrowserRouter([
   { path: "/community/:postId", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
   { path: "/community/p/:token", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
   { path: "/capture/:sessionId", element: withSuspense(Capture), errorElement: <RouteErrorFallback /> },
+  // Canonical session route
   { path: "/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
+  // Alias routes for extension compatibility - redirect to canonical
+  { path: "/library/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
+  { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
   { path: "/settings", element: withSuspense(Settings), errorElement: <RouteErrorFallback /> },
   { path: "*", element: <NotFound /> },
 ]);
