@@ -340,7 +340,7 @@ async function handleCompleteWithBody(
     return new Response(
       JSON.stringify({
         sessionId: recording.session_id,
-        sessionUrl: `/dashboard/session/${recording.session_id}`,
+        sessionUrl: `/session/${recording.session_id}`,
         processingState: "completed",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -467,7 +467,7 @@ async function handleCompleteWithBody(
   return new Response(
     JSON.stringify({
       sessionId: session.id,
-      sessionUrl: `/dashboard/session/${session.id}`,
+      sessionUrl: `/session/${session.id}`,
       processingState: "queued",
     }),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -7,6 +7,7 @@ import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from
 import { NotStoredLocallyCard } from "@/components/player/NotStoredLocallyCard";
 import { ProcessingBanner } from "@/components/player/ProcessingBanner";
 import { ProcessingPlaceholder } from "@/components/player/ProcessingPlaceholder";
+import { CloudProcessingPlaceholder } from "@/components/player/CloudProcessingPlaceholder";
 import { AnnotationsPanel, PanelMode } from "@/components/player/AnnotationsPanel";
 import { AnnotationDrawer, DrawerAnnotation } from "@/components/player/AnnotationDrawer";
 import { FramePin } from "@/components/player/FramePins";
@@ -57,6 +58,11 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+
+// Cloud session processing states that indicate ongoing work
+const CLOUD_PROCESSING_STATUSES = ["recording", "processing", "uploading"];
+// Polling interval for cloud processing status (5 seconds)
+const CLOUD_PROCESSING_POLL_INTERVAL = 5000;
 
 export default function SessionReview() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -150,6 +156,36 @@ export default function SessionReview() {
       loadSessionData();
     }
   }, [sessionId, user]);
+
+  // Poll for cloud session status when processing
+  useEffect(() => {
+    if (!session || !sessionId) return;
+    
+    const isCloudProcessing = CLOUD_PROCESSING_STATUSES.includes(session.status || "");
+    if (!isCloudProcessing) return;
+
+    console.log("[SessionReview] Cloud session is processing, starting poll...");
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: updatedSession } = await supabase
+          .from("capture_sessions")
+          .select("status")
+          .eq("id", sessionId)
+          .single();
+        
+        if (updatedSession && !CLOUD_PROCESSING_STATUSES.includes(updatedSession.status || "")) {
+          console.log("[SessionReview] Cloud session ready, reloading data...");
+          clearInterval(pollInterval);
+          loadSessionData();
+        }
+      } catch (error) {
+        console.warn("[SessionReview] Poll error:", error);
+      }
+    }, CLOUD_PROCESSING_POLL_INTERVAL);
+
+    return () => clearInterval(pollInterval);
+  }, [session?.status, sessionId]);
 
   const loadSessionData = async () => {
     if (!sessionId) return;
@@ -257,7 +293,7 @@ export default function SessionReview() {
     } catch (error) {
       console.error("Error loading session:", error);
       toast.error("Session not found");
-      navigate("/");
+      navigate("/library");
     } finally {
       setLoading(false);
     }
@@ -632,8 +668,12 @@ export default function SessionReview() {
   // Check if this is a not_stored_locally session
   const isNotStoredLocally = isLocal && localSession?.status === "not_stored_locally";
   
+  // Check if cloud session is still processing (from DB status, not local processing job)
+  const isCloudProcessing = !isLocal && session && CLOUD_PROCESSING_STATUSES.includes(session.status || "");
+  const isCloudFailed = !isLocal && session?.status === "failed";
+  
   // Determine if we can show the player
-  const canShowPlayer = !isProcessing && !isProcessingFailed && !isNotStoredLocally && videoUrl;
+  const canShowPlayer = !isProcessing && !isProcessingFailed && !isNotStoredLocally && !isCloudProcessing && !isCloudFailed && videoUrl;
 
   const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
     blobType: gameplayAsset.mime_type || null,
@@ -787,14 +827,33 @@ export default function SessionReview() {
           
           {/* Video player area */}
           {isProcessing && processingJob ? (
-            // Show processing placeholder
+            // Show local processing placeholder
             <div className="flex-1 p-4">
               <ProcessingPlaceholder job={processingJob} />
             </div>
           ) : isProcessingFailed && processingJob ? (
-            // Show failed state placeholder
+            // Show local failed state placeholder
             <div className="flex-1 p-4">
               <ProcessingPlaceholder job={processingJob} />
+            </div>
+          ) : isCloudProcessing ? (
+            // Show cloud processing placeholder (extension uploads)
+            <div className="flex-1 p-4">
+              <CloudProcessingPlaceholder
+                sessionId={displaySessionId || sessionId || ""}
+                sessionTitle={displayTitle}
+                status={(session?.status as "processing" | "uploading" | "recording") || "processing"}
+              />
+            </div>
+          ) : isCloudFailed ? (
+            // Show cloud failed state
+            <div className="flex-1 p-4">
+              <CloudProcessingPlaceholder
+                sessionId={displaySessionId || sessionId || ""}
+                sessionTitle={displayTitle}
+                status="failed"
+                onRetry={() => toast.info("Please try uploading again from the extension")}
+              />
             </div>
           ) : isNotStoredLocally ? (
             <NotStoredLocallyCard
