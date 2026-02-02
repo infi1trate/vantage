@@ -109,5 +109,5 @@ export function formatRecordingTime(seconds: number): string {
 // Format recording limit for display
 export function formatRecordingLimit(): string {
   const mins = Math.floor(RECORDING_LIMIT_SECONDS / 60);
-  return `${mins} min recording limit`;
+  return `Video recording limit: ${mins} min`;
 }
