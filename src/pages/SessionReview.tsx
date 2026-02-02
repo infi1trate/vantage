@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
@@ -15,7 +15,7 @@ import { AnnotationSuggestion } from "@/components/player/SuggestionMarkers";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import { KeyboardShortcutsOverlay, useKeyboardShortcuts } from "@/components/player/KeyboardShortcutsOverlay";
-import { SessionMediaDiagnostics } from "@/components/player/SessionMediaDiagnostics";
+import { SessionMediaPanel } from "@/components/player/SessionMediaPanel";
 import { TimelineEmptyState } from "@/components/player/OnboardingHint";
 import { ExportCTAs } from "@/components/export/ExportCTAs";
 import { ExportOptions } from "@/components/export/ExportDrawer";
@@ -68,10 +68,17 @@ const CLOUD_PROCESSING_POLL_INTERVAL = 5000;
 
 export default function SessionReview() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { goBack } = useSafeBack("/library");
+  
+  // Check if we should auto-open the media panel (from reel editor "check session video" CTA)
+  const shouldOpenMediaPanel = searchParams.get("panel") === "media";
+  
+  // Ref for scrolling to media panel
+  const mediaPanelRef = useRef<HTMLDivElement>(null);
   
   // Processing context for detecting active jobs
   const { jobs, retryJob } = useProcessing();
@@ -188,6 +195,17 @@ export default function SessionReview() {
 
     return () => clearInterval(pollInterval);
   }, [session?.status, sessionId]);
+
+  // Scroll to media panel when opened from URL param
+  useEffect(() => {
+    if (shouldOpenMediaPanel && mediaPanelRef.current && !loading) {
+      // Small delay to ensure panel is rendered
+      const timeout = setTimeout(() => {
+        mediaPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [shouldOpenMediaPanel, loading]);
 
   const loadSessionData = async () => {
     if (!sessionId) return;
@@ -839,10 +857,11 @@ export default function SessionReview() {
             </div>
           )}
           
-          {/* Session Media Diagnostics - shows when video is missing or in dev mode */}
-          {(!videoUrl || import.meta.env.DEV) && !isProcessing && !isCloudProcessing && (
+          {/* Session Media Panel - shows when video is missing, from URL param, or in dev mode */}
+          {(shouldOpenMediaPanel || !videoUrl || import.meta.env.DEV) && !isProcessing && !isCloudProcessing && (
             <div className="px-4 pt-4">
-              <SessionMediaDiagnostics
+              <SessionMediaPanel
+                ref={mediaPanelRef}
                 session={session}
                 videoAssets={videoAssets}
                 audioTracks={audioTracks}
@@ -857,6 +876,9 @@ export default function SessionReview() {
                   hasBlob: !!localBlob,
                 } : null}
                 isLocalSession={isLocalSession}
+                dropboxSyncStatus={dropboxSyncStatus}
+                defaultOpen={shouldOpenMediaPanel || !videoUrl}
+                onRetryProcessing={isProcessingFailed ? handleRetryProcessing : undefined}
               />
             </div>
           )}

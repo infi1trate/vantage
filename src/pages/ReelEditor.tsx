@@ -535,6 +535,14 @@ export default function ReelEditor() {
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
                   onCancel={goBack}
+                  onCheckSession={() => {
+                    // Navigate to session detail with media panel open
+                    if (reel.session_id) {
+                      navigate(`/session/${reel.session_id}?panel=media`);
+                    } else {
+                      goBack();
+                    }
+                  }}
                   onLeaveAndNotify={() => {
                     // Show reassurance toast and navigate away
                     toast.info("We'll notify you when it's ready.", {
