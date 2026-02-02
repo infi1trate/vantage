@@ -17,7 +17,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ReelStatus, updateReel, getReel } from "@/lib/reels";
+import { ReelStatus, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -128,6 +128,7 @@ export function useReelAssembly(
   const assemblyStartRef = useRef<number | null>(null);
   const progressSimulationRef = useRef<number | null>(null);
   const renderJobIdRef = useRef<string | null>(null);
+  const activeJobIdRef = useRef<string | null>(null); // Tracks current assembly job_id
   
   // Clear all timers
   const clearTimers = useCallback(() => {
@@ -457,40 +458,52 @@ export function useReelAssembly(
       return;
     }
     
+    console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount);
+    
+    // Cancel any existing assembly job first
+    if (activeJobIdRef.current) {
+      console.log("[ReelAssembly] Cancelling existing job:", activeJobIdRef.current);
+      await cancelAssemblyJob(reelId);
+    }
+    
+    // Clear all timers from previous attempt
+    clearTimers();
+    
+    // Stop any existing progress simulation
+    if (progressSimulationRef.current) {
+      clearInterval(progressSimulationRef.current);
+      progressSimulationRef.current = null;
+    }
+    
     setRetryCount(newRetryCount);
     logAssemblyTelemetry("retry", reelId, { retryCount: newRetryCount });
     
-    console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount);
     setState("assembling");
     setError(null);
     assemblyStartRef.current = Date.now();
     
-    // Reset the existing render job instead of creating a new one
-    if (renderJobIdRef.current) {
-      const resetJob = resetRenderJobForRetry(renderJobIdRef.current);
-      if (!resetJob) {
-        // Job not found or max retries - try to create new
-        console.log("[ReelAssembly] Creating new job for retry");
+    try {
+      // Use the new retryAssembly function that properly resets state
+      const { reel, jobId } = await retryAssembly(reelId);
+      activeJobIdRef.current = jobId;
+      
+      console.log("[ReelAssembly] Retry initiated with job:", jobId);
+      
+      // Reset the existing render job instead of creating a new one
+      if (renderJobIdRef.current) {
+        const resetJob = resetRenderJobForRetry(renderJobIdRef.current);
+        if (!resetJob) {
+          // Job not found or max retries - try to create new
+          console.log("[ReelAssembly] Creating new render job for retry");
+          ensureRenderJob();
+        }
+      } else {
+        // No existing job - create one
         ensureRenderJob();
       }
-    } else {
-      // No existing job - create one
-      ensureRenderJob();
-    }
-    
-    // Start progress simulation
-    startProgressSimulation();
-    
-    try {
-      // Reset status to compiling - preserves format + selected moments
-      await supabase
-        .from("reels")
-        .update({ 
-          status: "compiling",
-          render_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", reelId);
+      
+      // Start progress simulation
+      startProgressSimulation();
       
       // Start timeout
       timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
@@ -500,10 +513,18 @@ export function useReelAssembly(
       // For now, we transition to draft after a short delay
       await new Promise(resolve => setTimeout(resolve, 1500));
       
+      // Before completing, verify this job is still active (not superseded by another retry)
+      const stillActive = await isJobActive(reelId, jobId);
+      if (!stillActive) {
+        console.log("[ReelAssembly] Job superseded, aborting completion:", jobId);
+        return;
+      }
+      
       await supabase
         .from("reels")
         .update({ 
           status: "draft",
+          assembly_step: "ready",
           render_error: null,
           updated_at: new Date().toISOString(),
         })
@@ -530,11 +551,12 @@ export function useReelAssembly(
       setError("Something interrupted the assembly process. Please try again.");
       clearTimers();
       assemblyStartRef.current = null;
+      activeJobIdRef.current = null;
     }
   }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, failJob]);
   
-  // Whether retry is available (not exceeded max)
-  const canRetry = state === "failed" && retryCount < MAX_RETRY_ATTEMPTS;
+  // Whether retry is available (failed or needs_attention, and not exceeded max)
+  const canRetry = (state === "failed" || state === "needs_attention") && retryCount < MAX_RETRY_ATTEMPTS;
   
   return {
     state,
