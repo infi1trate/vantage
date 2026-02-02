@@ -22,6 +22,8 @@ import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { PlayerWithEffects } from "@/components/player/PlayerWithEffects";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
+import { ReelEditorModeBanner, ReelStatus } from "@/components/reel/ReelEditorModeBanner";
+import { ReelCompilationStatus, CompilationPhase } from "@/components/reel/ReelCompilationStatus";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +68,24 @@ export default function ReelEditor() {
   // Editor state
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
   const [showEffects, setShowEffects] = useState(true);
+  
+  // Derive reel status for mode banner
+  const reelStatus: ReelStatus = useMemo(() => {
+    if (!reel) return "draft";
+    if (reel.status === "rendering") return "rendering";
+    if (reel.status === "ready") return "ready";
+    return "draft";
+  }, [reel?.status]);
+  
+  // Derive compilation phase (for new reels still being assembled)
+  const compilationPhase: CompilationPhase = useMemo(() => {
+    if (!reel) return "idle";
+    // If video URL exists and session data loaded, reel is ready
+    if (sessionData?.videoUrl && duration > 0) return "ready";
+    // Still loading session data
+    if (loading) return "assembling";
+    return "ready";
+  }, [reel, sessionData?.videoUrl, duration, loading]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Filter annotations to only those included in the reel
@@ -237,75 +257,71 @@ export default function ReelEditor() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       
-      {/* Editor Header */}
-      <div className="border-b border-border/40 bg-card/50 px-4 py-3">
-        <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
-          {/* Left: Back + Title */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goBack}
-              className="h-8 w-8"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            
-            <div className="flex items-center gap-2">
-              <Film className="h-5 w-5 text-primary" />
-              <h1 className="font-semibold text-lg">{reel.title}</h1>
-              <Badge variant="outline" className="text-xs">
-                {reel.aspect_ratio}
-              </Badge>
-              {reel.status === "draft" && (
-                <Badge variant="secondary" className="text-xs">
-                  Draft
-                </Badge>
-              )}
-              {reel.status === "rendering" && (
-                <Badge className="text-xs bg-vantage-warning/20 text-vantage-warning border-vantage-warning/30">
-                  Rendering
-                </Badge>
-              )}
-              {reel.status === "ready" && (
-                <Badge className="text-xs bg-vantage-success/20 text-vantage-success border-vantage-success/30">
-                  Ready
-                </Badge>
-              )}
-              {effects.length > 0 && (
-                <Badge variant="outline" className="text-xs gap-1">
-                  {effects.length} FX
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2">
-            {hasUnsavedChanges && (
+      {/* Editor Header with Mode Banner */}
+      <div className="border-b border-border/40 bg-card/50">
+        {/* Mode Banner - Clear visual distinction */}
+        <div className="px-4 pt-3 pb-2 max-w-screen-2xl mx-auto">
+          <ReelEditorModeBanner 
+            status={reelStatus} 
+            effectCount={effects.length} 
+          />
+        </div>
+        
+        {/* Title Bar */}
+        <div className="px-4 pb-3">
+          <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
+            {/* Left: Back + Title */}
+            <div className="flex items-center gap-3">
               <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSave}
-                className="gap-1.5"
+                variant="ghost"
+                size="icon"
+                onClick={goBack}
+                className="h-8 w-8"
               >
-                <Save className="h-3.5 w-3.5" />
-                Save
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-            )}
-            
-            <ExportButton 
-              sessionId={reel.session_id || ""} 
-              onExport={() => {
-                // TODO: Trigger export for this reel
-                toast.info("Rendering effects...", {
-                  description: `${effects.length} effects will be composited into the final video`,
-                });
-              }}
-            />
+              
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold text-lg">{reel.title}</h1>
+                <Badge variant="outline" className="text-xs">
+                  {reel.aspect_ratio}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2">
+              {hasUnsavedChanges && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSave}
+                  className="gap-1.5"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save
+                </Button>
+              )}
+              
+              <ExportButton 
+                sessionId={reel.session_id || ""} 
+                onExport={() => {
+                  toast.info("Rendering effects...", {
+                    description: `${effects.length} effects will be composited into the final video`,
+                  });
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Compilation Status - shown when reel is still being assembled */}
+      {compilationPhase !== "ready" && (
+        <div className="px-4 py-3 max-w-screen-2xl mx-auto w-full">
+          <ReelCompilationStatus phase={compilationPhase} progress={loading ? 50 : 100} />
+        </div>
+      )}
 
       {/* Main Editor Layout */}
       <div className="flex-1 flex overflow-hidden">
