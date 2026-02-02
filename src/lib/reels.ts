@@ -7,7 +7,8 @@
 
 import { supabase } from "@/integrations/supabase/client";
 
-export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed";
+// NOTE: status is stored as text in the backend; we model the known states here.
+export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 
 /**
@@ -726,23 +727,25 @@ export async function executeAssembly(
       const isTimeout = failedSegment?.reason?.includes("timed out");
       
       if (isTimeout) {
-        // Timeout - mark as needs_attention for retry
+        // Timeout - recoverable; do NOT remain in compiling indefinitely.
         console.warn(`[Reels] Clip collection timed out for ${reelId}`);
-        
+
         await supabase
           .from("reels")
           .update({
-            status: "compiling", // Keep as compiling
-            render_error: "Clip collection is taking longer than expected.",
+            status: "needs_attention",
+            // Keep the step so the UI can show exactly where it stalled.
+            assembly_step: "collecting_clips",
+            render_error: "We couldn't access one of the clips needed for this reel.",
             updated_at: now(),
           })
           .eq("id", reelId);
-        
+
         return {
           success: false,
           reel: await getReel(reelId),
           error: failedSegment?.reason || "Clip collection timed out",
-          userMessage: "This is taking longer than expected. Please try again.",
+          userMessage: "We couldn't access one of the clips needed for this reel.",
           previewAvailable: false,
         };
       }
