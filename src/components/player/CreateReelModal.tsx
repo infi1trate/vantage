@@ -44,13 +44,70 @@ import { toast } from "sonner";
 import { AspectRatio as AspectRatioContainer } from "@/components/ui/aspect-ratio";
 import { PageTransitionOverlay } from "@/components/reel/PageTransitionOverlay";
 import { 
-  type ReelEligibilityResult, 
+  type ReelEligibilityResult,
+  type ReelIneligibilityReason, 
   getReelIneligibilityMessage,
 } from "@/lib/reelEligibility";
 import { 
   startLegacyBackfill, 
   checkReelSourceReadiness,
 } from "@/lib/reelSource";
+
+// ============= Reason-specific toast messages =============
+
+interface ReasonToastConfig {
+  title: string;
+  description: string;
+  showSessionMediaCTA: boolean;
+}
+
+function getReasonToastConfig(reasonCode: ReelIneligibilityReason | undefined): ReasonToastConfig {
+  switch (reasonCode) {
+    case "video_processing":
+      return {
+        title: "Video still processing",
+        description: "Session video is still processing — we'll start as soon as it's ready.",
+        showSessionMediaCTA: true,
+      };
+    case "video_uploading":
+      return {
+        title: "Video still uploading",
+        description: "Session video is still uploading — please wait a moment.",
+        showSessionMediaCTA: true,
+      };
+    case "video_failed":
+      return {
+        title: "Video processing failed",
+        description: "Session video failed to process — open Session Media to retry.",
+        showSessionMediaCTA: true,
+      };
+    case "video_missing":
+      return {
+        title: "No recording",
+        description: "This session doesn't have a gameplay recording.",
+        showSessionMediaCTA: true,
+      };
+    case "unknown":
+    default:
+      return {
+        title: "Cannot verify video",
+        description: "We couldn't verify the session video.",
+        showSessionMediaCTA: true,
+      };
+  }
+}
+
+/**
+ * Map readiness message to reason code for consistent error handling
+ */
+function inferReasonFromMessage(message: string): ReelIneligibilityReason {
+  const lowerMessage = message.toLowerCase();
+  if (lowerMessage.includes("processing")) return "video_processing";
+  if (lowerMessage.includes("uploading")) return "video_uploading";
+  if (lowerMessage.includes("failed")) return "video_failed";
+  if (lowerMessage.includes("no recording") || lowerMessage.includes("no video") || lowerMessage.includes("missing")) return "video_missing";
+  return "unknown";
+}
 
 interface CreateReelModalProps {
   open: boolean;
@@ -60,8 +117,8 @@ interface CreateReelModalProps {
   sessionTitle?: string;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
-  /** Navigate to session processing page when video is not ready */
-  onViewSessionProcessing?: () => void;
+  /** Navigate to Session Media panel to check/retry video */
+  onViewSessionMedia?: () => void;
 }
 
 type AspectRatioValue = "16:9" | "9:16" | "1:1";
@@ -666,12 +723,14 @@ function ReelCreatorContent({
   sessionTitle,
   onReelCreated,
   onClose,
+  onViewSessionMedia,
 }: {
   moments: Annotation[];
   sessionId: string;
   sessionTitle?: string;
   onReelCreated: (reelId: string) => void;
   onClose: () => void;
+  onViewSessionMedia?: () => void;
 }) {
   // Default to 16:9 (Landscape) as per UX requirement
   const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("16:9");
@@ -775,10 +834,17 @@ function ReelCreatorContent({
         return;
       }
       
-      // 4) Truly no video - hard fail with specific message
+      // 4) Not ready - show reason-specific error with CTA
       console.error("[CreateReel] No video available:", readiness.message);
-      toast.error("Cannot create reel", {
-        description: readiness.message || "No recording available for this session",
+      const reasonCode = inferReasonFromMessage(readiness.message);
+      const toastConfig = getReasonToastConfig(reasonCode);
+      
+      toast.error(toastConfig.title, {
+        description: toastConfig.description,
+        action: toastConfig.showSessionMediaCTA && onViewSessionMedia ? {
+          label: "Check session video",
+          onClick: onViewSessionMedia,
+        } : undefined,
       });
       setIsGenerating(false);
       
@@ -787,8 +853,15 @@ function ReelCreatorContent({
       
       // Handle ReelSource not ready (legacy backfill failed or no video)
       if (error instanceof ReelSourceNotReadyError) {
-        toast.error("Cannot create reel", {
-          description: error.userMessage || "Session video is not available",
+        const reasonCode = inferReasonFromMessage(error.userMessage || error.message);
+        const toastConfig = getReasonToastConfig(reasonCode);
+        
+        toast.error(toastConfig.title, {
+          description: toastConfig.description,
+          action: toastConfig.showSessionMediaCTA && onViewSessionMedia ? {
+            label: "Check session video",
+            onClick: onViewSessionMedia,
+          } : undefined,
         });
       } else {
         toast.error("Failed to create reel", {
@@ -798,7 +871,7 @@ function ReelCreatorContent({
       setIsPreparingLegacy(false);
       setIsGenerating(false);
     }
-  }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated]);
+  }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated, onViewSessionMedia]);
 
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
@@ -950,16 +1023,18 @@ export function CreateReelModal({
   sessionId,
   sessionTitle,
   reelEligibility = { ok: true },
-  onViewSessionProcessing,
+  onViewSessionMedia,
 }: CreateReelModalProps) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   // Use centralized eligibility check
   const videoAvailable = reelEligibility.ok;
-  const ineligibilityMessage = !reelEligibility.ok && reelEligibility.reasonCode
-    ? getReelIneligibilityMessage(reelEligibility.reasonCode)
-    : "Session video isn't ready";
+  
+  // Get reason-specific messaging
+  const toastConfig = !reelEligibility.ok && reelEligibility.reasonCode
+    ? getReasonToastConfig(reelEligibility.reasonCode)
+    : getReasonToastConfig("unknown");
 
   // Only show moments that are reel-worthy (kill, death, highlight)
   const reelMoments = useMemo(() => {
@@ -997,12 +1072,12 @@ export function CreateReelModal({
     }
   }, [pendingReelId, navigate]);
 
-  const handleViewProcessing = useCallback(() => {
+  const handleViewSessionMedia = useCallback(() => {
     onOpenChange(false);
-    onViewSessionProcessing?.();
-  }, [onOpenChange, onViewSessionProcessing]);
+    onViewSessionMedia?.();
+  }, [onOpenChange, onViewSessionMedia]);
 
-  const title = videoAvailable ? "Create Reel" : "Session video isn't ready";
+  const title = videoAvailable ? "Create Reel" : toastConfig.title;
 
   // Video not available - show fallback modal with specific reason
   const fallbackContent = (
@@ -1012,13 +1087,13 @@ export function CreateReelModal({
       </div>
       <div className="space-y-2 max-w-xs">
         <p className="text-sm text-muted-foreground leading-relaxed">
-          {ineligibilityMessage}. We can create reels once gameplay video is available.
+          {toastConfig.description}
         </p>
       </div>
       <div className="flex flex-col gap-2 w-full max-w-[200px] pt-2">
-        {onViewSessionProcessing && (
-          <Button onClick={handleViewProcessing} className="w-full">
-            View session processing
+        {toastConfig.showSessionMediaCTA && onViewSessionMedia && (
+          <Button onClick={handleViewSessionMedia} className="w-full">
+            Check session video
           </Button>
         )}
         <Button variant="outline" onClick={handleClose} className="w-full">
@@ -1035,6 +1110,7 @@ export function CreateReelModal({
       sessionTitle={sessionTitle}
       onReelCreated={handleReelCreated}
       onClose={handleClose}
+      onViewSessionMedia={onViewSessionMedia}
     />
   ) : fallbackContent;
 
