@@ -38,7 +38,7 @@ const SOURCE_OPTIONS: {
   {
     type: "camera",
     label: "Camera only",
-    description: "Record just your webcam",
+    description: "Records your camera + mic",
     icon: Video,
   },
 ];
