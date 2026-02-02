@@ -22,8 +22,7 @@ import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { PlayerWithEffects } from "@/components/player/PlayerWithEffects";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
-import { ReelEditorModeBanner, ReelStatus } from "@/components/reel/ReelEditorModeBanner";
-import { ReelCompilationStatus, CompilationPhase } from "@/components/reel/ReelCompilationStatus";
+import { CompilationPhase } from "@/components/reel/ReelCompilationStatus";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
@@ -69,14 +68,6 @@ export default function ReelEditor() {
   // Editor state
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
   const [showEffects, setShowEffects] = useState(true);
-  
-  // Derive reel status for mode banner
-  const reelStatus: ReelStatus = useMemo(() => {
-    if (!reel) return "draft";
-    if (reel.status === "rendering") return "rendering";
-    if (reel.status === "ready") return "ready";
-    return "draft";
-  }, [reel?.status]);
   
   // Derive compilation phase (for new reels still being assembled)
   const compilationPhase: CompilationPhase = useMemo(() => {
@@ -263,61 +254,67 @@ export default function ReelEditor() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       
-      {/* Editor Header with Mode Banner */}
-      <div className="border-b border-border/40 bg-card/50">
-        {/* Mode Banner - Clear visual distinction */}
-        <div className="px-4 pt-3 pb-2 max-w-screen-2xl mx-auto">
-          <ReelEditorModeBanner 
-            status={reelStatus} 
-            effectCount={effects.length} 
-          />
-        </div>
-        
-        {/* Title Bar */}
-        <div className="px-4 pb-3">
-          <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
-            {/* Left: Back + Title */}
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={goBack}
-                className="h-8 w-8"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              
-              <div className="flex items-center gap-2">
-                <h1 className="font-semibold text-lg">{reel.title}</h1>
-                <Badge variant="outline" className="text-xs">
-                  {reel.aspect_ratio}
-                </Badge>
-              </div>
+      {/* Editor Header - Compact layout with mode indicator */}
+      <div className="border-b border-border/40 bg-card/50 px-4 py-3">
+        <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
+          {/* Left: Back + Mode Pill + Title */}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={goBack}
+              className="h-8 w-8"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            
+            {/* Reel Editor Mode Pill - subtle yellow outline */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-vantage-warning/40 bg-vantage-warning/5">
+              <Film className="h-3.5 w-3.5 text-vantage-warning" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-vantage-warning">
+                Reel Editor
+              </span>
             </div>
-
-            {/* Right: Actions */}
+            
+            {/* Divider */}
+            <div className="w-px h-5 bg-border/50" />
+            
+            {/* Title + Badges */}
             <div className="flex items-center gap-2">
-              {hasUnsavedChanges && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSave}
-                  className="gap-1.5"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  Save
-                </Button>
+              <h1 className="font-semibold text-lg">{reel.title}</h1>
+              <Badge variant="outline" className="text-xs">
+                {reel.aspect_ratio}
+              </Badge>
+              {effects.length > 0 && (
+                <Badge variant="secondary" className="text-[10px] gap-1">
+                  {effects.length} FX
+                </Badge>
               )}
-              
-              <ExportButton 
-                sessionId={reel.session_id || ""} 
-                onExport={() => {
-                  toast.info("Rendering effects...", {
-                    description: `${effects.length} effects will be composited into the final video`,
-                  });
-                }}
-              />
             </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2">
+            {hasUnsavedChanges && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSave}
+                className="gap-1.5"
+              >
+                <Save className="h-3.5 w-3.5" />
+                Save
+              </Button>
+            )}
+            
+            <ExportButton 
+              sessionId={reel.session_id || ""} 
+              onExport={() => {
+                toast.info("Rendering effects...", {
+                  description: `${effects.length} effects will be composited into the final video`,
+                });
+              }}
+            />
           </div>
         </div>
       </div>
