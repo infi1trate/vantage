@@ -3,19 +3,19 @@
  * 
  * Preview page for the desktop capture popover UI.
  * Shows the popover centered at 380px fixed width.
+ * Includes Mini HUD that syncs with popover state during recording.
  */
 
-import { useState } from "react";
-import { DesktopCapturePopover } from "@/components/desktop";
+import { DesktopCapturePopover, HUDMini, usePopoverState } from "@/components/desktop";
 import { Button } from "@/components/ui/button";
 import { RotateCcw, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function DesktopPage() {
-  const [key, setKey] = useState(0);
+  // Shared state for both popover and HUD
+  const popover = usePopoverState();
 
-  const handleReset = () => {
-    setKey(prev => prev + 1);
-  };
+  const isRecording = popover.state === "recording" || popover.state === "paused";
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] flex flex-col">
@@ -31,18 +31,38 @@ export default function DesktopPage() {
         </p>
       </header>
 
-      {/* Centered Popover */}
+      {/* Centered Popover with HUD */}
       <main className="flex-1 flex flex-col items-center px-4">
-        {/* Popover at fixed 380px */}
-        <div className="w-[380px]">
-          <DesktopCapturePopover key={key} />
+        {/* Container for popover + HUD */}
+        <div className="relative">
+          {/* Mini HUD - floating pill to the left during recording */}
+          <div className={cn(
+            "absolute -left-20 top-1/2 -translate-y-1/2 z-10",
+            "transition-all duration-300",
+            isRecording 
+              ? "opacity-100 translate-x-0" 
+              : "opacity-0 -translate-x-4 pointer-events-none"
+          )}>
+            <HUDMini
+              duration={popover.duration}
+              isPaused={popover.isPaused}
+              onPause={popover.pauseRecording}
+              onResume={popover.resumeRecording}
+              onStop={popover.stopRecording}
+            />
+          </div>
+
+          {/* Popover at fixed 380px - uses shared external state */}
+          <div className="w-[380px]">
+            <DesktopCapturePopover externalState={popover} />
+          </div>
         </div>
 
         {/* Reset button below */}
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleReset}
+          onClick={popover.reset}
           className="mt-6 text-xs text-muted-foreground hover:text-foreground"
         >
           <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
