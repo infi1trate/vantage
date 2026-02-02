@@ -395,6 +395,8 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
   const {
     jobs,
     activeJobs,
+    waitingJobs,
+    processingJobs,
     completedJobs,
     failedJobs,
     needsAttentionJobs,
@@ -422,28 +424,58 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
   }, [activeJobs, needsAttentionJobs, failedJobs, completedJobs, hiddenJobIds]);
   
   const activeCount = activeJobs.filter(j => !hiddenJobIds.has(j.id)).length;
+  const waitingCount = waitingJobs.filter(j => !hiddenJobIds.has(j.id)).length;
+  const processingCount = processingJobs.filter(j => !hiddenJobIds.has(j.id)).length;
   const attentionCount = needsAttentionJobs.filter(j => !hiddenJobIds.has(j.id)).length;
   const failedCount = failedJobs.filter(j => !hiddenJobIds.has(j.id)).length;
   const hasCompleted = completedJobs.some(j => !hiddenJobIds.has(j.id));
   
   // Summary text - must be before early return
+  // Priority: Waiting > Processing > Needs attention > Failed > Completed
   const summaryText = useMemo(() => {
-    if (activeCount > 0) {
-      const job = activeJobs[0];
-      const typeLabel = JOB_TYPE_CONFIG[job.type]?.label || "Processing";
-      return activeCount > 1 ? `${typeLabel} (${activeCount})` : typeLabel;
+    // If ALL active jobs are waiting, show "Waiting for session video"
+    if (waitingCount > 0 && processingCount === 0) {
+      return waitingCount > 1 
+        ? `Waiting for session video (${waitingCount})` 
+        : "Waiting for session video";
     }
+    
+    // If there are processing jobs (actively assembling/rendering)
+    if (processingCount > 0) {
+      // Find the first non-waiting job for the type label
+      const processingJob = processingJobs.find(j => !hiddenJobIds.has(j.id));
+      if (processingJob) {
+        const typeLabel = JOB_TYPE_CONFIG[processingJob.type]?.label || "Processing";
+        return processingCount > 1 ? `${typeLabel} (${processingCount})` : typeLabel;
+      }
+    }
+    
+    // Mix of waiting and processing
+    if (activeCount > 0) {
+      const job = activeJobs.find(j => !hiddenJobIds.has(j.id));
+      if (job) {
+        // If this job is waiting, show waiting copy
+        if (job.status === "waiting") {
+          return "Waiting for session video";
+        }
+        const typeLabel = JOB_TYPE_CONFIG[job.type]?.label || "Processing";
+        return activeCount > 1 ? `${typeLabel} (${activeCount})` : typeLabel;
+      }
+    }
+    
     if (attentionCount > 0) {
-      return `Needs attention (${attentionCount})`;
+      return attentionCount > 1 
+        ? `Reel needs attention (${attentionCount})` 
+        : "Reel needs attention";
     }
     if (failedCount > 0) {
-      return `Failed (${failedCount})`;
+      return failedCount > 1 ? `Failed (${failedCount})` : "Failed";
     }
     if (hasCompleted) {
       return "Complete";
     }
     return "Processing";
-  }, [activeCount, attentionCount, failedCount, hasCompleted, activeJobs]);
+  }, [activeCount, waitingCount, processingCount, attentionCount, failedCount, hasCompleted, activeJobs, processingJobs, hiddenJobIds]);
   
   const latestCompleted = completedJobs.find(j => !hiddenJobIds.has(j.id));
   
@@ -493,15 +525,28 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
         >
           <div className="flex items-center gap-2.5">
             {/* Status indicator */}
-            {activeCount > 0 ? (
+            {waitingCount > 0 && processingCount === 0 ? (
+              // All jobs are waiting - show clock
               <div className="relative">
-                <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                {activeCount > 1 && (
-                  <span className="absolute -top-1 -right-1 h-3 w-3 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
-                    {activeCount}
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                {waitingCount > 1 && (
+                  <span className="absolute -top-1 -right-1 h-3 w-3 text-[9px] font-bold bg-muted text-muted-foreground rounded-full flex items-center justify-center">
+                    {waitingCount}
                   </span>
                 )}
               </div>
+            ) : processingCount > 0 ? (
+              // Jobs actively processing - show spinner
+              <div className="relative">
+                <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                {processingCount > 1 && (
+                  <span className="absolute -top-1 -right-1 h-3 w-3 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
+                    {processingCount}
+                  </span>
+                )}
+              </div>
+            ) : attentionCount > 0 ? (
+              <AlertCircle className="h-4 w-4 text-vantage-warning" />
             ) : failedCount > 0 ? (
               <XCircle className="h-4 w-4 text-destructive" />
             ) : (
@@ -510,10 +555,10 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
             
             <span className="font-medium text-sm">{summaryText}</span>
             
-            {/* Overall progress for active jobs */}
-            {activeCount > 0 && activeJobs[0] && (
+            {/* Overall progress - only for processing jobs (not waiting) */}
+            {processingCount > 0 && processingJobs[0] && (
               <span className="text-xs text-muted-foreground font-mono">
-                {activeJobs[0].overallProgress}%
+                {processingJobs[0].overallProgress}%
               </span>
             )}
           </div>

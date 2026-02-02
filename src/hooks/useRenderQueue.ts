@@ -27,12 +27,15 @@ interface UseRenderQueueResult {
   
   // Filtered views
   activeJobs: RenderJob[];
+  waitingJobs: RenderJob[];
+  processingJobs: RenderJob[];
   completedJobs: RenderJob[];
   failedJobs: RenderJob[];
   needsAttentionJobs: RenderJob[];
   
   // Counts
   activeCount: number;
+  waitingCount: number;
   hasActiveJobs: boolean;
   
   // Actions
@@ -90,9 +93,16 @@ export function useRenderQueue(): UseRenderQueueResult {
     setJobs(loadRenderJobs());
   }, []);
   
-  const activeJobs = jobs.filter(j => 
+  // "Active" jobs that are actually making progress (not waiting)
+  const processingJobs = jobs.filter(j => 
     j.status === "queued" || j.status === "processing" || j.status === "uploading"
   );
+  
+  // Jobs waiting for source video (blocked but recoverable)
+  const waitingJobs = jobs.filter(j => j.status === "waiting");
+  
+  // Include both processing and waiting in "active" for UI purposes
+  const activeJobs = [...processingJobs, ...waitingJobs];
   
   const completedJobs = jobs.filter(j => j.status === "completed");
   const failedJobs = jobs.filter(j => j.status === "failed");
@@ -185,10 +195,13 @@ export function useRenderQueue(): UseRenderQueueResult {
   return {
     jobs,
     activeJobs,
+    waitingJobs,
+    processingJobs,
     completedJobs,
     failedJobs,
     needsAttentionJobs,
     activeCount: activeJobs.length,
+    waitingCount: waitingJobs.length,
     hasActiveJobs: activeJobs.length > 0,
     startJob,
     cancelJob: handleCancelJob,
