@@ -6,7 +6,7 @@
  */
 
 import { cn } from "@/lib/utils";
-import { AppWindow, Video, VideoOff, Mic, MicOff, ChevronDown, Sparkles, StickyNote, MoreHorizontal } from "lucide-react";
+import { Monitor, AppWindow, Video, VideoOff, Mic, MicOff, ChevronDown, ChevronRight, Sparkles, StickyNote, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,12 +14,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatRecordingLimit, MOCK_MICS, AudioDevice } from "./types";
+import { formatRecordingLimit, MOCK_MICS, CaptureSourceType } from "./types";
 
 interface IdleStateBodyProps {
   // Source
+  sourceType: CaptureSourceType;
   selectedWindowName?: string;
-  onSelectWindow: () => void;
+  onSourceRowClick: () => void;
   // Camera
   cameraEnabled: boolean;
   onToggleCamera: () => void;
@@ -30,15 +31,41 @@ interface IdleStateBodyProps {
   onMicDeviceChange: (deviceId: string) => void;
   // CTA
   onStartRecording: () => void;
+  canStartRecording: boolean;
   // Footer
   onEffectsClick?: () => void;
   onNotesClick?: () => void;
   onMoreClick?: () => void;
 }
 
+// Get source display info
+function getSourceDisplay(sourceType: CaptureSourceType, windowName?: string) {
+  switch (sourceType) {
+    case "screen":
+      return {
+        icon: Monitor,
+        label: "Full screen",
+        sublabel: undefined,
+      };
+    case "window":
+      return {
+        icon: AppWindow,
+        label: "Specific window",
+        sublabel: windowName,
+      };
+    case "camera":
+      return {
+        icon: Video,
+        label: "Camera only",
+        sublabel: undefined,
+      };
+  }
+}
+
 export function IdleStateBody({
+  sourceType,
   selectedWindowName,
-  onSelectWindow,
+  onSourceRowClick,
   cameraEnabled,
   onToggleCamera,
   micEnabled,
@@ -46,11 +73,14 @@ export function IdleStateBody({
   selectedMicId,
   onMicDeviceChange,
   onStartRecording,
+  canStartRecording,
   onEffectsClick,
   onNotesClick,
   onMoreClick,
 }: IdleStateBodyProps) {
   const selectedMic = MOCK_MICS.find(m => m.id === selectedMicId) || MOCK_MICS[0];
+  const sourceDisplay = getSourceDisplay(sourceType, selectedWindowName);
+  const SourceIcon = sourceDisplay.icon;
   
   // Truncate device name
   const truncateDeviceName = (name: string, maxLen = 20) => {
@@ -64,38 +94,7 @@ export function IdleStateBody({
       <div className="space-y-1">
         {/* Source Row */}
         <button
-          onClick={onSelectWindow}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-3 rounded-lg",
-            "transition-all duration-150",
-            "hover:bg-white/5 active:scale-[0.98]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green/50"
-          )}
-        >
-          <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center">
-            <AppWindow className="w-5 h-5 text-muted-foreground" />
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-sm font-medium text-foreground">
-              Specific window
-            </div>
-            {selectedWindowName && (
-              <div className="text-xs text-vantage-green truncate">
-                {selectedWindowName}
-              </div>
-            )}
-          </div>
-          <span className="text-xs text-vantage-green font-medium">
-            Select
-          </span>
-        </button>
-
-        {/* Divider */}
-        <div className="h-px bg-white/5 mx-3" />
-
-        {/* Camera Row */}
-        <button
-          onClick={onToggleCamera}
+          onClick={onSourceRowClick}
           className={cn(
             "w-full flex items-center gap-3 px-3 py-3 rounded-lg",
             "transition-all duration-150",
@@ -105,31 +104,70 @@ export function IdleStateBody({
         >
           <div className={cn(
             "flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center",
-            cameraEnabled ? "bg-vantage-green/20" : "bg-white/5"
+            sourceType === "camera" && cameraEnabled ? "bg-vantage-green/20" : "bg-white/5"
           )}>
-            {cameraEnabled ? (
-              <Video className="w-5 h-5 text-vantage-green" />
-            ) : (
-              <VideoOff className="w-5 h-5 text-muted-foreground" />
+            <SourceIcon className={cn(
+              "w-5 h-5",
+              sourceType === "camera" && cameraEnabled ? "text-vantage-green" : "text-muted-foreground"
+            )} />
+          </div>
+          <div className="flex-1 text-left min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              {sourceDisplay.label}
+            </div>
+            {sourceDisplay.sublabel && (
+              <div className="text-xs text-vantage-green truncate">
+                {sourceDisplay.sublabel}
+              </div>
             )}
           </div>
-          <div className="flex-1 text-left">
-            <div className="text-sm font-medium text-foreground">
-              Camera
-            </div>
-          </div>
-          <div className={cn(
-            "px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider",
-            cameraEnabled 
-              ? "bg-vantage-green/20 text-vantage-green" 
-              : "bg-white/10 text-muted-foreground"
-          )}>
-            {cameraEnabled ? "On" : "Off"}
-          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
         </button>
 
         {/* Divider */}
         <div className="h-px bg-white/5 mx-3" />
+
+        {/* Camera Row - only show if source is not camera-only */}
+        {sourceType !== "camera" && (
+          <>
+            <button
+              onClick={onToggleCamera}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-3 rounded-lg",
+                "transition-all duration-150",
+                "hover:bg-white/5 active:scale-[0.98]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green/50"
+              )}
+            >
+              <div className={cn(
+                "flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center",
+                cameraEnabled ? "bg-vantage-green/20" : "bg-white/5"
+              )}>
+                {cameraEnabled ? (
+                  <Video className="w-5 h-5 text-vantage-green" />
+                ) : (
+                  <VideoOff className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 text-left">
+                <div className="text-sm font-medium text-foreground">
+                  Camera
+                </div>
+              </div>
+              <div className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider",
+                cameraEnabled 
+                  ? "bg-vantage-green/20 text-vantage-green" 
+                  : "bg-white/10 text-muted-foreground"
+              )}>
+                {cameraEnabled ? "On" : "Off"}
+              </div>
+            </button>
+
+            {/* Divider */}
+            <div className="h-px bg-white/5 mx-3" />
+          </>
+        )}
 
         {/* Mic Row with Dropdown */}
         <div className="flex items-center gap-2 px-3 py-2">
@@ -221,12 +259,14 @@ export function IdleStateBody({
       <div className="px-1">
         <Button
           onClick={onStartRecording}
+          disabled={!canStartRecording}
           className={cn(
             "w-full h-12 text-sm font-bold uppercase tracking-wider",
             "bg-vantage-green hover:bg-vantage-green/90 text-background",
             "shadow-lg shadow-vantage-green/25",
             "rounded-xl",
-            "transition-all duration-150 active:scale-[0.98]"
+            "transition-all duration-150 active:scale-[0.98]",
+            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           )}
         >
           Start Recording

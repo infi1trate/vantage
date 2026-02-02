@@ -9,6 +9,7 @@ export { PrimaryCTA } from "./PrimaryCTA";
 export { HUDMini } from "./HUDMini";
 export { PopoverToast } from "./PopoverToast";
 export { WindowPickerGrid } from "./WindowPickerGrid";
+export { SourceTypeSheet } from "./SourceTypeSheet";
 export { IdleStateBody } from "./IdleStateBody";
 export { DesktopCapturePopover } from "./DesktopCapturePopover";
 export { usePopoverState } from "./usePopoverState";

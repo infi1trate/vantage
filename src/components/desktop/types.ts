@@ -81,12 +81,11 @@ export const MOCK_SOURCES: CaptureSource[] = [
 ];
 
 export const MOCK_WINDOWS: MockWindow[] = [
-  { id: "w1", name: "Valorant", appName: "VALORANT-Win64-Shipping.exe", thumbnail: "/placeholder.svg" },
-  { id: "w2", name: "Discord", appName: "Discord", thumbnail: "/placeholder.svg" },
-  { id: "w3", name: "Chrome - YouTube", appName: "Google Chrome", thumbnail: "/placeholder.svg" },
-  { id: "w4", name: "VS Code", appName: "Visual Studio Code", thumbnail: "/placeholder.svg" },
-  { id: "w5", name: "OBS Studio", appName: "obs64.exe", thumbnail: "/placeholder.svg" },
-  { id: "w6", name: "Steam", appName: "Steam", thumbnail: "/placeholder.svg" },
+  { id: "w1", name: "ChatGPT", appName: "ChatGPT", thumbnail: "" },
+  { id: "w2", name: "Slack - Jacob (D…)", appName: "Slack", thumbnail: "" },
+  { id: "w3", name: "Terminal - extens…", appName: "Terminal", thumbnail: "" },
+  { id: "w4", name: "Mail - Inbox", appName: "Mail", thumbnail: "" },
+  { id: "w5", name: "Figma", appName: "Figma", thumbnail: "" },
 ];
 
 export const MOCK_MICS: AudioDevice[] = [

@@ -11,6 +11,7 @@ import {
   PopoverConfig,
   PopoverError,
   CaptureSource,
+  CaptureSourceType,
   MockWindow,
   MOCK_SOURCES,
   MOCK_MICS,
@@ -18,9 +19,12 @@ import {
   RECORDING_LIMIT_SECONDS,
 } from "./types";
 
+// Extended state to include source picker
+type ExtendedPopoverState = PopoverState | "selecting_source_type";
+
 interface UsePopoverStateReturn {
   // Current state
-  state: PopoverState;
+  state: ExtendedPopoverState;
   config: PopoverConfig;
   error: PopoverError | null;
   
@@ -35,7 +39,10 @@ interface UsePopoverStateReturn {
   // State transitions
   authorize: () => void;
   selectSource: (source: CaptureSource) => void;
+  selectSourceType: (type: CaptureSourceType) => void;
   selectWindow: (window: MockWindow) => void;
+  openSourceTypePicker: () => void;
+  closeSourceTypePicker: () => void;
   openWindowPicker: () => void;
   closeWindowPicker: () => void;
   startRecording: () => void;
@@ -50,11 +57,14 @@ interface UsePopoverStateReturn {
   setCameraEnabled: (enabled: boolean) => void;
   setMicDevice: (deviceId: string) => void;
   setCameraDevice: (deviceId: string) => void;
+  
+  // Helpers
+  canStartRecording: boolean;
 }
 
 export function usePopoverState(): UsePopoverStateReturn {
   // Core state
-  const [state, setState] = useState<PopoverState>("unauthorized");
+  const [state, setState] = useState<ExtendedPopoverState>("unauthorized");
   const [error, setError] = useState<PopoverError | null>(null);
   
   // Config
@@ -106,8 +116,34 @@ export function usePopoverState(): UsePopoverStateReturn {
     // If selecting window type but no window selected, open picker
     if (source.type === "window" && !selectedWindow) {
       setState("selecting_source");
+    } else {
+      setState("idle");
     }
   }, [selectedWindow]);
+
+  // Select source type (from source type picker)
+  const selectSourceType = useCallback((type: CaptureSourceType) => {
+    const source = MOCK_SOURCES.find(s => s.type === type) || MOCK_SOURCES[0];
+    setConfig(prev => ({ ...prev, selectedSource: source }));
+    
+    if (type === "window") {
+      // Go to window picker
+      setState("selecting_source");
+    } else {
+      // For screen or camera, go back to idle
+      setState("idle");
+    }
+  }, []);
+
+  // Open source type picker
+  const openSourceTypePicker = useCallback(() => {
+    setState("selecting_source_type");
+  }, []);
+
+  // Close source type picker
+  const closeSourceTypePicker = useCallback(() => {
+    setState("idle");
+  }, []);
 
   // Open window picker
   const openWindowPicker = useCallback(() => {
@@ -255,6 +291,11 @@ export function usePopoverState(): UsePopoverStateReturn {
     setConfig(prev => ({ ...prev, selectedCameraId: deviceId }));
   }, []);
 
+  // Computed: can start recording
+  const canStartRecording = 
+    config.selectedSource?.type !== "window" || 
+    selectedWindow !== null;
+
   return {
     state,
     config,
@@ -265,7 +306,10 @@ export function usePopoverState(): UsePopoverStateReturn {
     selectedWindow,
     authorize,
     selectSource,
+    selectSourceType,
     selectWindow,
+    openSourceTypePicker,
+    closeSourceTypePicker,
     openWindowPicker,
     closeWindowPicker,
     startRecording,
@@ -278,5 +322,6 @@ export function usePopoverState(): UsePopoverStateReturn {
     setCameraEnabled,
     setMicDevice,
     setCameraDevice,
+    canStartRecording,
   };
 }
