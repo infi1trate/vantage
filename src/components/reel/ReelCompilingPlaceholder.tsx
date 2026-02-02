@@ -10,10 +10,10 @@ import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2 } from "lucide-react";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2, Search, FileQuestion } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
-import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory } from "@/lib/reels";
+import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory, getAssetErrorContent } from "@/lib/reels";
 
 import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
 
@@ -146,6 +146,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   const errorCategory = useMemo(() => {
     if (!clipError) return null;
     return getErrorCategory(clipError.reason);
+  }, [clipError]);
+  
+  // Get human-friendly content for asset_not_ready errors
+  const assetErrorContent = useMemo(() => {
+    if (!clipError || clipError.reason !== "asset_not_ready") return null;
+    return getAssetErrorContent(clipError.assetStatus);
   }, [clipError]);
   
   // User-friendly error display - use getErrorMessage which handles all formats
@@ -374,59 +380,38 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
               </>
             ) : isNeedsAttention ? (
               <>
-                {/* Needs Attention State - Specific clip issue or timeout */}
-                <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
-                  {errorCategory === "video_not_ready" ? (
-                    <Clock className="h-8 w-8 text-vantage-warning" />
-                  ) : errorCategory === "invalid_range" ? (
-                    <Wand2 className="h-8 w-8 text-vantage-warning" />
-                  ) : clipError ? (
-                    <AlertCircle className="h-8 w-8 text-vantage-warning" />
-                  ) : (
-                    <Clock className="h-8 w-8 text-vantage-warning" />
-                  )}
-                </div>
-
-                <div className="text-center max-w-sm">
-                  <p className="text-lg font-semibold text-foreground">
-                    {clipError
-                      ? "We hit an issue assembling one clip"
-                      : "This is taking longer than expected"}
-                  </p>
-                  
-                  {/* Show specific failing clip with reason label */}
-                  {clipError && (
-                    <div className="mt-3 space-y-2">
-                      {/* Reason label badge */}
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-vantage-warning/10 text-vantage-warning text-xs font-medium">
-                        {errorCategory === "video_not_ready" && <Clock className="h-3 w-3" />}
-                        {errorCategory === "invalid_range" && <Wand2 className="h-3 w-3" />}
-                        {errorCategory === "missing_source" && <AlertCircle className="h-3 w-3" />}
-                        {reasonLabel}
-                      </div>
-                      
-                      {/* Clip info */}
-                      <div className="px-4 py-2 rounded-lg bg-vantage-warning/10 border border-vantage-warning/20 inline-block">
-                        <p className="text-sm font-medium text-vantage-warning">
-                          {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
-                        </p>
-                      </div>
+                {/* Needs Attention State - Asset error or Specific clip issue or timeout */}
+                
+                {/* Asset not ready - Human-friendly display */}
+                {assetErrorContent ? (
+                  <>
+                    <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
+                      <FileQuestion className="h-8 w-8 text-vantage-warning" />
                     </div>
-                  )}
-                  
-                  {!clipError && displayErrorMessage && (
-                    <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                      {displayErrorMessage}
-                    </p>
-                  )}
-                </div>
 
-                {/* Recovery CTAs - contextual based on error type */}
-                <div className="flex flex-col items-center gap-3 mt-3">
-                  {/* Primary CTA - based on error category */}
-                  {clipError && primaryCta && (
-                    <>
-                      {primaryCta.action === "wait_retry" && onRetry && (
+                    <div className="text-center max-w-sm">
+                      <p className="text-lg font-semibold text-foreground">
+                        {assetErrorContent.title}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                        {assetErrorContent.body}
+                      </p>
+                    </div>
+
+                    {/* Recovery CTAs from asset error content */}
+                    <div className="flex flex-col items-center gap-3 mt-3">
+                      {/* Primary CTA */}
+                      {assetErrorContent.primaryCta.action === "check_session" && onCancel && (
+                        <Button
+                          onClick={onCancel}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Search className="h-4 w-4" />
+                          {assetErrorContent.primaryCta.label}
+                        </Button>
+                      )}
+                      {assetErrorContent.primaryCta.action === "wait_retry" && onRetry && (
                         <Button
                           onClick={onRetry}
                           disabled={isRetrying}
@@ -436,116 +421,254 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           {isRetrying ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin" />
-                              Waiting...
+                              Checking...
                             </>
                           ) : (
                             <>
                               <Clock className="h-4 w-4" />
-                              {primaryCta.label}
+                              {assetErrorContent.primaryCta.label}
                             </>
                           )}
                         </Button>
                       )}
-                      {primaryCta.action === "auto_fix" && onAutoFix && (
+                      {assetErrorContent.primaryCta.action === "back_to_session" && onCancel && (
                         <Button
-                          onClick={() => onAutoFix(clipError.momentId)}
-                          disabled={isRetrying}
+                          onClick={onCancel}
                           className="gap-2 min-w-[200px]"
                           size="lg"
                         >
-                          {isRetrying ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Fixing...
-                            </>
-                          ) : (
-                            <>
-                              <Wand2 className="h-4 w-4" />
-                              {primaryCta.label}
-                            </>
-                          )}
+                          <ArrowLeft className="h-4 w-4" />
+                          {assetErrorContent.primaryCta.label}
                         </Button>
                       )}
-                      {primaryCta.action === "skip_clip" && onSkipClip && (
-                        <Button
-                          onClick={() => onSkipClip(clipError.momentId)}
-                          disabled={isRetrying}
-                          className="gap-2 min-w-[200px]"
-                          size="lg"
-                        >
-                          {isRetrying ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Skipping...
-                            </>
-                          ) : (
-                            <>
-                              <SkipForward className="h-4 w-4" />
-                              {primaryCta.label}
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </>
-                  )}
 
-                  {/* Secondary: Retry (if not already primary) */}
-                  {onRetry && (!clipError || primaryCta?.action !== "wait_retry") && (
-                    <Button
-                      variant={clipError ? "outline" : "default"}
-                      onClick={onRetry}
-                      disabled={isRetrying}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      {isRetrying && !clipError ? (
+                      {/* Secondary CTA */}
+                      {assetErrorContent.secondaryCta.action === "leave_notify" && onLeaveAndNotify && (
+                        <Button
+                          variant="outline"
+                          onClick={onLeaveAndNotify}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Bell className="h-4 w-4" />
+                          {assetErrorContent.secondaryCta.label}
+                        </Button>
+                      )}
+                      {assetErrorContent.secondaryCta.action === "back_to_session" && onCancel && 
+                       assetErrorContent.primaryCta.action !== "back_to_session" && (
+                        <Button
+                          variant="outline"
+                          onClick={onCancel}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          {assetErrorContent.secondaryCta.label}
+                        </Button>
+                      )}
+
+                      {/* Tertiary CTA - text link */}
+                      {assetErrorContent.tertiaryCta && (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Retrying...
+                          {assetErrorContent.tertiaryCta.action === "back_to_session" && onCancel && 
+                           assetErrorContent.primaryCta.action !== "back_to_session" &&
+                           assetErrorContent.secondaryCta.action !== "back_to_session" && (
+                            <button
+                              onClick={onCancel}
+                              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                            >
+                              {assetErrorContent.tertiaryCta.label}
+                            </button>
+                          )}
+                          {assetErrorContent.tertiaryCta.action === "retry" && onRetry && (
+                            <button
+                              onClick={onRetry}
+                              disabled={isRetrying}
+                              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline disabled:opacity-50"
+                            >
+                              Retry
+                            </button>
+                          )}
                         </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Standard clip error or timeout display */}
+                    <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
+                      {errorCategory === "video_not_ready" ? (
+                        <Clock className="h-8 w-8 text-vantage-warning" />
+                      ) : errorCategory === "invalid_range" ? (
+                        <Wand2 className="h-8 w-8 text-vantage-warning" />
+                      ) : clipError ? (
+                        <AlertCircle className="h-8 w-8 text-vantage-warning" />
                       ) : (
+                        <Clock className="h-8 w-8 text-vantage-warning" />
+                      )}
+                    </div>
+
+                    <div className="text-center max-w-sm">
+                      <p className="text-lg font-semibold text-foreground">
+                        {clipError
+                          ? "We hit an issue assembling one clip"
+                          : "This is taking longer than expected"}
+                      </p>
+                      
+                      {/* Show specific failing clip with reason label */}
+                      {clipError && (
+                        <div className="mt-3 space-y-2">
+                          {/* Reason label badge */}
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-vantage-warning/10 text-vantage-warning text-xs font-medium">
+                            {errorCategory === "video_not_ready" && <Clock className="h-3 w-3" />}
+                            {errorCategory === "invalid_range" && <Wand2 className="h-3 w-3" />}
+                            {errorCategory === "missing_source" && <AlertCircle className="h-3 w-3" />}
+                            {reasonLabel}
+                          </div>
+                          
+                          {/* Clip info */}
+                          <div className="px-4 py-2 rounded-lg bg-vantage-warning/10 border border-vantage-warning/20 inline-block">
+                            <p className="text-sm font-medium text-vantage-warning">
+                              {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!clipError && displayErrorMessage && (
+                        <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                          {displayErrorMessage}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Recovery CTAs - contextual based on error type */}
+                    <div className="flex flex-col items-center gap-3 mt-3">
+                      {/* Primary CTA - based on error category */}
+                      {clipError && primaryCta && (
                         <>
-                          <RefreshCw className="h-4 w-4" />
-                          Retry
+                          {primaryCta.action === "wait_retry" && onRetry && (
+                            <Button
+                              onClick={onRetry}
+                              disabled={isRetrying}
+                              className="gap-2 min-w-[200px]"
+                              size="lg"
+                            >
+                              {isRetrying ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Waiting...
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="h-4 w-4" />
+                                  {primaryCta.label}
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {primaryCta.action === "auto_fix" && onAutoFix && (
+                            <Button
+                              onClick={() => onAutoFix(clipError.momentId)}
+                              disabled={isRetrying}
+                              className="gap-2 min-w-[200px]"
+                              size="lg"
+                            >
+                              {isRetrying ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Fixing...
+                                </>
+                              ) : (
+                                <>
+                                  <Wand2 className="h-4 w-4" />
+                                  {primaryCta.label}
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {primaryCta.action === "skip_clip" && onSkipClip && (
+                            <Button
+                              onClick={() => onSkipClip(clipError.momentId)}
+                              disabled={isRetrying}
+                              className="gap-2 min-w-[200px]"
+                              size="lg"
+                            >
+                              {isRetrying ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Skipping...
+                                </>
+                              ) : (
+                                <>
+                                  <SkipForward className="h-4 w-4" />
+                                  {primaryCta.label}
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </>
                       )}
-                    </Button>
-                  )}
 
-                  {/* Leave and notify me (only show if no specific clip error - timeout scenario) */}
-                  {!clipError && onLeaveAndNotify && (
-                    <Button
-                      variant="outline"
-                      onClick={onLeaveAndNotify}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      <Bell className="h-4 w-4" />
-                      Leave and notify me
-                    </Button>
-                  )}
+                      {/* Secondary: Retry (if not already primary) */}
+                      {onRetry && (!clipError || primaryCta?.action !== "wait_retry") && (
+                        <Button
+                          variant={clipError ? "outline" : "default"}
+                          onClick={onRetry}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying && !clipError ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Retrying...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-4 w-4" />
+                              Retry
+                            </>
+                          )}
+                        </Button>
+                      )}
 
-                  {/* Tertiary: Back to session */}
-                  {onCancel && (
-                    <button
-                      onClick={onCancel}
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
-                    >
-                      Back to session
-                    </button>
-                  )}
-                </div>
+                      {/* Leave and notify me (only show if no specific clip error - timeout scenario) */}
+                      {!clipError && onLeaveAndNotify && (
+                        <Button
+                          variant="outline"
+                          onClick={onLeaveAndNotify}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Bell className="h-4 w-4" />
+                          Leave and notify me
+                        </Button>
+                      )}
 
-                {/* Reassurance text */}
-                <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
-                  {errorCategory === "video_not_ready"
-                    ? "The video is still processing. Wait a moment and try again."
-                    : errorCategory === "invalid_range"
-                    ? "We'll automatically fix the clip timing and continue."
-                    : clipError
-                    ? "Skip this clip to continue with remaining clips."
-                    : "Your format and clips are saved. You'll get a notification when it's ready."}
-                </p>
+                      {/* Tertiary: Back to session */}
+                      {onCancel && (
+                        <button
+                          onClick={onCancel}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                        >
+                          Back to session
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Reassurance text */}
+                    <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
+                      {errorCategory === "video_not_ready"
+                        ? "The video is still processing. Wait a moment and try again."
+                        : errorCategory === "invalid_range"
+                        ? "We'll automatically fix the clip timing and continue."
+                        : clipError
+                        ? "Skip this clip to continue with remaining clips."
+                        : "Your format and clips are saved. You'll get a notification when it's ready."}
+                    </p>
+                  </>
+                )}
               </>
             ) : isWaitingForSource ? (
               <>

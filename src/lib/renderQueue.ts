@@ -99,7 +99,7 @@ export interface RenderJob {
   /** Primary CTA action type */
   primaryCtaAction?: RenderJobCtaAction;
   /** Error category for contextual UI */
-  errorCategory?: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other";
+  errorCategory?: "video_not_ready" | "invalid_range" | "missing_source" | "asset_not_ready" | "timeout" | "other";
   
   // Timestamps
   createdAt: string;
