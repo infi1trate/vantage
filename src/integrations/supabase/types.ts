@@ -255,6 +255,7 @@ export type Database = {
           id: string
           is_private: boolean | null
           metadata: Json | null
+          signature_frame_id: string | null
           status: string | null
           thumbnail_url: string | null
           title: string
@@ -271,6 +272,7 @@ export type Database = {
           id?: string
           is_private?: boolean | null
           metadata?: Json | null
+          signature_frame_id?: string | null
           status?: string | null
           thumbnail_url?: string | null
           title: string
@@ -287,6 +289,7 @@ export type Database = {
           id?: string
           is_private?: boolean | null
           metadata?: Json | null
+          signature_frame_id?: string | null
           status?: string | null
           thumbnail_url?: string | null
           title?: string
@@ -295,7 +298,15 @@ export type Database = {
           video_url?: string | null
           visibility?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "capture_sessions_signature_frame_id_fkey"
+            columns: ["signature_frame_id"]
+            isOneToOne: false
+            referencedRelation: "frame_overlays"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       comment_reactions: {
         Row: {
@@ -883,6 +894,80 @@ export type Database = {
           },
         ]
       }
+      frame_overlays: {
+        Row: {
+          ai_inputs: Json | null
+          ai_prompt_used: string | null
+          ai_source: string | null
+          ai_variant_index: number | null
+          apply_scope: string
+          asset_url: string | null
+          clip_id: string | null
+          created_at: string
+          generation_model: string | null
+          id: string
+          layout_params: Json
+          name: string | null
+          preset_key: string | null
+          session_id: string | null
+          style_params: Json
+          thumbnail_url: string | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_inputs?: Json | null
+          ai_prompt_used?: string | null
+          ai_source?: string | null
+          ai_variant_index?: number | null
+          apply_scope?: string
+          asset_url?: string | null
+          clip_id?: string | null
+          created_at?: string
+          generation_model?: string | null
+          id?: string
+          layout_params?: Json
+          name?: string | null
+          preset_key?: string | null
+          session_id?: string | null
+          style_params?: Json
+          thumbnail_url?: string | null
+          type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_inputs?: Json | null
+          ai_prompt_used?: string | null
+          ai_source?: string | null
+          ai_variant_index?: number | null
+          apply_scope?: string
+          asset_url?: string | null
+          clip_id?: string | null
+          created_at?: string
+          generation_model?: string | null
+          id?: string
+          layout_params?: Json
+          name?: string | null
+          preset_key?: string | null
+          session_id?: string | null
+          style_params?: Json
+          thumbnail_url?: string | null
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "frame_overlays_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1110,6 +1195,7 @@ export type Database = {
           camera_mirror: boolean | null
           camera_resolution: string | null
           created_at: string
+          default_frame_id: string | null
           default_game: string | null
           default_playback_speed: number | null
           default_session_visibility: string | null
@@ -1135,6 +1221,7 @@ export type Database = {
           camera_mirror?: boolean | null
           camera_resolution?: string | null
           created_at?: string
+          default_frame_id?: string | null
           default_game?: string | null
           default_playback_speed?: number | null
           default_session_visibility?: string | null
@@ -1160,6 +1247,7 @@ export type Database = {
           camera_mirror?: boolean | null
           camera_resolution?: string | null
           created_at?: string
+          default_frame_id?: string | null
           default_game?: string | null
           default_playback_speed?: number | null
           default_session_visibility?: string | null
@@ -1177,7 +1265,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_default_frame_id_fkey"
+            columns: ["default_frame_id"]
+            isOneToOne: false
+            referencedRelation: "frame_overlays"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_sessions: {
         Row: {
