@@ -544,12 +544,22 @@ export default function ReelEditor() {
                     }
                   }}
                   onLeaveAndNotify={() => {
-                    // Show reassurance toast and navigate away
+                    // Show reassurance toast and navigate away (ONLY for processing states)
                     toast.info("We'll notify you when it's ready.", {
                       description: "Your reel is still assembling in the background.",
                       duration: 5000,
                     });
                     goBack();
+                  }}
+                  onStartRecording={() => {
+                    navigate("/capture");
+                  }}
+                  onReportIssue={() => {
+                    // Open support/feedback - for now just show a toast
+                    toast.info("Issue reported", {
+                      description: "We're working on improving video reliability. Check back soon.",
+                      duration: 5000,
+                    });
                   }}
                   onSkipClip={handleSkipClip}
                   // Truthful progress from assembly hook

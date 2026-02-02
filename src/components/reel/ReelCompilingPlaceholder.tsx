@@ -10,7 +10,7 @@ import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2, Search, FileQuestion } from "lucide-react";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2, Search, FileQuestion, PlusCircle, MessageSquare } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
 import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory, getAssetErrorContent } from "@/lib/reels";
@@ -53,8 +53,12 @@ interface ReelCompilingPlaceholderProps {
   onCancel?: () => void;
   /** Check session video handler - navigates to session media panel */
   onCheckSession?: () => void;
-  /** Leave and notify handler - keeps job in background */
+  /** Leave and notify handler - keeps job in background (ONLY for processing states) */
   onLeaveAndNotify?: () => void;
+  /** Start new recording handler */
+  onStartRecording?: () => void;
+  /** Report issue handler */
+  onReportIssue?: () => void;
   /** Skip failing clip handler - removes the failing moment and retries */
   onSkipClip?: (momentId: string) => Promise<void>;
   /** Auto-fix clip handler - attempts to repair invalid range */
@@ -121,6 +125,8 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   onCancel,
   onCheckSession,
   onLeaveAndNotify,
+  onStartRecording,
+  onReportIssue,
   onSkipClip,
   onAutoFix,
   progress,
@@ -444,9 +450,21 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           {assetErrorContent.primaryCta.label}
                         </Button>
                       )}
+                      {assetErrorContent.primaryCta.action === "start_recording" && onStartRecording && (
+                        <Button
+                          onClick={onStartRecording}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          {assetErrorContent.primaryCta.label}
+                        </Button>
+                      )}
 
-                      {/* Secondary CTA */}
-                      {assetErrorContent.secondaryCta.action === "leave_notify" && onLeaveAndNotify && (
+                      {/* Secondary CTA - only show "Leave and notify" when canNotify is true */}
+                      {assetErrorContent.secondaryCta.action === "leave_notify" && 
+                       assetErrorContent.canNotify && 
+                       onLeaveAndNotify && (
                         <Button
                           variant="outline"
                           onClick={onLeaveAndNotify}
@@ -454,6 +472,18 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           size="lg"
                         >
                           <Bell className="h-4 w-4" />
+                          {assetErrorContent.secondaryCta.label}
+                        </Button>
+                      )}
+                      {assetErrorContent.secondaryCta.action === "start_recording" && onStartRecording && 
+                       assetErrorContent.primaryCta.action !== "start_recording" && (
+                        <Button
+                          variant="outline"
+                          onClick={onStartRecording}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <PlusCircle className="h-4 w-4" />
                           {assetErrorContent.secondaryCta.label}
                         </Button>
                       )}
@@ -466,6 +496,17 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           size="lg"
                         >
                           <ArrowLeft className="h-4 w-4" />
+                          {assetErrorContent.secondaryCta.label}
+                        </Button>
+                      )}
+                      {assetErrorContent.secondaryCta.action === "report_issue" && onReportIssue && (
+                        <Button
+                          variant="outline"
+                          onClick={onReportIssue}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <MessageSquare className="h-4 w-4" />
                           {assetErrorContent.secondaryCta.label}
                         </Button>
                       )}
@@ -490,6 +531,14 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                               className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline disabled:opacity-50"
                             >
                               Retry
+                            </button>
+                          )}
+                          {assetErrorContent.tertiaryCta.action === "report_issue" && onReportIssue && (
+                            <button
+                              onClick={onReportIssue}
+                              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                            >
+                              {assetErrorContent.tertiaryCta.label}
                             </button>
                           )}
                         </>
