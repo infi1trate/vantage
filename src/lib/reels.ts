@@ -1034,11 +1034,20 @@ export async function executeAssembly(
   try {
     console.log(`[Reels] Starting manifest-first assembly for ${reelId} with ${moments.length} moments`);
 
-    // Validate inputs early
+    // Validate inputs early - minimum 2 clips required for a valid reel
+    const MIN_CLIPS_REQUIRED = 2;
+    
     if (!moments || moments.length === 0) {
       throw new AssemblyError(
         "No clips provided for assembly",
-        "Please select at least one clip for your reel."
+        "Please select at least 2 clips for your reel."
+      );
+    }
+    
+    if (moments.length < MIN_CLIPS_REQUIRED) {
+      throw new AssemblyError(
+        `Not enough clips: ${moments.length} provided, ${MIN_CLIPS_REQUIRED} required`,
+        `Not enough usable clips. Need at least ${MIN_CLIPS_REQUIRED} clips to make a reel.`
       );
     }
 

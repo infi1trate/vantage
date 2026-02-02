@@ -353,11 +353,13 @@ export default function ReelEditor() {
       // Remove the failing moment from source_moment_ids
       const updatedMomentIds = (reel.source_moment_ids || []).filter(id => id !== momentId);
       
-      // Validate minimum clip count (need at least 1 to make a reel, but warn if only 1 left)
-      if (updatedMomentIds.length === 0) {
-        toast.error("Not enough clips to make a reel — select more moments.", {
-          description: "This was the only clip in your reel.",
-          duration: 5000,
+      // Validate minimum clip count (need at least 2 clips to make a valid reel)
+      if (updatedMomentIds.length < 2) {
+        toast.error("Not enough usable clips", {
+          description: updatedMomentIds.length === 0
+            ? "This was the only clip in your reel. Select more moments."
+            : "Need at least 2 clips to make a reel. Select more moments.",
+          duration: 6000,
         });
         setIsRetrying(false);
         return;
@@ -370,6 +372,7 @@ export default function ReelEditor() {
           source_moment_ids: updatedMomentIds,
           status: "compiling",
           assembly_step: "collecting_clips",
+          step_started_at: new Date().toISOString(),
           render_error: null,
           updated_at: new Date().toISOString(),
         })
@@ -377,9 +380,9 @@ export default function ReelEditor() {
       
       if (error) throw error;
       
-      toast.success(`Skipped clip — continuing with ${updatedMomentIds.length} remaining clip${updatedMomentIds.length > 1 ? 's' : ''}...`);
+      toast.success(`Skipped 1 clip — continuing with ${updatedMomentIds.length} clips...`);
       
-      // Trigger a retry to restart assembly
+      // Trigger a retry to restart assembly with remaining clips
       await assemblyState.retry();
       
       // Invalidate queries
