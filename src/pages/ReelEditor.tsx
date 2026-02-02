@@ -24,6 +24,7 @@ import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { CompilationPhase } from "@/components/reel/ReelCompilationStatus";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
+import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -253,6 +254,9 @@ export default function ReelEditor() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
+      
+      {/* First-time intro modal */}
+      <ReelEditorIntroModal isReelReady={isReelReady} />
       
       {/* Editor Header - Compact layout with mode indicator */}
       <div className="border-b border-border/40 bg-card/50 px-4 py-3">
