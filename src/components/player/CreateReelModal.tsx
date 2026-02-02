@@ -725,6 +725,7 @@ function ReelCreatorContent({
   onReelCreated,
   onClose,
   onViewSessionMedia,
+  reelEligibility,
 }: {
   moments: Annotation[];
   sessionId: string;
@@ -732,6 +733,7 @@ function ReelCreatorContent({
   onReelCreated: (reelId: string) => void;
   onClose: () => void;
   onViewSessionMedia?: () => void;
+  reelEligibility: ReelEligibilityResult;
 }) {
   // Default to 16:9 (Landscape) as per UX requirement
   const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("16:9");
@@ -1021,6 +1023,24 @@ function ReelCreatorContent({
             : "You'll be taken to the Reel Editor next."
           }
         </p>
+        
+        {/* Dev-only eligibility debug info */}
+        {import.meta.env.DEV && (
+          <p className="text-[10px] text-muted-foreground/60 text-center mt-1.5 font-mono">
+            Eligibility: {reelEligibility.ok ? "OK" : "blocked"} 
+            {reelEligibility.ok && reelEligibility.details && (
+              <span>
+                {" "}({reelEligibility.details.isLegacy ? "legacy" : 
+                  reelEligibility.details.hasScreenVideo && reelEligibility.details.screenVideoStatus === "ready" ? "screenVideo.ready" :
+                  reelEligibility.details.reelSourceStatus === "ready" ? "reelSource.ready" :
+                  reelEligibility.details.hasVideoUrl ? "videoUrl" : "unknown"})
+              </span>
+            )}
+            {!reelEligibility.ok && reelEligibility.reasonCode && (
+              <span> ({reelEligibility.reasonCode})</span>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1121,6 +1141,7 @@ export function CreateReelModal({
       onReelCreated={handleReelCreated}
       onClose={handleClose}
       onViewSessionMedia={onViewSessionMedia}
+      reelEligibility={reelEligibility}
     />
   ) : fallbackContent;
 
