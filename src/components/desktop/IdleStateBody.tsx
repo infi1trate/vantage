@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Monitor, AppWindow, Video, VideoOff, Mic, MicOff, ChevronDown, Sparkles, StickyNote, MoreHorizontal } from "lucide-react";
+import { Monitor, AppWindow, Video, VideoOff, Mic, MicOff, ChevronDown, Sparkles, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,8 +35,6 @@ interface IdleStateBodyProps {
   // CTA
   onStartRecording: () => void;
   canStartRecording: boolean;
-  // Footer
-  onNotesClick?: () => void;
   // Account
   username: string;
   onSignOut: () => void;
@@ -83,7 +81,6 @@ export function IdleStateBody({
   onMicDeviceChange,
   onStartRecording,
   canStartRecording,
-  onNotesClick,
   username,
   onSignOut,
   forceUploadError,
@@ -332,12 +329,12 @@ export function IdleStateBody({
       {/* Footer tabs */}
       <div className="h-px bg-white/[0.08] my-4" aria-hidden="true" />
       
-      <nav className="flex items-center justify-around" aria-label="Quick actions">
+      <nav className="flex items-center justify-center gap-8" aria-label="Quick actions">
         <button
           onClick={() => setEffectsOpen(true)}
           aria-label="Open effects settings"
           className={cn(
-            "flex flex-col items-center gap-1.5 px-4 py-2 rounded-xl",
+            "flex flex-col items-center gap-1.5 px-6 py-2 rounded-xl",
             "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
             "transition-all duration-150",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -347,26 +344,12 @@ export function IdleStateBody({
           <span className="text-[10px] uppercase tracking-wider font-medium">Effects</span>
         </button>
         
-        <button
-          onClick={onNotesClick}
-          aria-label="Open notes"
-          className={cn(
-            "flex flex-col items-center gap-1.5 px-4 py-2 rounded-xl",
-            "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
-            "transition-all duration-150",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <StickyNote className="w-5 h-5" />
-          <span className="text-[10px] uppercase tracking-wider font-medium">Notes</span>
-        </button>
-        
         <MoreMenu
           trigger={
             <button
               aria-label="Open more options"
               className={cn(
-                "flex flex-col items-center gap-1.5 px-4 py-2 rounded-xl",
+                "flex flex-col items-center gap-1.5 px-6 py-2 rounded-xl",
                 "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
                 "transition-all duration-150",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
