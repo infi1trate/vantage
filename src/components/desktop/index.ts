@@ -15,6 +15,8 @@ export { RecordingStateBody } from "./RecordingStateBody";
 export { UnauthorizedStateBody } from "./UnauthorizedStateBody";
 export { MoreMenu } from "./MoreMenu";
 export { EffectsModal } from "./EffectsModal";
+export { SettingsModal } from "./SettingsModal";
+export { QuitConfirmDialog } from "./QuitConfirmDialog";
 export { DesktopCapturePopover } from "./DesktopCapturePopover";
 export { usePopoverState, MOCK_USER, type UsePopoverStateReturn } from "./usePopoverState";
 export * from "./types";
