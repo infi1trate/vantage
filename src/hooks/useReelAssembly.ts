@@ -408,6 +408,21 @@ export function useReelAssembly(
         attemptId: attemptId || undefined,
       });
       assemblyStartRef.current = null;
+    } else if (newStatus === "needs_attention") {
+      // Stalled or recoverable failure - show in global queue
+      setState("needs_attention");
+      clearTimers();
+      markJobNeedsAttention("This reel needs attention. Open the editor to fix it.");
+      const durationMs = assemblyStartRef.current 
+        ? Date.now() - assemblyStartRef.current 
+        : undefined;
+      logAssemblyTelemetry("timeout", reelId, { 
+        durationMs,
+        reason: "status_needs_attention",
+        retryCount,
+        attemptId: attemptId || undefined,
+      });
+      assemblyStartRef.current = null;
     } else {
       // draft, ready, rendering = assembly complete
       setState("ready");
@@ -424,7 +439,7 @@ export function useReelAssembly(
     }
     
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, updateJobProgress, completeJob, failJob, currentAttemptId]);
+  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, updateJobProgress, completeJob, failJob, markJobNeedsAttention, currentAttemptId]);
   
   // Fail the assembly with timeout
   const failWithTimeout = useCallback(async () => {
