@@ -29,6 +29,7 @@ const Insights = lazy(() => import("./pages/Insights"));
 const Community = lazy(() => import("./pages/Community"));
 const CommunityPost = lazy(() => import("./pages/CommunityPost"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Desktop = lazy(() => import("./pages/Desktop"));
 
 // Loading fallback for lazy routes
 function RouteLoader() {
@@ -72,6 +73,8 @@ const router = createBrowserRouter([
   { path: "/library/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
   { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
   { path: "/settings", element: withSuspense(Settings), errorElement: <RouteErrorFallback /> },
+  // Desktop capture popover UI preview
+  { path: "/desktop", element: withSuspense(Desktop), errorElement: <RouteErrorFallback /> },
   { path: "*", element: <NotFound /> },
 ]);
 
