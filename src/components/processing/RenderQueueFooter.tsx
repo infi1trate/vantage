@@ -44,6 +44,7 @@ import { RenderJob, RenderJobType } from "@/lib/renderQueue";
 
 // Job type labels and icons
 const JOB_TYPE_CONFIG: Record<RenderJobType, { label: string; icon: typeof Film }> = {
+  reel_assembly: { label: "Assembling reel", icon: Film },
   composite_reel: { label: "Rendering reel", icon: Film },
   apply_effects: { label: "Applying effects", icon: Sparkles },
   generate_package: { label: "Generating package", icon: Sparkles },
@@ -116,11 +117,20 @@ const RenderJobItem = memo(function RenderJobItem({
               "font-medium truncate",
               compact ? "text-xs max-w-[100px]" : "text-sm max-w-[160px] sm:max-w-[220px]"
             )}>
-              {job.sessionTitle}
+              {/* Show reel title for assembly jobs, session title otherwise */}
+              {job.type === "reel_assembly" && job.reelTitle 
+                ? job.reelTitle 
+                : job.sessionTitle}
             </span>
             <Badge variant="secondary" className="text-[9px] px-1.5 shrink-0">
               {typeConfig.label}
             </Badge>
+            {/* Show aspect ratio + clip count for reel assembly */}
+            {job.type === "reel_assembly" && (job.aspectRatio || job.clipCount) && !compact && (
+              <span className="text-[10px] text-muted-foreground">
+                {job.aspectRatio}{job.clipCount ? ` · ${job.clipCount} clips` : ""}
+              </span>
+            )}
           </div>
         </div>
         
@@ -135,10 +145,18 @@ const RenderJobItem = memo(function RenderJobItem({
                 className={cn("h-7 gap-1.5", compact ? "px-2 text-xs" : "px-3")}
                 asChild
               >
-                <Link to={`/session/${job.sessionId}`}>
-                  <Eye className="h-3.5 w-3.5" />
-                  {!compact && <span>View</span>}
-                </Link>
+                {/* Link to reel editor for reel_assembly jobs */}
+                {job.type === "reel_assembly" && job.reelId ? (
+                  <Link to={`/reel/${job.reelId}`}>
+                    <Film className="h-3.5 w-3.5" />
+                    {!compact && <span>Open Editor</span>}
+                  </Link>
+                ) : (
+                  <Link to={`/session/${job.sessionId}`}>
+                    <Eye className="h-3.5 w-3.5" />
+                    {!compact && <span>View</span>}
+                  </Link>
+                )}
               </Button>
               {job.downloadPath && (
                 <Tooltip>

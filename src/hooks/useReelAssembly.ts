@@ -6,6 +6,7 @@
  * - 45-second timeout fail-safe
  * - Retry mechanism for failed assembly
  * - Telemetry logging for duration, failures, and retries
+ * - Integration with global render queue for cross-app visibility
  * 
  * States:
  * - idle: No assembly running
@@ -18,11 +19,25 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, updateReel, getReel } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  createRenderJob,
+  updateRenderJob,
+  getReelAssemblyJob,
+  loadRenderJobs,
+  RenderJob,
+} from "@/lib/renderQueue";
 
 export type AssemblyState = "idle" | "assembling" | "ready" | "failed";
 
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
+
+// Assembly step progress ranges (matches ReelCompilingPlaceholder)
+const ASSEMBLY_STEP_PROGRESS: Record<string, { stage: number; progress: number }> = {
+  collecting: { stage: 0, progress: 20 },
+  stitching: { stage: 1, progress: 70 },
+  preparing: { stage: 2, progress: 100 },
+};
 
 export interface ReelAssemblyState {
   /** Current assembly state */
@@ -79,7 +94,14 @@ function logAssemblyTelemetry(
  */
 export function useReelAssembly(
   reelId: string | undefined,
-  initialStatus: ReelStatus | undefined
+  initialStatus: ReelStatus | undefined,
+  reelMetadata?: {
+    sessionId?: string;
+    sessionTitle?: string;
+    reelTitle?: string;
+    aspectRatio?: string;
+    clipCount?: number;
+  }
 ): ReelAssemblyState {
   const queryClient = useQueryClient();
   
@@ -99,6 +121,8 @@ export function useReelAssembly(
   const pollRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const assemblyStartRef = useRef<number | null>(null);
+  const progressSimulationRef = useRef<number | null>(null);
+  const renderJobIdRef = useRef<string | null>(null);
   
   // Clear all timers
   const clearTimers = useCallback(() => {
@@ -110,7 +134,96 @@ export function useReelAssembly(
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    if (progressSimulationRef.current) {
+      clearInterval(progressSimulationRef.current);
+      progressSimulationRef.current = null;
+    }
   }, []);
+  
+  // Create or get the render queue job for this reel
+  const ensureRenderJob = useCallback(() => {
+    if (!reelId) return null;
+    
+    // Check if job already exists
+    let job = getReelAssemblyJob(reelId);
+    
+    if (!job && reelMetadata?.sessionId) {
+      // Create new job
+      job = createRenderJob({
+        type: "reel_assembly",
+        sessionId: reelMetadata.sessionId,
+        sessionTitle: reelMetadata.sessionTitle || "Session",
+        reelId,
+        reelTitle: reelMetadata.reelTitle || "Untitled Reel",
+        aspectRatio: reelMetadata.aspectRatio,
+        clipCount: reelMetadata.clipCount,
+      });
+      console.log("[ReelAssembly] Created render job:", job.id);
+    }
+    
+    if (job) {
+      renderJobIdRef.current = job.id;
+    }
+    
+    return job;
+  }, [reelId, reelMetadata]);
+  
+  // Update render job progress
+  const updateJobProgress = useCallback((stage: number, progress: number) => {
+    if (!renderJobIdRef.current) return;
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "processing",
+      currentStageIndex: stage,
+      overallProgress: progress,
+      startedAt: new Date().toISOString(),
+    });
+  }, []);
+  
+  // Complete render job
+  const completeJob = useCallback(() => {
+    if (!renderJobIdRef.current) return;
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "completed",
+      overallProgress: 100,
+    });
+    renderJobIdRef.current = null;
+  }, []);
+  
+  // Fail render job
+  const failJob = useCallback((errorMessage: string) => {
+    if (!renderJobIdRef.current) return;
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "failed",
+      errorMessage,
+    });
+  }, []);
+  
+  // Start simulating progress for the render job
+  const startProgressSimulation = useCallback(() => {
+    if (progressSimulationRef.current) return;
+    
+    let elapsed = 0;
+    const maxDuration = 25000; // 25 seconds to reach 85%
+    
+    progressSimulationRef.current = window.setInterval(() => {
+      elapsed += 500;
+      const t = Math.min(elapsed / maxDuration, 1);
+      // Ease-out curve
+      const easedProgress = 1 - Math.pow(1 - t, 3);
+      // Cap at 85% - hold there until real completion
+      const progress = Math.min(85, Math.round(easedProgress * 85));
+      
+      // Determine which stage we're in
+      let stage = 0;
+      if (progress >= 70) stage = 2;
+      else if (progress >= 20) stage = 1;
+      
+      updateJobProgress(stage, progress);
+    }, 500);
+  }, [updateJobProgress]);
   
   // Handle status update from any source
   const handleStatusChange = useCallback((newStatus: ReelStatus) => {
@@ -125,10 +238,15 @@ export function useReelAssembly(
       if (!assemblyStartRef.current) {
         assemblyStartRef.current = Date.now();
         logAssemblyTelemetry("start", reelId);
+        // Create render job and start progress simulation
+        ensureRenderJob();
+        startProgressSimulation();
       }
     } else if (newStatus === "failed") {
       setState("failed");
       clearTimers();
+      // Fail the render job
+      failJob("Reel assembly failed. Please try again.");
       // Log failure with duration
       const durationMs = assemblyStartRef.current 
         ? Date.now() - assemblyStartRef.current 
@@ -144,6 +262,8 @@ export function useReelAssembly(
       setState("ready");
       setError(null);
       clearTimers();
+      // Complete the render job
+      completeJob();
       // Log success with duration
       const durationMs = assemblyStartRef.current 
         ? Date.now() - assemblyStartRef.current 
@@ -156,7 +276,7 @@ export function useReelAssembly(
     
     // Update React Query cache
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-  }, [reelId, queryClient, clearTimers, retryCount]);
+  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, completeJob, failJob]);
   
   // Fail the assembly with timeout
   const failWithTimeout = useCallback(async () => {
@@ -173,6 +293,9 @@ export function useReelAssembly(
     });
     
     console.warn("[ReelAssembly] Assembly timed out after 45s");
+    
+    // Fail the render job
+    failJob("Reel assembly is taking longer than expected. Please try again.");
     
     try {
       // Update reel to failed status
@@ -198,7 +321,7 @@ export function useReelAssembly(
     } catch (err) {
       console.error("[ReelAssembly] Failed to update timeout status:", err);
     }
-  }, [reelId, queryClient, clearTimers, retryCount]);
+  }, [reelId, queryClient, clearTimers, retryCount, failJob]);
   
   // Poll for status as a backup mechanism
   const pollStatus = useCallback(async () => {
@@ -249,6 +372,11 @@ export function useReelAssembly(
       if (!assemblyStartRef.current) {
         assemblyStartRef.current = Date.now();
       }
+      
+      // Ensure render job exists for global queue visibility
+      ensureRenderJob();
+      startProgressSimulation();
+      
       timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
       
       // Also setup polling as backup (realtime might not always work)
@@ -260,7 +388,7 @@ export function useReelAssembly(
       clearTimers();
       supabase.removeChannel(channel);
     };
-  }, [reelId, state, handleStatusChange, failWithTimeout, pollStatus, clearTimers]);
+  }, [reelId, state, handleStatusChange, failWithTimeout, pollStatus, clearTimers, ensureRenderJob, startProgressSimulation]);
   
   // Sync state when initialStatus changes (e.g., from React Query refetch)
   useEffect(() => {

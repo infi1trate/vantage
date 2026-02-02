@@ -63,15 +63,7 @@ export default function ReelEditor() {
     }
   }, [reel?.session_id, navigate, safeGoBack]);
 
-  // Reel assembly state with real-time subscription + timeout
-  const assemblyState = useReelAssembly(reelId, reel?.status as ReelStatus | undefined);
-  
-  // Reel package configuration
-  const { config: reelPackage, isLoading: packageLoading } = useReelPackage(
-    reel?.session_id || undefined
-  );
-
-  // Session data for source video
+  // Session data for source video - declare early so we can use it for assembly metadata
   const [sessionData, setSessionData] = useState<{
     videoUrl: string | null;
     duration: number;
@@ -80,6 +72,25 @@ export default function ReelEditor() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUnavailable, setPreviewUnavailable] = useState(false);
+
+  // Reel assembly state with real-time subscription + timeout
+  // Pass metadata for global render queue integration
+  const assemblyState = useReelAssembly(
+    reelId, 
+    reel?.status as ReelStatus | undefined,
+    {
+      sessionId: reel?.session_id || undefined,
+      sessionTitle: sessionData?.title || reel?.title || "Session",
+      reelTitle: reel?.title || "Untitled Reel",
+      aspectRatio: reel?.aspect_ratio,
+      clipCount: reel?.source_moment_ids?.length,
+    }
+  );
+  
+  // Reel package configuration
+  const { config: reelPackage, isLoading: packageLoading } = useReelPackage(
+    reel?.session_id || undefined
+  );
 
   // Player state
   const [currentTime, setCurrentTime] = useState(0);
