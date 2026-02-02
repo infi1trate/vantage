@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Annotation } from "@/lib/captures";
+import { createReel, AspectRatio } from "@/lib/reels";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,7 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
-import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { AspectRatio as AspectRatioContainer } from "@/components/ui/aspect-ratio";
 
 interface CreateReelModalProps {
   open: boolean;
@@ -364,7 +366,7 @@ function ReelPreviewContent({
                   : "max-w-full"
           )}
         >
-          <AspectRatio ratio={ratioConfig.ratio}>
+          <AspectRatioContainer ratio={ratioConfig.ratio}>
             {/* Video container - tap to play/pause */}
             <div 
               className="absolute inset-0 bg-gradient-to-br from-muted/30 via-background to-muted/30 flex items-center justify-center cursor-pointer select-none"
@@ -427,7 +429,7 @@ function ReelPreviewContent({
                 </div>
               )}
             </div>
-          </AspectRatio>
+          </AspectRatioContainer>
 
           {/* Aspect ratio badge */}
           <div className="absolute top-3 left-3 pointer-events-none">
@@ -645,13 +647,15 @@ function ReelPreviewContent({
 
 function ReelCreatorContent({
   moments,
+  sessionId,
   sessionTitle,
-  onGenerated,
+  onReelCreated,
   onClose,
 }: {
   moments: Annotation[];
+  sessionId: string;
   sessionTitle?: string;
-  onGenerated: (reel: GeneratedReel) => void;
+  onReelCreated: (reelId: string) => void;
   onClose: () => void;
 }) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("9:16");
@@ -704,16 +708,23 @@ function ReelCreatorContent({
 
     setIsGenerating(true);
     
-    // Simulate generation (replace with actual API call)
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Transition to preview
-    onGenerated({
-      aspectRatio,
-      duration: estimatedDuration,
-      momentCount: selectedMoments.length,
-    });
-  }, [selectedMoments, aspectRatio, estimatedDuration, onGenerated]);
+    try {
+      // Create the reel entity in the database
+      const reel = await createReel({
+        sessionId,
+        title: sessionTitle ? `${sessionTitle} Reel` : "Untitled Reel",
+        aspectRatio: aspectRatio as AspectRatio,
+        momentIds: Array.from(selectedIds),
+      });
+      
+      // Navigate to Reel Editor
+      onReelCreated(reel.id);
+    } catch (error) {
+      console.error("Failed to create reel:", error);
+      toast.error("Failed to create reel");
+      setIsGenerating(false);
+    }
+  }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated]);
 
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
@@ -845,8 +856,7 @@ export function CreateReelModal({
   sessionTitle,
 }: CreateReelModalProps) {
   const isMobile = useIsMobile();
-  const [step, setStep] = useState<ModalStep>("create");
-  const [generatedReel, setGeneratedReel] = useState<GeneratedReel | null>(null);
+  const navigate = useNavigate();
 
   // Only show moments that are reel-worthy (kill, death, highlight)
   const reelMoments = useMemo(() => {
@@ -858,12 +868,7 @@ export function CreateReelModal({
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
-      // Small delay to avoid visual glitch during close animation
-      const timer = setTimeout(() => {
-        setStep("create");
-        setGeneratedReel(null);
-      }, 300);
-      return () => clearTimeout(timer);
+      // No-op for now since we navigate away on create
     }
   }, [open]);
 
@@ -871,29 +876,20 @@ export function CreateReelModal({
     onOpenChange(false);
   }, [onOpenChange]);
 
-  const handleGenerated = useCallback((reel: GeneratedReel) => {
-    setGeneratedReel(reel);
-    setStep("preview");
-  }, []);
+  const handleReelCreated = useCallback((reelId: string) => {
+    // Close modal and navigate to Reel Editor
+    onOpenChange(false);
+    navigate(`/reel/${reelId}`);
+  }, [onOpenChange, navigate]);
 
-  const handleBack = useCallback(() => {
-    setStep("create");
-    setGeneratedReel(null);
-  }, []);
+  const title = "Create Reel";
 
-  const title = step === "create" ? "Create Reel" : "Your Reel";
-
-  const content = step === "preview" && generatedReel ? (
-    <ReelPreviewContent
-      reel={generatedReel}
-      onBack={handleBack}
-      onClose={handleClose}
-    />
-  ) : (
+  const content = (
     <ReelCreatorContent
       moments={reelMoments}
+      sessionId={sessionId}
       sessionTitle={sessionTitle}
-      onGenerated={handleGenerated}
+      onReelCreated={handleReelCreated}
       onClose={handleClose}
     />
   );

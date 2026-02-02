@@ -771,6 +771,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "effect_events_reel_id_fkey"
+            columns: ["reel_id"]
+            isOneToOne: false
+            referencedRelation: "reels"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "effect_events_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
@@ -980,6 +987,7 @@ export type Database = {
           layout_params: Json
           name: string | null
           preset_key: string | null
+          reel_id: string | null
           session_id: string | null
           style_params: Json
           thumbnail_url: string | null
@@ -1001,6 +1009,7 @@ export type Database = {
           layout_params?: Json
           name?: string | null
           preset_key?: string | null
+          reel_id?: string | null
           session_id?: string | null
           style_params?: Json
           thumbnail_url?: string | null
@@ -1022,6 +1031,7 @@ export type Database = {
           layout_params?: Json
           name?: string | null
           preset_key?: string | null
+          reel_id?: string | null
           session_id?: string | null
           style_params?: Json
           thumbnail_url?: string | null
@@ -1030,6 +1040,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "frame_overlays_reel_id_fkey"
+            columns: ["reel_id"]
+            isOneToOne: false
+            referencedRelation: "reels"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "frame_overlays_session_id_fkey"
             columns: ["session_id"]
@@ -1141,7 +1158,82 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "reel_package_configs_reel_id_fkey"
+            columns: ["reel_id"]
+            isOneToOne: false
+            referencedRelation: "reels"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "reel_package_configs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reels: {
+        Row: {
+          aspect_ratio: string
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          output_file_size_bytes: number | null
+          output_url: string | null
+          preview_url: string | null
+          render_completed_at: string | null
+          render_error: string | null
+          render_started_at: string | null
+          session_id: string | null
+          source_moment_ids: string[] | null
+          status: string
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aspect_ratio?: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          output_file_size_bytes?: number | null
+          output_url?: string | null
+          preview_url?: string | null
+          render_completed_at?: string | null
+          render_error?: string | null
+          render_started_at?: string | null
+          session_id?: string | null
+          source_moment_ids?: string[] | null
+          status?: string
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aspect_ratio?: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          output_file_size_bytes?: number | null
+          output_url?: string | null
+          preview_url?: string | null
+          render_completed_at?: string | null
+          render_error?: string | null
+          render_started_at?: string | null
+          session_id?: string | null
+          source_moment_ids?: string[] | null
+          status?: string
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reels_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "capture_sessions"
