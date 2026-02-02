@@ -378,11 +378,14 @@ export {
   getDefaultDuration,
   getDefaultIntensity,
   getDefaultVolume,
-  type EffectEvent,
-  type EffectType,
-  type EffectIntensity,
-  type ApplyScope,
-  type SnapSource,
-  type VFXDefinition,
-  type SFXDefinition,
+} from "@/lib/effectEvents";
+
+export type {
+  EffectEvent,
+  EffectType,
+  EffectIntensity,
+  ApplyScope,
+  SnapSource,
+  VFXDefinition,
+  SFXDefinition,
 } from "@/lib/effectEvents";
