@@ -2,10 +2,10 @@
  * Effects Timeline Hook
  * 
  * Container hook that manages effects state for a session,
- * including drag-and-drop, snapping, and undo/redo.
+ * including drag-and-drop, snapping, undo/redo, smart pairing, and AI suggestions.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { EffectEvent, EffectType, SnapSource } from "@/lib/effectEvents";
 import {
   useSessionEffectEvents,
@@ -13,14 +13,18 @@ import {
   useUpdateEffectEvent,
   useDeleteEffectEvent,
   useDuplicateEffectEvent,
+  useBatchCreateEffects,
 } from "@/hooks/useEffectEvents";
-import { SnapSettings } from "@/components/player/effects";
+import { SnapSettings, showSmartPairingToast } from "@/components/player/effects";
 import { Annotation } from "@/lib/captures";
+import { generateEffectSuggestions, ProposedEffect } from "@/lib/effectSuggestions";
 
 interface UseEffectsTimelineOptions {
   sessionId: string | undefined;
   annotations?: Annotation[];
   duration: number;
+  audioPeaks?: number[];
+  clipBoundaries?: number[];
 }
 
 interface UseEffectsTimelineResult {
@@ -52,6 +56,13 @@ interface UseEffectsTimelineResult {
   canRedo: boolean;
   undo: () => void;
   redo: () => void;
+  
+  // Auto-enhance / AI suggestions
+  proposedEffects: ProposedEffect[];
+  isAutoEnhancing: boolean;
+  generateSuggestions: () => void;
+  applyProposedEffects: (effects: ProposedEffect[]) => void;
+  applyAllProposedEffects: () => void;
 }
 
 interface HistoryEntry {
@@ -67,6 +78,8 @@ export function useEffectsTimeline({
   sessionId,
   annotations = [],
   duration,
+  audioPeaks = [],
+  clipBoundaries = [],
 }: UseEffectsTimelineOptions): UseEffectsTimelineResult {
   // Query effects
   const { data: effects = [], isLoading } = useSessionEffectEvents(sessionId);
@@ -76,6 +89,7 @@ export function useEffectsTimeline({
   const updateMutation = useUpdateEffectEvent();
   const deleteMutation = useDeleteEffectEvent();
   const duplicateMutation = useDuplicateEffectEvent();
+  const batchCreateMutation = useBatchCreateEffects();
   
   // Local state
   const [isDragging, setIsDragging] = useState(false);
@@ -93,6 +107,10 @@ export function useEffectsTimeline({
   
   const canUndo = historyRef.current.length > 0;
   const canRedo = redoStackRef.current.length > 0;
+  
+  // Auto-enhance state
+  const [proposedEffects, setProposedEffects] = useState<ProposedEffect[]>([]);
+  const [isAutoEnhancing, setIsAutoEnhancing] = useState(false);
   
   // Snap time to nearest moment if enabled
   const snapToMoments = useCallback((timeMs: number): { timeMs: number; snapSource: SnapSource; snappedToId?: string } => {
@@ -177,6 +195,25 @@ export function useEffectsTimeline({
             effectId: data.id,
             effectData: data,
           });
+          
+          // Show smart pairing toast for VFX effects
+          if (type === "vfx") {
+            showSmartPairingToast({
+              effectId: data.id,
+              vfxKey: effectKey,
+              startTimeMs: snapped.timeMs,
+              onApply: (sfxKey, sfxStartTimeMs) => {
+                // Create the paired SFX
+                createMutation.mutate({
+                  sessionId,
+                  type: "sfx",
+                  key: sfxKey,
+                  startTimeMs: sfxStartTimeMs,
+                  snapSource: "manual",
+                });
+              },
+            });
+          }
         }
       },
     });
@@ -320,6 +357,55 @@ export function useEffectsTimeline({
     }
   }, [canRedo, sessionId, createMutation, deleteMutation]);
   
+  // Auto-enhance: Generate AI suggestions
+  const generateSuggestions = useCallback(() => {
+    if (!sessionId) return;
+    
+    setIsAutoEnhancing(true);
+    
+    // Simulate brief delay for UX, then generate client-side
+    setTimeout(() => {
+      const suggestions = generateEffectSuggestions({
+        annotations,
+        durationMs: duration * 1000,
+        audioPeaks,
+        clipBoundaries,
+      });
+      
+      setProposedEffects(suggestions);
+      setIsAutoEnhancing(false);
+    }, 500);
+  }, [sessionId, annotations, duration, audioPeaks, clipBoundaries]);
+  
+  // Apply selected proposed effects
+  const applyProposedEffects = useCallback((effectsToApply: ProposedEffect[]) => {
+    if (!sessionId || effectsToApply.length === 0) return;
+    
+    // Batch create effects
+    const effectData = effectsToApply.map(e => ({
+      type: e.type,
+      key: e.key,
+      startTimeMs: e.startTimeMs,
+      durationMs: e.durationMs,
+      intensity: e.intensity,
+      volume: e.volume,
+      snapSource: e.reason as "moment" | "audioPeak" | "manual",
+    }));
+    
+    batchCreateMutation.mutate({
+      sessionId,
+      effects: effectData,
+    });
+    
+    // Clear proposals after applying
+    setProposedEffects([]);
+  }, [sessionId, batchCreateMutation]);
+  
+  // Apply all proposed effects
+  const applyAllProposedEffects = useCallback(() => {
+    applyProposedEffects(proposedEffects);
+  }, [proposedEffects, applyProposedEffects]);
+  
   return {
     effects,
     isLoading,
@@ -338,5 +424,10 @@ export function useEffectsTimeline({
     canRedo,
     undo,
     redo,
+    proposedEffects,
+    isAutoEnhancing,
+    generateSuggestions,
+    applyProposedEffects,
+    applyAllProposedEffects,
   };
 }
