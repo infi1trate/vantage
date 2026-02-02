@@ -54,6 +54,7 @@ import {
   Maximize2,
   Minimize2,
   Keyboard,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -713,7 +714,19 @@ export default function SessionReview() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-sm font-semibold">{displayTitle}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-semibold">{displayTitle}</h1>
+                {/* Review Mode Badge - subtle indicator this is read-only */}
+                {!focusMode && !isProcessing && !isProcessingFailed && (
+                  <Badge 
+                    variant="outline" 
+                    className="text-[10px] h-4 gap-1 text-muted-foreground border-muted-foreground/30 bg-muted/20"
+                  >
+                    <Eye className="h-2.5 w-2.5" />
+                    Review
+                  </Badge>
+                )}
+              </div>
               {!focusMode && (
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   {displayGame && (

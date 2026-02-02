@@ -10,8 +10,12 @@ export { AudioModePicker, AudioModeIndicator } from "./AudioModePicker";
 export { ReelEditorToolbar } from "./ReelEditorToolbar";
 export { ReelEditorSidebar } from "./ReelEditorSidebar";
 export { ReelEffectsPanel } from "./ReelEffectsPanel";
+export { ReelEditorModeBanner } from "./ReelEditorModeBanner";
+export { ReelCompilationStatus } from "./ReelCompilationStatus";
 
 // Re-export types
+export type { ReelStatus } from "./ReelEditorModeBanner";
+export type { CompilationPhase } from "./ReelCompilationStatus";
 export type {
   StyleKey,
   AudioMode,
