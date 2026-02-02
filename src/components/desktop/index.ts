@@ -14,6 +14,7 @@ export { IdleStateBody } from "./IdleStateBody";
 export { RecordingStateBody } from "./RecordingStateBody";
 export { UnauthorizedStateBody } from "./UnauthorizedStateBody";
 export { MoreMenu } from "./MoreMenu";
+export { EffectsModal } from "./EffectsModal";
 export { DesktopCapturePopover } from "./DesktopCapturePopover";
 export { usePopoverState, MOCK_USER, type UsePopoverStateReturn } from "./usePopoverState";
 export * from "./types";

@@ -182,7 +182,6 @@ export function DesktopCapturePopover({
           onMicDeviceChange={popover.setMicDevice}
           onStartRecording={popover.startRecording}
           canStartRecording={popover.canStartRecording}
-          onEffectsClick={() => console.log("Effects clicked - stub")}
           onNotesClick={() => console.log("Notes clicked - stub")}
           username={popover.username}
           onSignOut={popover.signOut}
