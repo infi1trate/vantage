@@ -16,21 +16,20 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { useReel } from "@/hooks/useReel";
-import { useReelPackage, useTriggerGeneration } from "@/hooks/useReelPackageConfig";
+import { useReelPackage } from "@/hooks/useReelPackageConfig";
+import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
+import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { PlayerWithEffects } from "@/components/player/PlayerWithEffects";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { 
   ArrowLeft, 
   Film, 
   Loader2,
   Save,
-  Undo2,
-  Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -68,6 +67,42 @@ export default function ReelEditor() {
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
   const [showEffects, setShowEffects] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Filter annotations to only those included in the reel
+  const reelMoments = useMemo(() => {
+    if (!reel?.source_moment_ids?.length) return annotations;
+    return annotations.filter(a => reel.source_moment_ids.includes(a.id));
+  }, [annotations, reel?.source_moment_ids]);
+
+  // Effects timeline state - this powers the drag-and-drop FX system
+  const {
+    effects,
+    isDragging,
+    snapSettings,
+    setSnapSettings,
+    handleDragStart,
+    handleDragEnd,
+    handleDrop,
+    handleEffectUpdate,
+    handleEffectDelete,
+    handleEffectDuplicate,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    proposedEffects,
+    isAutoEnhancing,
+    generateSuggestions,
+    applyProposedEffects,
+    applyAllProposedEffects,
+  } = useEffectsTimeline({
+    sessionId: reel?.session_id,
+    annotations: reelMoments,
+    duration: duration * 1000, // Convert to ms
+  });
+
+  // Clear effects mutation
+  const clearEffectsMutation = useClearSessionEffects();
 
   // Load session data when reel is loaded
   useEffect(() => {
@@ -108,6 +143,37 @@ export default function ReelEditor() {
     }
   }, [user, authLoading, navigate]);
 
+  // Global drag end handler
+  useEffect(() => {
+    const handleGlobalDragEnd = () => {
+      if (isDragging) {
+        handleDragEnd();
+      }
+    };
+    
+    window.addEventListener("dragend", handleGlobalDragEnd);
+    return () => window.removeEventListener("dragend", handleGlobalDragEnd);
+  }, [isDragging, handleDragEnd]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey && canRedo) {
+          redo();
+        } else if (canUndo) {
+          undo();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canUndo, canRedo, undo, redo]);
+
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
   }, []);
@@ -121,16 +187,23 @@ export default function ReelEditor() {
   }, []);
 
   const handleSave = useCallback(() => {
-    // TODO: Implement save logic
+    // Effects are auto-saved, this is for frame config
     setHasUnsavedChanges(false);
     toast.success("Changes saved");
   }, []);
 
-  // Filter annotations to only those included in the reel
-  const reelMoments = useMemo(() => {
-    if (!reel?.source_moment_ids?.length) return annotations;
-    return annotations.filter(a => reel.source_moment_ids.includes(a.id));
-  }, [annotations, reel?.source_moment_ids]);
+  const handleAutoEnhance = useCallback(() => {
+    generateSuggestions();
+  }, [generateSuggestions]);
+
+  const handleClearAllEffects = useCallback(() => {
+    if (!reel?.session_id) return;
+    clearEffectsMutation.mutate(reel.session_id, {
+      onSuccess: () => {
+        toast.success("All effects cleared");
+      },
+    });
+  }, [reel?.session_id, clearEffectsMutation]);
 
   // Loading states
   if (authLoading || reelLoading || loading) {
@@ -199,6 +272,11 @@ export default function ReelEditor() {
                   Ready
                 </Badge>
               )}
+              {effects.length > 0 && (
+                <Badge variant="outline" className="text-xs gap-1">
+                  {effects.length} FX
+                </Badge>
+              )}
             </div>
           </div>
 
@@ -220,6 +298,9 @@ export default function ReelEditor() {
               sessionId={reel.session_id || ""} 
               onExport={() => {
                 // TODO: Trigger export for this reel
+                toast.info("Rendering effects...", {
+                  description: `${effects.length} effects will be composited into the final video`,
+                });
               }}
             />
           </div>
@@ -244,6 +325,14 @@ export default function ReelEditor() {
                 voiceNotes={[]}
                 onVideoLoaded={handleVideoLoaded}
                 showEffects={showEffects}
+                externalEffectsState={{
+                  effects,
+                  isDragging,
+                  handleDrop,
+                  handleEffectUpdate,
+                  handleEffectDelete,
+                  handleEffectDuplicate,
+                }}
               />
             </div>
           </div>
@@ -263,7 +352,16 @@ export default function ReelEditor() {
           sessionId={reel.session_id || ""}
           activeTab={activeTab}
           reelPackage={reelPackage}
+          annotations={reelMoments}
+          duration={duration}
           onChangesMade={() => setHasUnsavedChanges(true)}
+          onDragStart={handleDragStart}
+          snapSettings={snapSettings}
+          onSnapSettingsChange={setSnapSettings}
+          effectCount={effects.length}
+          onAutoEnhance={handleAutoEnhance}
+          isAutoEnhancing={isAutoEnhancing}
+          onClearAllEffects={effects.length > 0 ? handleClearAllEffects : undefined}
         />
       </div>
     </div>

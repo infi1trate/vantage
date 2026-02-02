@@ -9,6 +9,7 @@ export { StylePicker, StylePreview } from "./StylePicker";
 export { AudioModePicker, AudioModeIndicator } from "./AudioModePicker";
 export { ReelEditorToolbar } from "./ReelEditorToolbar";
 export { ReelEditorSidebar } from "./ReelEditorSidebar";
+export { ReelEffectsPanel } from "./ReelEffectsPanel";
 
 // Re-export types
 export type {

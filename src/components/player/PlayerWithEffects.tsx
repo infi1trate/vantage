@@ -3,16 +3,20 @@
  * 
  * Wrapper component that adds effects tray and lane to the CinematicPlayer.
  * Provides full drag-and-drop VFX/SFX functionality with smart pairing and AI suggestions.
+ * 
+ * Can use internal or external effects state for flexibility.
  */
 
 import { memo, useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { CinematicPlayer, VideoDecodeError, VideoMetaInfo, SelectionState } from "./CinematicPlayer";
-import { EffectsTray, EffectsLane, AutoEnhanceModal, SnapSettings } from "./effects";
+import { EffectsLane, AutoEnhanceModal, SnapSettings } from "./effects";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
 import { FramePin } from "./FramePins";
+import { EffectEvent } from "@/lib/effectEvents";
+import { ProposedEffect } from "@/lib/effectSuggestions";
 
 interface PlayerWithEffectsProps {
   sessionId: string;
@@ -41,6 +45,15 @@ interface PlayerWithEffectsProps {
   onSuggestionDismiss?: (suggestionId: string) => void;
   // Effects visibility
   showEffects?: boolean;
+  // External effects state (optional - for Reel Editor integration)
+  externalEffectsState?: {
+    effects: EffectEvent[];
+    isDragging: boolean;
+    handleDrop: (effectKey: string, type: "vfx" | "sfx", startTimeMs: number) => void;
+    handleEffectUpdate: (effectId: string, updates: Partial<EffectEvent>) => void;
+    handleEffectDelete: (effectId: string) => void;
+    handleEffectDuplicate: (effectId: string, newStartTimeMs: number) => void;
+  };
 }
 
 export const PlayerWithEffects = memo(function PlayerWithEffects({
@@ -69,11 +82,18 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
   onSuggestionAccept,
   onSuggestionDismiss,
   showEffects = false,
+  externalEffectsState,
 }: PlayerWithEffectsProps) {
-  const [effectsTrayOpen, setEffectsTrayOpen] = useState(false);
   const [showAutoEnhance, setShowAutoEnhance] = useState(false);
   
-  // Effects timeline state
+  // Internal effects timeline state (used when no external state provided)
+  const internalEffectsState = useEffectsTimeline({
+    sessionId,
+    annotations,
+    duration: duration * 1000, // Convert to ms
+  });
+
+  // Use external state if provided, otherwise use internal
   const {
     effects,
     isDragging,
@@ -94,11 +114,15 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
     generateSuggestions,
     applyProposedEffects,
     applyAllProposedEffects,
-  } = useEffectsTimeline({
-    sessionId,
-    annotations,
-    duration,
-  });
+  } = externalEffectsState ? {
+    ...internalEffectsState,
+    effects: externalEffectsState.effects,
+    isDragging: externalEffectsState.isDragging,
+    handleDrop: externalEffectsState.handleDrop,
+    handleEffectUpdate: externalEffectsState.handleEffectUpdate,
+    handleEffectDelete: externalEffectsState.handleEffectDelete,
+    handleEffectDuplicate: externalEffectsState.handleEffectDuplicate,
+  } : internalEffectsState;
 
   // Handle Auto-enhance button click
   const handleAutoEnhance = useCallback(() => {
@@ -109,17 +133,19 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
   // Handle global drag end
   useEffect(() => {
     const handleGlobalDragEnd = () => {
-      if (isDragging) {
+      if (isDragging && !externalEffectsState) {
         handleDragEnd();
       }
     };
     
     window.addEventListener("dragend", handleGlobalDragEnd);
     return () => window.removeEventListener("dragend", handleGlobalDragEnd);
-  }, [isDragging, handleDragEnd]);
+  }, [isDragging, handleDragEnd, externalEffectsState]);
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo (only when using internal state)
   useEffect(() => {
+    if (externalEffectsState) return; // Let parent handle shortcuts
+    
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
@@ -137,7 +163,7 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
     }
-  }, [showEffects, canUndo, canRedo, undo, redo]);
+  }, [showEffects, canUndo, canRedo, undo, redo, externalEffectsState]);
 
   return (
     <div className="flex flex-col h-full">
@@ -187,23 +213,8 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
         </div>
       )}
 
-      {/* Effects Tray */}
-      {showEffects && (
-        <EffectsTray
-          sessionId={sessionId}
-          isOpen={effectsTrayOpen}
-          onToggle={() => setEffectsTrayOpen(!effectsTrayOpen)}
-          snapSettings={snapSettings}
-          onSnapSettingsChange={setSnapSettings}
-          hasAudioAnalysis={false} // TODO: Connect to audio analysis
-          onDragStart={handleDragStart}
-          onAutoEnhance={handleAutoEnhance}
-          isAutoEnhancing={isAutoEnhancing}
-        />
-      )}
-
-      {/* Auto-enhance Modal */}
-      {showEffects && (
+      {/* Auto-enhance Modal (only show when using internal state) */}
+      {showEffects && !externalEffectsState && (
         <AutoEnhanceModal
           isOpen={showAutoEnhance}
           onClose={() => setShowAutoEnhance(false)}
