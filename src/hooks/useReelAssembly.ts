@@ -21,7 +21,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive } from "@/lib/reels";
+import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -36,6 +36,7 @@ export type AssemblyState = "idle" | "assembling" | "ready" | "failed" | "needs_
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
 const MAX_RETRY_ATTEMPTS = 3;
+const MAX_AUTO_RETRIES = 1; // Only 1 auto-retry before transitioning to needs_attention
 
 /**
  * Step-based progress configuration (MANIFEST-FIRST)
@@ -134,6 +135,36 @@ function logAssemblyTelemetry(
   
   // Log to console in structured format
   console.log(`[ReelAssembly:Telemetry]`, JSON.stringify(logData));
+}
+
+/**
+ * Create a structured LastError object for storage
+ */
+function createLastError(
+  message: string,
+  step: AssemblyStep | "unknown",
+  code: LastError["code"],
+  options?: {
+    segmentIndex?: number;
+    momentId?: string;
+    error?: Error;
+  }
+): LastError {
+  const lastError: LastError = {
+    message,
+    step,
+    code,
+    timestamp: new Date().toISOString(),
+    segmentIndex: options?.segmentIndex,
+    momentId: options?.momentId,
+  };
+  
+  // Only include stack in development
+  if (process.env.NODE_ENV === "development" && options?.error?.stack) {
+    lastError.stack = options.error.stack;
+  }
+  
+  return lastError;
 }
 
 /**
@@ -591,19 +622,70 @@ export function useReelAssembly(
     }
   }, [reelMetadata?.assemblyAttemptId, reelMetadata?.assemblyStep, reelMetadata?.stepStartedAt, currentAttemptId]);
   
-  // Retry assembly
-  const retry = useCallback(async () => {
+  // Retry assembly - with strict auto-retry limits
+  // isAutoRetry flag distinguishes user-initiated retries from automatic ones
+  const retry = useCallback(async (isAutoRetry = false) => {
     if (!reelId) return;
     
     const newRetryCount = retryCount + 1;
     
+    // Check if we've exceeded max retries
     if (newRetryCount > MAX_RETRY_ATTEMPTS) {
       console.warn("[ReelAssembly] Max retries exceeded");
-      setError("Still having trouble — try again later.");
+      
+      // Create structured error
+      const lastError = createLastError(
+        "Maximum retry attempts reached. Please try again later.",
+        currentStep || "unknown",
+        "max_retries_exceeded"
+      );
+      
+      // Store structured error and transition to needs_attention (NOT failed)
+      await supabase
+        .from("reels")
+        .update({
+          status: "needs_attention",
+          render_error: JSON.stringify(lastError),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reelId);
+      
+      setError(lastError.message);
+      setState("needs_attention");
+      markJobNeedsAttention("We hit an issue assembling your reel. Open the editor to retry.");
+      queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
       return;
     }
     
-    console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount);
+    // Auto-retry limit: if this is an auto-retry and we've already done MAX_AUTO_RETRIES,
+    // transition to needs_attention instead of continuing to retry silently
+    if (isAutoRetry && newRetryCount > MAX_AUTO_RETRIES) {
+      console.warn("[ReelAssembly] Auto-retry limit reached, transitioning to needs_attention");
+      
+      const lastError = createLastError(
+        "We hit an issue assembling one clip.",
+        currentStep || "collecting_clips",
+        "unknown_error"
+      );
+      
+      await supabase
+        .from("reels")
+        .update({
+          status: "needs_attention",
+          render_error: JSON.stringify(lastError),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reelId);
+      
+      setError(lastError.message);
+      setState("needs_attention");
+      markJobNeedsAttention("We hit an issue assembling one clip. Open the editor to fix it.");
+      clearTimers();
+      queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+      return;
+    }
+    
+    console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount, isAutoRetry ? "(auto)" : "(user)");
     
     // Cancel any existing assembly job first
     if (activeJobIdRef.current) {
@@ -684,15 +766,35 @@ export function useReelAssembly(
         retryCount: newRetryCount,
       });
       
-      failJob("Something interrupted the assembly process. Please try again.");
+      // Create structured error with context
+      const lastError = createLastError(
+        "We hit an issue assembling one clip.",
+        currentStep || "collecting_clips",
+        "unknown_error",
+        { error: err instanceof Error ? err : undefined }
+      );
       
-      setState("failed");
-      setError("Something interrupted the assembly process. Please try again.");
+      // CRITICAL: Never stay in "assembling" after an unhandled error
+      // Transition to needs_attention so user can take action
+      await supabase
+        .from("reels")
+        .update({
+          status: "needs_attention",
+          render_error: JSON.stringify(lastError),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reelId);
+      
+      markJobNeedsAttention("We hit an issue assembling one clip. Open the editor to fix it.");
+      
+      setState("needs_attention");
+      setError(lastError.message);
       clearTimers();
       assemblyStartRef.current = null;
       activeJobIdRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     }
-  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, failJob]);
+  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, markJobNeedsAttention, currentStep]);
   
   const canRetry = (state === "failed" || state === "needs_attention") && retryCount < MAX_RETRY_ATTEMPTS;
   

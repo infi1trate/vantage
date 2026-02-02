@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
-import { ClipValidationError, formatTimestamp, parseClipValidationError } from "@/lib/reels";
+import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage } from "@/lib/reels";
 
 import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
 
@@ -123,13 +123,13 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   // Parse structured clip error from errorMessage if available
   const clipError = useMemo(() => parseClipValidationError(errorMessage ?? null), [errorMessage]);
   
-  // User-friendly error display
+  // Parse structured LastError from errorMessage if available
+  const lastError = useMemo(() => parseLastError(errorMessage ?? null), [errorMessage]);
+  
+  // User-friendly error display - use getErrorMessage which handles all formats
   const displayErrorMessage = useMemo(() => {
-    if (clipError) {
-      return `We couldn't access 1 clip: ${clipError.momentLabel} at ${formatTimestamp(clipError.timestampSeconds)}`;
-    }
-    return errorMessage || "We couldn't access one of the clips needed for this reel.";
-  }, [clipError, errorMessage]);
+    return getErrorMessage(errorMessage ?? null);
+  }, [errorMessage]);
 
   // Use real progress from props (truthful)
   const displayProgress = progress?.percent ?? 0;
