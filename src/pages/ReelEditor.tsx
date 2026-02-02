@@ -55,13 +55,22 @@ export default function ReelEditor() {
   // Session-aware back navigation:
   // - If reel has a session, go to session detail
   // - Otherwise fallback to library
+  // - If assembling, show reassurance toast
   const goBack = useCallback(() => {
+    // Show reassurance toast if leaving while assembling
+    if (reel?.status === "compiling") {
+      toast.info("Reel is still assembling in the background.", {
+        description: "You can track progress in the queue footer.",
+        duration: 5000,
+      });
+    }
+    
     if (reel?.session_id) {
       navigate(`/session/${reel.session_id}`);
     } else {
       safeGoBack();
     }
-  }, [reel?.session_id, navigate, safeGoBack]);
+  }, [reel?.session_id, reel?.status, navigate, safeGoBack]);
 
   // Session data for source video - declare early so we can use it for assembly metadata
   const [sessionData, setSessionData] = useState<{
