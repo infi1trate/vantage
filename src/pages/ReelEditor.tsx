@@ -28,6 +28,7 @@ import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceho
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
 import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
 import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
+import { ManifestPlayer } from "@/components/reel/ManifestPlayer";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -481,7 +482,7 @@ export default function ReelEditor() {
                 />
               ) : (
                 // Ready state - show player with effects
-                // Uses previewSource which prioritizes reel.preview_url over session fallback
+                // Uses manifest player when no preview available, otherwise PlayerWithEffects
                 <div className="h-full flex flex-col">
                   {/* Show banner if preview unavailable (manifest mode) */}
                   {reel.playback_mode === "manifest" && !reel.preview_url && (
@@ -497,26 +498,40 @@ export default function ReelEditor() {
                   )}
                   
                   <div className="flex-1 min-h-0">
-                    <PlayerWithEffects
-                      sessionId={reel.session_id || ""}
-                      videoUrl={previewSource.url}
-                      duration={duration}
-                      currentTime={currentTime}
-                      onTimeUpdate={handleTimeUpdate}
-                      onSeek={handleSeek}
-                      annotations={reelMoments}
-                      voiceNotes={[]}
-                      onVideoLoaded={handleVideoLoaded}
-                      showEffects={showEffects}
-                      externalEffectsState={{
-                        effects,
-                        isDragging,
-                        handleDrop,
-                        handleEffectUpdate,
-                        handleEffectDelete,
-                        handleEffectDuplicate,
-                      }}
-                    />
+                    {/* Use ManifestPlayer when in manifest mode with no preview */}
+                    {reel.playback_mode === "manifest" && !reel.preview_url && reel.manifest && sessionData?.videoUrl ? (
+                      <ManifestPlayer
+                        manifest={reel.manifest}
+                        sessionVideoUrl={sessionData.videoUrl}
+                        annotations={reelMoments}
+                        currentTime={currentTime}
+                        onTimeUpdate={handleTimeUpdate}
+                        onSeek={handleSeek}
+                        onVideoLoaded={handleVideoLoaded}
+                        className="h-full"
+                      />
+                    ) : (
+                      <PlayerWithEffects
+                        sessionId={reel.session_id || ""}
+                        videoUrl={previewSource.url}
+                        duration={duration}
+                        currentTime={currentTime}
+                        onTimeUpdate={handleTimeUpdate}
+                        onSeek={handleSeek}
+                        annotations={reelMoments}
+                        voiceNotes={[]}
+                        onVideoLoaded={handleVideoLoaded}
+                        showEffects={showEffects}
+                        externalEffectsState={{
+                          effects,
+                          isDragging,
+                          handleDrop,
+                          handleEffectUpdate,
+                          handleEffectDelete,
+                          handleEffectDuplicate,
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               )}
