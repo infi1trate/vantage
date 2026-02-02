@@ -287,6 +287,57 @@ export function getReelAssemblyJob(reelId: string): RenderJob | null {
 }
 
 /**
+ * Reset an existing render job for retry.
+ * Increments retry count, resets progress, and restarts stages.
+ * Returns null if max retries exceeded.
+ */
+export function resetRenderJobForRetry(jobId: string): RenderJob | null {
+  const jobs = loadRenderJobs();
+  const index = jobs.findIndex(j => j.id === jobId);
+  
+  if (index === -1) return null;
+  
+  const job = jobs[index];
+  
+  // Check max retries
+  if (job.retryCount >= job.maxRetries) {
+    console.warn("[RenderQueue] Max retries exceeded for job:", jobId);
+    return null;
+  }
+  
+  // Reset job for retry
+  const now = new Date().toISOString();
+  const resetJob: RenderJob = {
+    ...job,
+    status: "processing",
+    retryCount: job.retryCount + 1,
+    currentStageIndex: 0,
+    overallProgress: 0,
+    startedAt: now,
+    completedAt: undefined,
+    previewReadyAt: undefined,
+    errorMessage: undefined,
+    warningMessages: undefined,
+    canCancel: true,
+    // Reset all stages
+    stages: job.stages.map((s, i) => ({
+      ...s,
+      status: i === 0 ? "active" as const : "pending" as const,
+      progress: 0,
+      startedAt: i === 0 ? now : undefined,
+      completedAt: undefined,
+    })),
+  };
+  
+  jobs[index] = resetJob;
+  saveRenderJobs(jobs);
+  
+  console.log("[RenderQueue] Reset job for retry:", jobId, "attempt:", resetJob.retryCount);
+  
+  return resetJob;
+}
+
+/**
  * Update a render job
  */
 export function updateRenderJob(
@@ -416,11 +467,12 @@ export function cancelRenderJob(jobId: string): boolean {
 }
 
 /**
- * Retry a failed render job
+ * Retry a failed or needs_attention render job
  */
 export function retryRenderJob(jobId: string): RenderJob | null {
   const job = getRenderJob(jobId);
-  if (!job || job.status !== "failed") return null;
+  // Allow retry for failed or needs_attention status
+  if (!job || (job.status !== "failed" && job.status !== "needs_attention")) return null;
   if (job.retryCount >= job.maxRetries) return null;
   
   return updateRenderJob(jobId, {
