@@ -915,20 +915,7 @@ export function useReelAssembly(
             clearTimers();
             queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
             return;
-          }
         }
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", reelId);
-            
-            if (renderJobIdRef.current) {
-              markJobNeedsAttention(errorMessage);
-            }
-            
-            clearTimers();
-            queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-            return;
-          }
         }
         
         console.log("[ReelAssembly] Resolving segments using single source of truth resolver");
