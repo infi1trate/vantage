@@ -513,6 +513,31 @@ export async function cancelAssemblyJob(reelId: string): Promise<void> {
     console.log(`[Reels] Cancelled assembly job for ${reelId}`);
   }
 }
+/**
+ * Structured error payload for clip validation failures
+ * This provides actionable information for the UI
+ */
+export interface ClipValidationError {
+  /** Index of the failing segment (0-based) */
+  index: number;
+  /** Moment ID that failed */
+  momentId: string;
+  /** Human-readable moment label (e.g., "Kill", "Death", "Highlight") */
+  momentLabel: string;
+  /** Timestamp in seconds where the moment occurs */
+  timestampSeconds: number;
+  /** Machine-readable failure reason */
+  reason: 
+    | "missing_source_video"
+    | "invalid_range"
+    | "timeout_resolving_source"
+    | "session_not_found"
+    | "invalid_moment_id"
+    | "invalid_duration"
+    | "unknown";
+  /** Human-readable description */
+  description: string;
+}
 
 /**
  * Deterministic assembly result
@@ -524,19 +549,35 @@ export interface AssemblyResult {
   /** User-friendly error message */
   userMessage?: string;
   previewAvailable: boolean;
+  /** Structured error for UI to show specific failing clip */
+  clipError?: ClipValidationError;
 }
 
 /**
- * Clip validation result
+ * Extended moment input with full metadata for validation
+ */
+export interface MomentSegmentInput {
+  momentId: string;
+  /** Duration of the clip in milliseconds */
+  durationMs: number;
+  /** Start time within the source video (ms) */
+  startMs?: number;
+  /** End time within the source video (ms) */
+  endMs?: number;
+  /** Human-readable label (e.g., "Kill", "Death", "Highlight") */
+  label?: string;
+  /** Timestamp in seconds where the moment occurs in the source */
+  timestampSeconds?: number;
+}
+
+/**
+ * Clip validation result with enhanced error info
  */
 interface ClipValidationResult {
   valid: boolean;
   clips: ManifestClip[];
-  failedSegment?: {
-    index: number;
-    momentId: string;
-    reason: string;
-  };
+  /** Structured error payload for the failing segment */
+  clipError?: ClipValidationError;
 }
 
 // Timeouts for collecting_clips step
@@ -544,76 +585,212 @@ const SEGMENT_VALIDATION_TIMEOUT_MS = 5_000; // 5 seconds per segment
 const COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS = 20_000; // 20 seconds total
 
 /**
- * Validate a single clip segment with timeout
+ * Format seconds as MM:SS for display
+ */
+export function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Parse a clip validation error from the stored render_error JSON
+ * Returns null if not a structured clip error
+ */
+export function parseClipValidationError(renderError: string | null): ClipValidationError | null {
+  if (!renderError) return null;
+  
+  try {
+    const parsed = JSON.parse(renderError);
+    if (parsed.failingMomentId && parsed.failingMomentLabel !== undefined) {
+      return {
+        index: parsed.index ?? 0,
+        momentId: parsed.failingMomentId,
+        momentLabel: parsed.failingMomentLabel,
+        timestampSeconds: parsed.failingMomentTimestamp ?? 0,
+        reason: parsed.reason || "unknown",
+        description: parsed.description || "Unknown error",
+      };
+    }
+  } catch {
+    // Not JSON - it's a plain string error message
+  }
+  
+  return null;
+}
+
+/**
+ * Validate a single clip segment with timeout and full metadata
  */
 async function validateClipSegment(
-  moment: { momentId: string; durationMs: number },
+  moment: MomentSegmentInput,
   index: number,
-  sessionId: string | null
-): Promise<{ valid: boolean; clip?: ManifestClip; reason?: string }> {
+  sessionId: string | null,
+  sessionDurationMs?: number | null
+): Promise<{ valid: boolean; clip?: ManifestClip; clipError?: ClipValidationError }> {
+  const label = moment.label || "Clip";
+  const timestampSeconds = moment.timestampSeconds ?? 0;
+
+  // Helper to create error with full context
+  const createError = (
+    reason: ClipValidationError["reason"],
+    description: string
+  ): ClipValidationError => ({
+    index,
+    momentId: moment.momentId,
+    momentLabel: label,
+    timestampSeconds,
+    reason,
+    description,
+  });
+
   // Create a timeout promise
-  const timeoutPromise = new Promise<{ valid: false; reason: string }>((resolve) => {
+  const timeoutPromise = new Promise<{ valid: false; clipError: ClipValidationError }>((resolve) => {
     setTimeout(() => {
-      resolve({ valid: false, reason: `Segment validation timed out after ${SEGMENT_VALIDATION_TIMEOUT_MS / 1000}s` });
+      resolve({
+        valid: false,
+        clipError: createError(
+          "timeout_resolving_source",
+          `Timed out accessing ${label} at ${formatTimestamp(timestampSeconds)}`
+        ),
+      });
     }, SEGMENT_VALIDATION_TIMEOUT_MS);
   });
-  
+
   // Create the validation promise
-  const validationPromise = (async (): Promise<{ valid: boolean; clip?: ManifestClip; reason?: string }> => {
+  const validationPromise = (async (): Promise<{ valid: boolean; clip?: ManifestClip; clipError?: ClipValidationError }> => {
     try {
       // Validate moment ID exists
       if (!moment.momentId || typeof moment.momentId !== "string") {
-        return { valid: false, reason: "Invalid moment ID" };
+        return {
+          valid: false,
+          clipError: createError("invalid_moment_id", `Invalid clip reference for ${label}`),
+        };
       }
-      
+
       // Validate duration is positive
       if (!moment.durationMs || moment.durationMs <= 0) {
-        return { valid: false, reason: `Invalid duration: ${moment.durationMs}ms` };
+        return {
+          valid: false,
+          clipError: createError(
+            "invalid_duration",
+            `Invalid duration for ${label} at ${formatTimestamp(timestampSeconds)}`
+          ),
+        };
       }
-      
+
       // Validate duration is reasonable (max 1 hour per clip)
       if (moment.durationMs > 3600_000) {
-        return { valid: false, reason: `Duration too long: ${moment.durationMs}ms (max 1 hour)` };
+        return {
+          valid: false,
+          clipError: createError(
+            "invalid_duration",
+            `${label} at ${formatTimestamp(timestampSeconds)} is too long (max 1 hour)`
+          ),
+        };
       }
-      
+
+      // Calculate start/end times
+      const startMs = moment.startMs ?? Math.round(timestampSeconds * 1000);
+      const endMs = moment.endMs ?? startMs + moment.durationMs;
+
+      // Validate range
+      if (startMs >= endMs) {
+        return {
+          valid: false,
+          clipError: createError(
+            "invalid_range",
+            `Invalid time range for ${label} at ${formatTimestamp(timestampSeconds)}`
+          ),
+        };
+      }
+
+      // Validate range is within source duration (if known)
+      if (sessionDurationMs && endMs > sessionDurationMs) {
+        return {
+          valid: false,
+          clipError: createError(
+            "invalid_range",
+            `${label} at ${formatTimestamp(timestampSeconds)} extends beyond video end`
+          ),
+        };
+      }
+
       // Check if we can reference the session (if sessionId provided)
       if (sessionId) {
         const { data: session, error } = await supabase
           .from("capture_sessions")
-          .select("id, video_url, status")
+          .select("id, video_url, status, duration_seconds")
           .eq("id", sessionId)
           .maybeSingle();
-        
+
         if (error) {
           console.warn(`[Reels] Session lookup error for segment ${index}:`, error);
-          return { valid: false, reason: `Cannot access session: ${error.message}` };
+          return {
+            valid: false,
+            clipError: createError(
+              "session_not_found",
+              `Cannot access source video for ${label} at ${formatTimestamp(timestampSeconds)}`
+            ),
+          };
         }
-        
+
         if (!session) {
-          return { valid: false, reason: "Source session not found" };
+          return {
+            valid: false,
+            clipError: createError(
+              "session_not_found",
+              `Source session not found for ${label} at ${formatTimestamp(timestampSeconds)}`
+            ),
+          };
         }
-        
+
         if (!session.video_url) {
-          return { valid: false, reason: "Source session has no video" };
+          return {
+            valid: false,
+            clipError: createError(
+              "missing_source_video",
+              `No video available for ${label} at ${formatTimestamp(timestampSeconds)}`
+            ),
+          };
+        }
+
+        // Additional range validation against actual session duration
+        const actualDurationMs = (session.duration_seconds ?? 0) * 1000;
+        if (actualDurationMs > 0 && endMs > actualDurationMs) {
+          return {
+            valid: false,
+            clipError: createError(
+              "invalid_range",
+              `${label} at ${formatTimestamp(timestampSeconds)} extends beyond video end`
+            ),
+          };
         }
       }
-      
-      // Validation passed - create clip
+
+      // Validation passed - create clip with full timing info
       const clip: ManifestClip = {
         momentId: moment.momentId,
-        startMs: 0, // TODO: Calculate from annotation timestamps
-        endMs: moment.durationMs,
-        durationMs: moment.durationMs,
+        startMs,
+        endMs,
+        durationMs: endMs - startMs,
         order: index,
       };
-      
+
       return { valid: true, clip };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown validation error";
-      return { valid: false, reason: message };
+      console.error(`[Reels] Unexpected validation error for segment ${index}:`, message);
+      return {
+        valid: false,
+        clipError: createError(
+          "unknown",
+          `Failed to validate ${label} at ${formatTimestamp(timestampSeconds)}`
+        ),
+      };
     }
   })();
-  
+
   // Race validation against timeout
   return Promise.race([validationPromise, timeoutPromise]);
 }
@@ -622,56 +799,59 @@ async function validateClipSegment(
  * Validate all clip segments with global timeout
  */
 async function validateAllClips(
-  momentDurations: { momentId: string; durationMs: number }[],
-  sessionId: string | null
+  moments: MomentSegmentInput[],
+  sessionId: string | null,
+  sessionDurationMs?: number | null
 ): Promise<ClipValidationResult> {
-  console.log(`[Reels] Validating ${momentDurations.length} clip segments...`);
-  
+  console.log(`[Reels] Validating ${moments.length} clip segments...`);
+
   // Create global timeout
   const globalTimeoutPromise = new Promise<ClipValidationResult>((resolve) => {
     setTimeout(() => {
+      // On global timeout, we don't know which specific clip, but report the last one in progress
+      const lastIndex = Math.max(0, moments.length - 1);
+      const lastMoment = moments[lastIndex];
       resolve({
         valid: false,
         clips: [],
-        failedSegment: {
-          index: -1,
-          momentId: "timeout",
-          reason: `Clip collection timed out after ${COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS / 1000}s`,
+        clipError: {
+          index: lastIndex,
+          momentId: lastMoment?.momentId || "unknown",
+          momentLabel: lastMoment?.label || "Clip",
+          timestampSeconds: lastMoment?.timestampSeconds ?? 0,
+          reason: "timeout_resolving_source",
+          description: `Clip collection timed out after ${COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS / 1000}s`,
         },
       });
     }, COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS);
   });
-  
+
   // Create validation promise
   const validationPromise = (async (): Promise<ClipValidationResult> => {
     const clips: ManifestClip[] = [];
-    
-    for (let i = 0; i < momentDurations.length; i++) {
-      const moment = momentDurations[i];
-      const result = await validateClipSegment(moment, i, sessionId);
-      
+
+    for (let i = 0; i < moments.length; i++) {
+      const moment = moments[i];
+      const result = await validateClipSegment(moment, i, sessionId, sessionDurationMs);
+
       if (!result.valid) {
-        console.error(`[Reels] Segment ${i} validation failed:`, result.reason);
+        console.error(`[Reels] Segment ${i} validation failed:`, result.clipError?.reason);
         return {
           valid: false,
           clips,
-          failedSegment: {
-            index: i,
-            momentId: moment.momentId,
-            reason: result.reason || "Unknown error",
-          },
+          clipError: result.clipError,
         };
       }
-      
+
       if (result.clip) {
         clips.push(result.clip);
       }
     }
-    
+
     console.log(`[Reels] All ${clips.length} segments validated successfully`);
     return { valid: true, clips };
   })();
-  
+
   // Race validation against global timeout
   return Promise.race([validationPromise, globalTimeoutPromise]);
 }
@@ -690,24 +870,24 @@ async function validateAllClips(
  */
 export async function executeAssembly(
   reelId: string,
-  momentDurations: { momentId: string; durationMs: number }[]
+  moments: MomentSegmentInput[]
 ): Promise<AssemblyResult> {
   const now = () => new Date().toISOString();
-  
+
   try {
-    console.log(`[Reels] Starting manifest-first assembly for ${reelId} with ${momentDurations.length} moments`);
-    
+    console.log(`[Reels] Starting manifest-first assembly for ${reelId} with ${moments.length} moments`);
+
     // Validate inputs early
-    if (!momentDurations || momentDurations.length === 0) {
+    if (!moments || moments.length === 0) {
       throw new AssemblyError(
         "No clips provided for assembly",
         "Please select at least one clip for your reel."
       );
     }
-    
+
     // STEP 1: Collecting clips with validation + timeouts
     await updateAssemblyStep(reelId, "collecting_clips");
-    
+
     // Get current reel for session reference
     const currentReel = await getReel(reelId);
     if (!currentReel) {
@@ -716,19 +896,35 @@ export async function executeAssembly(
         "The reel could not be found. Please try creating a new one."
       );
     }
-    
-    // Validate all clip segments with timeouts
-    const validationResult = await validateAllClips(momentDurations, currentReel.session_id);
-    
+
+    // Validate all clip segments with timeouts (pass session duration for range checks)
+    const validationResult = await validateAllClips(moments, currentReel.session_id);
+
     if (!validationResult.valid) {
-      const failedSegment = validationResult.failedSegment;
-      
+      const clipError = validationResult.clipError;
+
       // Determine if this is a timeout (needs_attention) or hard failure
-      const isTimeout = failedSegment?.reason?.includes("timed out");
-      
+      const isTimeout = clipError?.reason === "timeout_resolving_source";
+
+      // Build structured error payload for storage
+      const errorPayload = clipError
+        ? JSON.stringify({
+            failingMomentId: clipError.momentId,
+            failingMomentLabel: clipError.momentLabel,
+            failingMomentTimestamp: clipError.timestampSeconds,
+            reason: clipError.reason,
+            description: clipError.description,
+          })
+        : null;
+
+      // User-friendly message mentioning the specific clip
+      const userMessage = clipError
+        ? `We couldn't access 1 clip: ${clipError.momentLabel} at ${formatTimestamp(clipError.timestampSeconds)}`
+        : "We couldn't access one of the clips needed for this reel.";
+
       if (isTimeout) {
         // Timeout - recoverable; do NOT remain in compiling indefinitely.
-        console.warn(`[Reels] Clip collection timed out for ${reelId}`);
+        console.warn(`[Reels] Clip collection timed out for ${reelId}:`, clipError?.description);
 
         await supabase
           .from("reels")
@@ -736,7 +932,7 @@ export async function executeAssembly(
             status: "needs_attention",
             // Keep the step so the UI can show exactly where it stalled.
             assembly_step: "collecting_clips",
-            render_error: "We couldn't access one of the clips needed for this reel.",
+            render_error: errorPayload || userMessage,
             updated_at: now(),
           })
           .eq("id", reelId);
@@ -744,21 +940,34 @@ export async function executeAssembly(
         return {
           success: false,
           reel: await getReel(reelId),
-          error: failedSegment?.reason || "Clip collection timed out",
-          userMessage: "We couldn't access one of the clips needed for this reel.",
+          error: clipError?.description || "Clip collection timed out",
+          userMessage,
           previewAvailable: false,
+          clipError,
         };
       }
-      
-      // Hard failure - segment validation failed
-      const devDetail = failedSegment 
-        ? `Segment ${failedSegment.index + 1}: ${failedSegment.reason}`
-        : "Unknown validation error";
-      
-      throw new AssemblyError(
-        devDetail,
-        "We couldn't access one of the clips needed for this reel."
-      );
+
+      // Hard failure - segment validation failed; mark as needs_attention so user can skip/retry
+      console.warn(`[Reels] Clip validation failed for ${reelId}:`, clipError?.description);
+
+      await supabase
+        .from("reels")
+        .update({
+          status: "needs_attention",
+          assembly_step: "collecting_clips",
+          render_error: errorPayload || userMessage,
+          updated_at: now(),
+        })
+        .eq("id", reelId);
+
+      return {
+        success: false,
+        reel: await getReel(reelId),
+        error: clipError?.description || "Clip validation failed",
+        userMessage,
+        previewAvailable: false,
+        clipError,
+      };
     }
     
     const clips = validationResult.clips;

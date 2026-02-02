@@ -10,9 +10,10 @@ import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell } from "lucide-react";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
+import { ClipValidationError, formatTimestamp, parseClipValidationError } from "@/lib/reels";
 
 /**
  * Assembly progress from useReelAssembly hook
@@ -32,7 +33,7 @@ interface ReelCompilingPlaceholderProps {
   isFailed?: boolean;
   /** Whether assembly needs attention (stalled but recoverable) */
   isNeedsAttention?: boolean;
-  /** Error message to display */
+  /** Error message to display (may be JSON for structured clip errors) */
   errorMessage?: string | null;
   /** Retry handler */
   onRetry?: () => Promise<void>;
@@ -42,6 +43,8 @@ interface ReelCompilingPlaceholderProps {
   onCancel?: () => void;
   /** Leave and notify handler - keeps job in background */
   onLeaveAndNotify?: () => void;
+  /** Skip failing clip handler - removes the failing moment and retries */
+  onSkipClip?: (momentId: string) => Promise<void>;
   /** Real progress from assembly hook (truthful, not simulated) */
   progress?: AssemblyProgress;
   /** Debug instrumentation data */
@@ -96,17 +99,29 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   isRetrying = false,
   onCancel,
   onLeaveAndNotify,
+  onSkipClip,
   progress,
   debugData,
 }: ReelCompilingPlaceholderProps) {
   // Determine if we're in an error-like state (failed or needs attention)
   const hasIssue = isFailed || isNeedsAttention;
+
+  // Parse structured clip error from errorMessage if available
+  const clipError = useMemo(() => parseClipValidationError(errorMessage ?? null), [errorMessage]);
   
+  // User-friendly error display
+  const displayErrorMessage = useMemo(() => {
+    if (clipError) {
+      return `We couldn't access 1 clip: ${clipError.momentLabel} at ${formatTimestamp(clipError.timestampSeconds)}`;
+    }
+    return errorMessage || "We couldn't access one of the clips needed for this reel.";
+  }, [clipError, errorMessage]);
+
   // Use real progress from props (truthful)
   const displayProgress = progress?.percent ?? 0;
   const currentStep = progress?.step ?? null;
   const activeStepIndex = getActiveStepFromStep(currentStep);
-  
+
   // Aspect ratio to padding-bottom percentage
   const aspectPadding = {
     "16:9": "56.25%",
@@ -157,20 +172,25 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                 <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
                   <AlertCircle className="h-8 w-8 text-destructive" />
                 </div>
-                
+
                 <div className="text-center max-w-sm">
                   <p className="text-lg font-semibold text-foreground">
                     Couldn't assemble this reel
                   </p>
                   <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                    {errorMessage || "We couldn't access one of the clips needed for this reel."}
+                    {displayErrorMessage}
                   </p>
+                  {clipError && (
+                    <p className="text-xs text-muted-foreground/70 mt-1">
+                      Reason: {clipError.description}
+                    </p>
+                  )}
                 </div>
-                
+
                 {/* Recovery CTAs */}
                 <div className="flex flex-col sm:flex-row items-center gap-3 mt-3">
                   {onRetry && (
-                    <Button 
+                    <Button
                       onClick={onRetry}
                       disabled={isRetrying}
                       className="gap-2 min-w-[160px]"
@@ -189,10 +209,23 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       )}
                     </Button>
                   )}
-                  {onCancel && (
-                    <Button 
-                      variant="outline" 
-                      onClick={onCancel} 
+                  {/* Skip clip option when we have a specific failing clip */}
+                  {clipError && onSkipClip && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onSkipClip(clipError.momentId)}
+                      disabled={isRetrying}
+                      className="gap-2 min-w-[160px]"
+                      size="lg"
+                    >
+                      <SkipForward className="h-4 w-4" />
+                      Skip this clip
+                    </Button>
+                  )}
+                  {onCancel && !clipError && (
+                    <Button
+                      variant="outline"
+                      onClick={onCancel}
                       className="gap-2 min-w-[160px]"
                       size="lg"
                     >
@@ -201,33 +234,56 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     </Button>
                   )}
                 </div>
-                
+
+                {/* Back link when skip is shown */}
+                {clipError && onCancel && (
+                  <button
+                    onClick={onCancel}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline mt-2"
+                  >
+                    Back to session
+                  </button>
+                )}
+
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
-                  Your format and selected clips are preserved — just hit retry.
+                  {clipError
+                    ? "Skip this clip to continue, or retry to try again."
+                    : "Your format and selected clips are preserved — just hit retry."}
                 </p>
               </>
             ) : isNeedsAttention ? (
               <>
-                {/* Needs Attention State - Taking longer than expected */}
+                {/* Needs Attention State - Specific clip issue or timeout */}
                 <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
-                  <Clock className="h-8 w-8 text-vantage-warning" />
+                  {clipError ? (
+                    <AlertCircle className="h-8 w-8 text-vantage-warning" />
+                  ) : (
+                    <Clock className="h-8 w-8 text-vantage-warning" />
+                  )}
                 </div>
-                
+
                 <div className="text-center max-w-sm">
                   <p className="text-lg font-semibold text-foreground">
-                    This is taking longer than expected
+                    {clipError
+                      ? "Couldn't access a clip"
+                      : "This is taking longer than expected"}
                   </p>
                   <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                    {errorMessage || "The assembly is still running, but it's slower than usual."}
+                    {displayErrorMessage}
                   </p>
+                  {clipError && (
+                    <p className="text-xs text-muted-foreground/70 mt-1">
+                      Reason: {clipError.description}
+                    </p>
+                  )}
                 </div>
-                
-                {/* Recovery CTAs - 3 options */}
+
+                {/* Recovery CTAs */}
                 <div className="flex flex-col items-center gap-3 mt-3">
                   {/* Primary: Retry assembly */}
                   {onRetry && (
-                    <Button 
+                    <Button
                       onClick={onRetry}
                       disabled={isRetrying}
                       className="gap-2 min-w-[200px]"
@@ -241,15 +297,29 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       ) : (
                         <>
                           <RefreshCw className="h-4 w-4" />
-                          Retry assembly
+                          Retry
                         </>
                       )}
                     </Button>
                   )}
-                  
-                  {/* Secondary: Leave and notify me */}
-                  {onLeaveAndNotify && (
-                    <Button 
+
+                  {/* Skip clip option when we have a specific failing clip */}
+                  {clipError && onSkipClip && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onSkipClip(clipError.momentId)}
+                      disabled={isRetrying}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      <SkipForward className="h-4 w-4" />
+                      Skip this clip
+                    </Button>
+                  )}
+
+                  {/* Leave and notify me (only show if no specific clip error) */}
+                  {!clipError && onLeaveAndNotify && (
+                    <Button
                       variant="outline"
                       onClick={onLeaveAndNotify}
                       className="gap-2 min-w-[200px]"
@@ -259,7 +329,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       Leave and notify me
                     </Button>
                   )}
-                  
+
                   {/* Tertiary: Back to session */}
                   {onCancel && (
                     <button
@@ -270,10 +340,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     </button>
                   )}
                 </div>
-                
+
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
-                  Your format and clips are saved. You'll get a notification when it's ready.
+                  {clipError
+                    ? "Skip this clip to continue with the remaining clips."
+                    : "Your format and clips are saved. You'll get a notification when it's ready."}
                 </p>
               </>
             ) : (
