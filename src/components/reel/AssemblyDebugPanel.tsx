@@ -17,27 +17,25 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+/**
+ * Assembly steps (MANIFEST-FIRST)
+ * Preview generation is now a separate background job
+ */
 export type AssemblyStep = 
   | "collecting_clips"
-  | "stitching_sequence"
-  | "rendering_preview"
   | "finalizing_manifest"
   | "ready"
   | "failed";
 
 const STEP_LABELS: Record<AssemblyStep, string> = {
   collecting_clips: "Collecting clips",
-  stitching_sequence: "Stitching sequence",
-  rendering_preview: "Rendering preview",
-  finalizing_manifest: "Finalizing manifest",
+  finalizing_manifest: "Creating timeline",
   ready: "Ready",
   failed: "Failed",
 };
 
 const STEP_ORDER: AssemblyStep[] = [
   "collecting_clips",
-  "stitching_sequence",
-  "rendering_preview",
   "finalizing_manifest",
   "ready",
 ];

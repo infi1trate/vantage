@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -42,13 +43,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
-import { ReelStatus } from "@/lib/reels";
+import { ReelStatus, PreviewStatus, retryPreviewGeneration } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ReelEditor() {
   const { reelId } = useParams<{ reelId: string }>();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { goBack: safeGoBack } = useSafeBack("/library");
 
   // Reel data - needed early for session-aware back navigation
@@ -491,15 +493,18 @@ export default function ReelEditor() {
                 // Ready state - show player with effects
                 // Uses manifest player when no preview available, otherwise PlayerWithEffects
                 <div className="h-full flex flex-col">
-                  {/* Show banner if preview unavailable (manifest mode) */}
-                  {reel.playback_mode === "manifest" && !reel.preview_url && (
+                  {/* Show banner based on preview_status */}
+                  {reel.preview_status !== "ready" && (
                     <PreviewUnavailableBanner
                       className="mx-4 mt-4"
-                      onGeneratePreview={() => {
+                      previewStatus={reel.preview_status as PreviewStatus}
+                      onGeneratePreview={async () => {
                         toast.info("Generating preview...", {
                           description: "This may take a moment.",
                         });
-                        // TODO: Trigger preview generation
+                        await retryPreviewGeneration(reelId!);
+                        // Invalidate to refresh
+                        queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
                       }}
                     />
                   )}

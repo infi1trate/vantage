@@ -1188,6 +1188,7 @@ export type Database = {
           output_url: string | null
           playback_mode: string | null
           preview_ref: string | null
+          preview_status: string | null
           preview_url: string | null
           render_completed_at: string | null
           render_error: string | null
@@ -1217,6 +1218,7 @@ export type Database = {
           output_url?: string | null
           playback_mode?: string | null
           preview_ref?: string | null
+          preview_status?: string | null
           preview_url?: string | null
           render_completed_at?: string | null
           render_error?: string | null
@@ -1246,6 +1248,7 @@ export type Database = {
           output_url?: string | null
           playback_mode?: string | null
           preview_ref?: string | null
+          preview_status?: string | null
           preview_url?: string | null
           render_completed_at?: string | null
           render_error?: string | null

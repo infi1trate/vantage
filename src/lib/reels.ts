@@ -9,13 +9,24 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
+
+/**
+ * Assembly steps for reel creation
+ * MANIFEST-FIRST: Assembly completes at finalizing_manifest
+ * Preview rendering is a separate background job
+ */
 export type AssemblyStep = 
-  | "collecting_clips"
-  | "stitching_sequence"
-  | "rendering_preview"
-  | "finalizing_manifest"
-  | "ready"
+  | "collecting_clips"       // Resolve clip segment references
+  | "finalizing_manifest"    // Write manifest + totalDurationMs → SUCCESS
+  | "ready"                  // Assembly complete (manifest ready)
   | "failed";
+
+/**
+ * Preview status - separate from assembly status
+ * Preview is optional and doesn't block editing
+ */
+export type PreviewStatus = "pending" | "rendering" | "ready" | "failed";
+
 export type PlaybackMode = "preview" | "manifest";
 
 /**
@@ -64,6 +75,9 @@ export interface Reel {
   preview_ref: string | null;
   playback_mode: PlaybackMode;
   total_duration_ms: number | null;
+  // Preview generation (separate from assembly)
+  /** Status of optional preview video generation */
+  preview_status: PreviewStatus;
   // Retry tracking
   attempt_count: number;
   job_id: string | null;
@@ -90,6 +104,7 @@ function toReel(row: unknown): Reel {
     ...r,
     manifest: r.manifest as ReelManifest | null,
     playback_mode: (r.playback_mode as PlaybackMode) || "preview",
+    preview_status: (r.preview_status as PreviewStatus) || "pending",
   } as Reel;
 }
 
@@ -455,23 +470,25 @@ export interface AssemblyResult {
 }
 
 /**
- * Execute deterministic reel assembly
+ * Execute deterministic reel assembly (MANIFEST-FIRST)
  * 
- * CRITICAL: This function ALWAYS ends with reel.status = "ready" or "failed"
- * It wraps all steps in try/catch and ensures terminal state is set.
+ * CRITICAL: Assembly success = valid manifest written
+ * Preview is started as a SEPARATE background job and doesn't block ready state.
  * 
- * If preview rendering fails but manifest exists, we still mark ready with
- * playback_mode = "manifest" to allow export to work.
+ * Flow:
+ * 1. collecting_clips: Resolve clip segment references
+ * 2. finalizing_manifest: Write manifest + totalDurationMs
+ * 3. ready: Mark reel as ready (editor becomes usable!)
+ * 4. (Background) Start preview generation as optional enhancement
  */
 export async function executeAssembly(
   reelId: string,
   momentDurations: { momentId: string; durationMs: number }[]
 ): Promise<AssemblyResult> {
   const now = () => new Date().toISOString();
-  let previewAvailable = false;
   
   try {
-    console.log(`[Reels] Starting deterministic assembly for ${reelId}`);
+    console.log(`[Reels] Starting manifest-first assembly for ${reelId}`);
     
     // STEP 1: Collecting clips
     await updateAssemblyStep(reelId, "collecting_clips");
@@ -487,16 +504,16 @@ export async function executeAssembly(
     
     const totalDurationMs = clips.reduce((sum, c) => sum + c.durationMs, 0);
     
-    await completeAssemblyStep(reelId);
-    
-    // STEP 2: Stitching sequence
-    await updateAssemblyStep(reelId, "stitching_sequence", { completesPrevious: true });
-    
     // Get current reel for aspect ratio
     const currentReel = await getReel(reelId);
     if (!currentReel) {
       throw new Error("Reel not found during assembly");
     }
+    
+    await completeAssemblyStep(reelId);
+    
+    // STEP 2: Finalizing manifest (SUCCESS CRITERIA)
+    await updateAssemblyStep(reelId, "finalizing_manifest", { completesPrevious: true });
     
     const manifest: ReelManifest = {
       clips,
@@ -505,80 +522,31 @@ export async function executeAssembly(
       createdAt: now(),
     };
     
-    // Save manifest (serialize to JSON for Supabase)
+    // Save manifest - this is the critical success moment
     await supabase
       .from("reels")
       .update({
         manifest: JSON.parse(JSON.stringify(manifest)),
         total_duration_ms: totalDurationMs,
         duration_seconds: Math.round(totalDurationMs / 1000),
+        playback_mode: "manifest", // Start with manifest mode until preview ready
+        preview_status: "pending", // Preview not yet generated
         updated_at: now(),
       })
       .eq("id", reelId);
     
-    await completeAssemblyStep(reelId);
-    
-    // STEP 3: Rendering preview
-    await updateAssemblyStep(reelId, "rendering_preview", { completesPrevious: true });
-    
-    // Attempt preview render (this may fail, which is recoverable)
-    try {
-      // TODO: Actual preview rendering logic
-      // For now, simulate with the session video as preview
-      if (currentReel.session_id) {
-        const { data: session } = await supabase
-          .from("capture_sessions")
-          .select("video_url")
-          .eq("id", currentReel.session_id)
-          .maybeSingle();
-        
-        if (session?.video_url) {
-          await supabase
-            .from("reels")
-            .update({
-              preview_ref: session.video_url,
-              preview_url: session.video_url, // Use session video as preview for now
-              playback_mode: "preview",
-              updated_at: now(),
-            })
-            .eq("id", reelId);
-          
-          previewAvailable = true;
-        }
-      }
-      
-      await completeAssemblyStep(reelId);
-    } catch (previewError) {
-      // Preview failed, but we can continue with manifest mode
-      console.warn(`[Reels] Preview render failed, falling back to manifest mode:`, previewError);
-      
-      await supabase
-        .from("reels")
-        .update({
-          preview_ref: null,
-          playback_mode: "manifest",
-          updated_at: now(),
-        })
-        .eq("id", reelId);
-      
-      previewAvailable = false;
+    // Validate manifest was saved
+    const manifestReel = await getReel(reelId);
+    if (!manifestReel?.manifest) {
+      throw new Error("Manifest is required but failed to save");
     }
-    
-    // STEP 4: Finalizing manifest
-    await updateAssemblyStep(reelId, "finalizing_manifest", { completesPrevious: true });
-    
-    // Validate required fields before marking ready
-    const finalReel = await getReel(reelId);
-    if (!finalReel?.manifest) {
-      throw new Error("Manifest is required but missing");
-    }
-    if (!finalReel.total_duration_ms || finalReel.total_duration_ms <= 0) {
+    if (!manifestReel.total_duration_ms || manifestReel.total_duration_ms <= 0) {
       throw new Error("Total duration is required but invalid");
     }
     
     await completeAssemblyStep(reelId);
     
-    // TERMINAL STATE: Ready
+    // TERMINAL STATE: Ready (manifest complete - editor is now usable!)
     await updateAssemblyStep(reelId, "ready", { completesPrevious: true });
     
     const { data: readyReel, error: readyError } = await supabase
@@ -586,7 +554,7 @@ export async function executeAssembly(
       .update({
         status: "draft", // draft = ready for editing
         assembly_step: "ready",
-        render_error: previewAvailable ? null : "Preview unavailable (export will still work)",
+        render_error: null,
         updated_at: now(),
       })
       .eq("id", reelId)
@@ -595,12 +563,17 @@ export async function executeAssembly(
     
     if (readyError) throw readyError;
     
-    console.log(`[Reels] Assembly complete for ${reelId}, preview: ${previewAvailable}`);
+    console.log(`[Reels] Assembly complete for ${reelId} - reel is READY (manifest mode)`);
+    
+    // Start preview generation as background job (non-blocking)
+    startPreviewGeneration(reelId, currentReel.session_id).catch((err) => {
+      console.warn(`[Reels] Background preview generation failed:`, err);
+    });
     
     return {
       success: true,
       reel: toReel(readyReel),
-      previewAvailable,
+      previewAvailable: false, // Preview will be generated in background
     };
     
   } catch (error) {
@@ -639,5 +612,89 @@ export async function executeAssembly(
         previewAvailable: false,
       };
     }
+  }
+}
+
+/**
+ * Start preview generation as a background job
+ * This runs AFTER the reel is marked ready and doesn't block editing
+ */
+async function startPreviewGeneration(reelId: string, sessionId: string | null): Promise<void> {
+  const now = () => new Date().toISOString();
+  
+  console.log(`[Reels] Starting background preview generation for ${reelId}`);
+  
+  // Mark preview as rendering
+  await supabase
+    .from("reels")
+    .update({
+      preview_status: "rendering",
+      updated_at: now(),
+    })
+    .eq("id", reelId);
+  
+  try {
+    // For MVP: Use session video as preview
+    if (sessionId) {
+      const { data: session } = await supabase
+        .from("capture_sessions")
+        .select("video_url")
+        .eq("id", sessionId)
+        .maybeSingle();
+      
+      if (session?.video_url) {
+        await supabase
+          .from("reels")
+          .update({
+            preview_ref: session.video_url,
+            preview_url: session.video_url,
+            playback_mode: "preview",
+            preview_status: "ready",
+            updated_at: now(),
+          })
+          .eq("id", reelId);
+        
+        console.log(`[Reels] Preview ready for ${reelId}`);
+        return;
+      }
+    }
+    
+    // No session video available - mark as failed but don't error
+    await supabase
+      .from("reels")
+      .update({
+        preview_status: "failed",
+        updated_at: now(),
+      })
+      .eq("id", reelId);
+    
+    console.log(`[Reels] Preview generation skipped for ${reelId} - no session video`);
+    
+  } catch (error) {
+    console.warn(`[Reels] Preview generation failed for ${reelId}:`, error);
+    
+    await supabase
+      .from("reels")
+      .update({
+        preview_status: "failed",
+        updated_at: now(),
+      })
+      .eq("id", reelId);
+  }
+}
+
+/**
+ * Manually retry preview generation for a reel
+ */
+export async function retryPreviewGeneration(reelId: string): Promise<boolean> {
+  const reel = await getReel(reelId);
+  if (!reel) return false;
+  
+  try {
+    await startPreviewGeneration(reelId, reel.session_id);
+    return true;
+  } catch (error) {
+    console.error(`[Reels] Preview retry failed:`, error);
+    return false;
   }
 }
