@@ -14,6 +14,7 @@ export { ReelEditorModeBanner } from "./ReelEditorModeBanner";
 export { ReelCompilationStatus } from "./ReelCompilationStatus";
 export { ReelCompilingPlaceholder } from "./ReelCompilingPlaceholder";
 export { ReelEditorIntroModal } from "./ReelEditorIntroModal";
+export { PageTransitionOverlay } from "./PageTransitionOverlay";
 
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";
