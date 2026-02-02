@@ -9,7 +9,7 @@ import { memo, useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, RefreshCw, Loader2, Check, X, ArrowLeft } from "lucide-react";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, X, ArrowLeft, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ReelCompilingPlaceholderProps {
@@ -18,6 +18,8 @@ interface ReelCompilingPlaceholderProps {
   className?: string;
   /** Whether assembly failed */
   isFailed?: boolean;
+  /** Whether assembly needs attention (stalled but recoverable) */
+  isNeedsAttention?: boolean;
   /** Error message to display */
   errorMessage?: string | null;
   /** Retry handler */
@@ -26,6 +28,8 @@ interface ReelCompilingPlaceholderProps {
   isRetrying?: boolean;
   /** Cancel handler - returns to session detail */
   onCancel?: () => void;
+  /** Leave and notify handler - keeps job in background */
+  onLeaveAndNotify?: () => void;
 }
 
 // Assembly steps configuration
@@ -49,11 +53,15 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   aspectRatio = "16:9",
   className,
   isFailed = false,
+  isNeedsAttention = false,
   errorMessage,
   onRetry,
   isRetrying = false,
   onCancel,
+  onLeaveAndNotify,
 }: ReelCompilingPlaceholderProps) {
+  // Determine if we're in an error-like state (failed or needs attention)
+  const hasIssue = isFailed || isNeedsAttention;
   // Simulated progress: 0 → 85% over ~25 seconds, then holds
   const [progress, setProgress] = useState(0);
   const intervalRef = useRef<number | null>(null);
@@ -61,8 +69,8 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   
   // Progress simulation - smooth increase to 85%, then hold
   useEffect(() => {
-    if (isFailed || isRetrying) {
-      // Reset on failure or retry
+    if (hasIssue || isRetrying) {
+      // Reset on failure/attention or retry
       if (isRetrying) {
         setProgress(0);
         startTimeRef.current = Date.now();
@@ -95,7 +103,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
         clearInterval(intervalRef.current);
       }
     };
-  }, [isFailed, isRetrying]);
+  }, [hasIssue, isRetrying]);
   
   const activeStepIndex = getActiveStep(progress);
   
@@ -115,15 +123,17 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
             "relative w-full max-w-2xl overflow-hidden rounded-xl border",
             isFailed 
               ? "bg-destructive/5 border-destructive/30"
-              : "bg-gradient-to-br from-muted/40 via-muted/20 to-muted/40 border-border/30"
+              : isNeedsAttention
+                ? "bg-vantage-warning/5 border-vantage-warning/30"
+                : "bg-gradient-to-br from-muted/40 via-muted/20 to-muted/40 border-border/30"
           )}
           style={{ maxHeight: aspectRatio === "9:16" ? "70%" : undefined }}
         >
           {/* Maintain aspect ratio */}
           <div style={{ paddingBottom: aspectPadding }} />
           
-          {/* Shimmer overlay - only when assembling */}
-          {!isFailed && (
+          {/* Shimmer overlay - only when assembling (not failed or needs attention) */}
+          {!hasIssue && (
             <div className="absolute inset-0 overflow-hidden">
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12"
@@ -195,6 +205,75 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
                   Your format and selected clips are preserved — just hit retry.
+                </p>
+              </>
+            ) : isNeedsAttention ? (
+              <>
+                {/* Needs Attention State - Taking longer than expected */}
+                <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
+                  <Clock className="h-8 w-8 text-vantage-warning" />
+                </div>
+                
+                <div className="text-center max-w-sm">
+                  <p className="text-lg font-semibold text-foreground">
+                    This is taking longer than expected
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                    {errorMessage || "The assembly is still running, but it's slower than usual."}
+                  </p>
+                </div>
+                
+                {/* Recovery CTAs - 3 options */}
+                <div className="flex flex-col items-center gap-3 mt-3">
+                  {/* Primary: Retry assembly */}
+                  {onRetry && (
+                    <Button 
+                      onClick={onRetry}
+                      disabled={isRetrying}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      {isRetrying ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Retrying...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4" />
+                          Retry assembly
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  
+                  {/* Secondary: Leave and notify me */}
+                  {onLeaveAndNotify && (
+                    <Button 
+                      variant="outline"
+                      onClick={onLeaveAndNotify}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      <Bell className="h-4 w-4" />
+                      Leave and notify me
+                    </Button>
+                  )}
+                  
+                  {/* Tertiary: Back to session */}
+                  {onCancel && (
+                    <button
+                      onClick={onCancel}
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                    >
+                      Back to session
+                    </button>
+                  )}
+                </div>
+                
+                {/* Reassurance text */}
+                <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
+                  Your format and clips are saved. You'll get a notification when it's ready.
                 </p>
               </>
             ) : (
@@ -317,7 +396,9 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
           "rounded-lg border p-3",
           isFailed 
             ? "bg-destructive/5 border-destructive/20"
-            : "bg-muted/20 border-border/30"
+            : isNeedsAttention
+              ? "bg-vantage-warning/5 border-vantage-warning/20"
+              : "bg-muted/20 border-border/30"
         )}>
           {/* Timeline header */}
           <div className="flex items-center gap-2 mb-3">
@@ -336,10 +417,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   "flex-1 rounded border",
                   isFailed 
                     ? "bg-destructive/10 border-destructive/20"
-                    : "bg-muted/50 border-border/20"
+                    : isNeedsAttention
+                      ? "bg-vantage-warning/10 border-vantage-warning/20"
+                      : "bg-muted/50 border-border/20"
                 )}
                 initial={{ opacity: 0.3 }}
-                animate={isFailed ? {} : { opacity: [0.3, 0.5, 0.3] }}
+                animate={hasIssue ? {} : { opacity: [0.3, 0.5, 0.3] }}
                 transition={{
                   duration: 1.5,
                   repeat: Infinity,
@@ -352,11 +435,17 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
           {/* Disabled message */}
           <p className={cn(
             "text-[10px] text-center mt-2",
-            isFailed ? "text-destructive/60" : "text-muted-foreground/60"
+            isFailed 
+              ? "text-destructive/60" 
+              : isNeedsAttention
+                ? "text-vantage-warning/60"
+                : "text-muted-foreground/60"
           )}>
             {isFailed 
               ? "Assembly must complete before editing"
-              : "FX and editing will be available once assembly completes"
+              : isNeedsAttention
+                ? "Waiting for assembly to complete"
+                : "FX and editing will be available once assembly completes"
             }
           </p>
         </div>
