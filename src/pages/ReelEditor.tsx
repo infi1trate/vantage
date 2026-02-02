@@ -47,11 +47,22 @@ export default function ReelEditor() {
   const { reelId } = useParams<{ reelId: string }>();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const { goBack } = useSafeBack("/library");
+  const { goBack: safeGoBack } = useSafeBack("/library");
 
-  // Reel data
+  // Reel data - needed early for session-aware back navigation
   const { data: reel, isLoading: reelLoading, error: reelError } = useReel(reelId);
-  
+
+  // Session-aware back navigation:
+  // - If reel has a session, go to session detail
+  // - Otherwise fallback to library
+  const goBack = useCallback(() => {
+    if (reel?.session_id) {
+      navigate(`/session/${reel.session_id}`);
+    } else {
+      safeGoBack();
+    }
+  }, [reel?.session_id, navigate, safeGoBack]);
+
   // Reel assembly state with real-time subscription + timeout
   const assemblyState = useReelAssembly(reelId, reel?.status as ReelStatus | undefined);
   
