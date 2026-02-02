@@ -19,12 +19,13 @@ import { useReel } from "@/hooks/useReel";
 import { useReelPackage } from "@/hooks/useReelPackageConfig";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
+import { useEditorState } from "@/hooks/useEditorState";
 import { PlayerWithEffects } from "@/components/player/PlayerWithEffects";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
-import { CompilationPhase } from "@/components/reel/ReelCompilationStatus";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
+import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
+import { ReelStatus } from "@/lib/reels";
 
 export default function ReelEditor() {
   const { reelId } = useParams<{ reelId: string }>();
@@ -69,22 +71,20 @@ export default function ReelEditor() {
   // Editor state
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
   const [showEffects, setShowEffects] = useState(true);
-  
-  // Derive compilation phase (for new reels still being assembled)
-  const compilationPhase: CompilationPhase = useMemo(() => {
-    if (!reel) return "idle";
-    // Check explicit compiling status first
-    if (reel.status === "compiling") return "assembling";
-    // If video URL exists and session data loaded, reel is ready
-    if (sessionData?.videoUrl && duration > 0) return "ready";
-    // Still loading session data
-    if (loading) return "assembling";
-    return "ready";
-  }, [reel, reel?.status, sessionData?.videoUrl, duration, loading]);
-  
-  // Check if reel is ready for editing (not compiling)
-  const isReelReady = compilationPhase === "ready";
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // Derive video loaded state
+  const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
+  
+  // Use the editor state machine
+  const editorState = useEditorState(
+    reel?.status as ReelStatus | undefined,
+    reel?.session_id || undefined,
+    isVideoLoaded
+  );
+  
+  // Convenience flag for ready state
+  const isReelReady = editorState.state === "ready";
 
   // Filter annotations to only those included in the reel
   const reelMoments = useMemo(() => {
@@ -289,7 +289,16 @@ export default function ReelEditor() {
               <Badge variant="outline" className="text-xs">
                 {reel.aspect_ratio}
               </Badge>
-              {effects.length > 0 && (
+              
+              {/* Editor State Badge - always visible */}
+              <EditorStateBadge
+                state={editorState.state}
+                statusLabel={editorState.statusLabel}
+                showProgress={editorState.showProgress}
+                progressPercent={editorState.progressPercent}
+              />
+              
+              {effects.length > 0 && editorState.state === "ready" && (
                 <Badge variant="secondary" className="text-[10px] gap-1">
                   {effects.length} FX
                 </Badge>
@@ -313,8 +322,8 @@ export default function ReelEditor() {
             
             <ExportButton 
               sessionId={reel.session_id || ""} 
-              reelStatus={reel.status as "draft" | "compiling" | "ready" | "rendering" | "exporting"}
-              disabled={!isReelReady}
+              reelStatus={editorState.state === "compiling" ? "compiling" : reel.status as "draft" | "ready" | "rendering" | "exporting"}
+              disabled={!editorState.exportEnabled}
               onExport={() => {
                 toast.info("Rendering effects...", {
                   description: `${effects.length} effects will be composited into the final video`,
@@ -330,11 +339,11 @@ export default function ReelEditor() {
       <div className="flex-1 flex overflow-hidden">
         {/* Preview + Timeline (Main Area) */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Player Area - Show placeholder when compiling */}
+          {/* Player Area - Show placeholder when not ready */}
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
-              {!isReelReady ? (
-                // Compiling state - show friendly placeholder
+              {!editorState.previewAvailable ? (
+                // Compiling/exporting state - show friendly placeholder
                 <ReelCompilingPlaceholder
                   clipCount={reel.source_moment_ids?.length || 0}
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
@@ -371,11 +380,11 @@ export default function ReelEditor() {
             onTabChange={setActiveTab}
             showEffects={showEffects}
             onShowEffectsChange={setShowEffects}
-            disabled={!isReelReady}
+            disabled={!editorState.timelineInteractive}
           />
         </div>
 
-        {/* Right Sidebar: Tools - disabled when compiling */}
+        {/* Right Sidebar: Tools - disabled when compiling or exporting */}
         <ReelEditorSidebar
           reelId={reel.id}
           sessionId={reel.session_id || ""}
@@ -384,14 +393,14 @@ export default function ReelEditor() {
           annotations={reelMoments}
           duration={duration}
           onChangesMade={() => setHasUnsavedChanges(true)}
-          onDragStart={isReelReady ? handleDragStart : undefined}
+          onDragStart={editorState.fxEnabled ? handleDragStart : undefined}
           snapSettings={snapSettings}
           onSnapSettingsChange={setSnapSettings}
           effectCount={effects.length}
           onAutoEnhance={handleAutoEnhance}
           isAutoEnhancing={isAutoEnhancing}
           onClearAllEffects={effects.length > 0 ? handleClearAllEffects : undefined}
-          disabled={!isReelReady}
+          disabled={!editorState.fxEnabled}
         />
       </div>
     </div>
