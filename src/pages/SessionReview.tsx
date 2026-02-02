@@ -15,6 +15,7 @@ import { AnnotationSuggestion } from "@/components/player/SuggestionMarkers";
 import { ShareSessionDialog } from "@/components/sharing/ShareSessionDialog";
 import { DeleteSessionDialog } from "@/components/privacy/DeleteSessionDialog";
 import { KeyboardShortcutsOverlay, useKeyboardShortcuts } from "@/components/player/KeyboardShortcutsOverlay";
+import { SessionMediaDiagnostics } from "@/components/player/SessionMediaDiagnostics";
 import { TimelineEmptyState } from "@/components/player/OnboardingHint";
 import { ExportCTAs } from "@/components/export/ExportCTAs";
 import { ExportOptions } from "@/components/export/ExportDrawer";
@@ -834,6 +835,28 @@ export default function SessionReview() {
                 job={processingJob}
                 onRetry={handleRetryProcessing}
                 onBack={goBack}
+              />
+            </div>
+          )}
+          
+          {/* Session Media Diagnostics - shows when video is missing or in dev mode */}
+          {(!videoUrl || import.meta.env.DEV) && !isProcessing && !isCloudProcessing && (
+            <div className="px-4 pt-4">
+              <SessionMediaDiagnostics
+                session={session}
+                videoAssets={videoAssets}
+                audioTracks={audioTracks}
+                facecamTracks={facecamTracks}
+                localSession={localSession ? {
+                  id: localSession.id,
+                  status: localSession.status,
+                  mimeType: localSession.mimeType,
+                  blobSize: localSession.blobSize,
+                  duration: localSession.duration,
+                  createdAt: localSession.createdAt,
+                  hasBlob: !!localBlob,
+                } : null}
+                isLocalSession={isLocalSession}
               />
             </div>
           )}
