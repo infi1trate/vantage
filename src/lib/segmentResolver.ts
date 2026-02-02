@@ -63,6 +63,8 @@ export interface ResolvedSegment {
   timestampSeconds: number;
   /** Human-readable label */
   label: string;
+  /** Whether the segment was auto-repaired from invalid/missing data */
+  wasRepaired?: boolean;
 }
 
 /**
@@ -188,6 +190,11 @@ function sessionTimeToVideoTime(sessionTimeMs: number, videoStartOffsetMs: numbe
  * Uses centered approach: 3 seconds before, 7 seconds after
  * Clamped to video bounds and minimum duration enforced
  * 
+ * AUTO-REPAIR LOGIC:
+ * - If explicit range is out of bounds, clamp to valid range
+ * - If range is too short, extend to minimum duration
+ * - Always produces a valid range if videoDurationMs >= MIN_CLIP_DURATION_MS
+ * 
  * IMPORTANT: All input timestamps must be in VIDEO time (not session time)
  */
 function calculateClipRange(
@@ -195,38 +202,75 @@ function calculateClipRange(
   explicitStartMs: number | null | undefined,
   explicitEndMs: number | null | undefined,
   videoDurationMs: number | null
-): { startMs: number; endMs: number } {
-  // If explicit start/end are provided, use them
+): { startMs: number; endMs: number; wasRepaired: boolean } {
+  let wasRepaired = false;
+  let startMs: number;
+  let endMs: number;
+
+  // If explicit start/end are provided, use them (with repair)
   if (
     explicitStartMs !== null &&
     explicitStartMs !== undefined &&
     explicitEndMs !== null &&
     explicitEndMs !== undefined
   ) {
-    return {
-      startMs: Math.max(0, explicitStartMs),
-      endMs: explicitEndMs,
-    };
+    startMs = explicitStartMs;
+    endMs = explicitEndMs;
+    
+    // REPAIR: Clamp negative start
+    if (startMs < 0) {
+      startMs = 0;
+      wasRepaired = true;
+    }
+    
+    // REPAIR: Swap if inverted
+    if (startMs > endMs) {
+      [startMs, endMs] = [endMs, startMs];
+      wasRepaired = true;
+    }
+  } else {
+    // Derive from moment video timestamp with lead-in
+    // Start 3 seconds before the moment (or 0 if that's before the start)
+    startMs = Math.max(0, momentVideoTimeMs - LEAD_IN_MS);
+    
+    // End 10 seconds after start
+    endMs = startMs + DEFAULT_CLIP_LENGTH_MS;
   }
-
-  // Derive from moment video timestamp with lead-in
-  // Start 3 seconds before the moment (or 0 if that's before the start)
-  let startMs = Math.max(0, momentVideoTimeMs - LEAD_IN_MS);
-  
-  // End 10 seconds after start
-  let endMs = startMs + DEFAULT_CLIP_LENGTH_MS;
 
   // Clamp to video duration if known
   if (videoDurationMs !== null && videoDurationMs > 0) {
-    // If end exceeds video, push it back
+    // REPAIR: If end exceeds video, clamp it
     if (endMs > videoDurationMs) {
       endMs = videoDurationMs;
-      // Also adjust start to try to maintain clip length
+      wasRepaired = true;
+    }
+    
+    // REPAIR: If start exceeds video, clamp it
+    if (startMs >= videoDurationMs) {
+      startMs = Math.max(0, videoDurationMs - DEFAULT_CLIP_LENGTH_MS);
+      wasRepaired = true;
+    }
+    
+    // Adjust start to try to maintain clip length
+    if (endMs - startMs < DEFAULT_CLIP_LENGTH_MS) {
       startMs = Math.max(0, endMs - DEFAULT_CLIP_LENGTH_MS);
     }
   }
 
-  return { startMs, endMs };
+  // REPAIR: Ensure minimum duration
+  if (endMs - startMs < MIN_CLIP_DURATION_MS) {
+    // Try to extend end first
+    if (videoDurationMs === null || endMs + (MIN_CLIP_DURATION_MS - (endMs - startMs)) <= videoDurationMs) {
+      endMs = startMs + MIN_CLIP_DURATION_MS;
+    } else if (videoDurationMs !== null) {
+      // Can't extend end, try to move start back
+      endMs = videoDurationMs;
+      startMs = Math.max(0, endMs - MIN_CLIP_DURATION_MS);
+    }
+    wasRepaired = true;
+  }
+
+  return { startMs, endMs, wasRepaired };
 }
 
 /**
@@ -317,13 +361,17 @@ export async function resolveSegmentFromMoment(
       const sessionTimestampMs = timelineEvent.timestamp_ms ?? 0;
       const videoTimestampMs = sessionTimeToVideoTime(sessionTimestampMs, session.videoStartOffsetMs);
       
-      // Calculate range using video-time basis
-      const { startMs, endMs } = calculateClipRange(
+      // Calculate range using video-time basis (with auto-repair)
+      const { startMs, endMs, wasRepaired } = calculateClipRange(
         videoTimestampMs,
         null,
         durationMs ? videoTimestampMs + durationMs : null,
         videoDurationMs > 0 ? videoDurationMs : null
       );
+      
+      if (wasRepaired) {
+        console.log(`[SegmentResolver] Auto-repaired segment for timeline event ${momentId}: ${startMs}ms-${endMs}ms`);
+      }
 
       // Validate range
       const validationResult = validateRange(startMs, endMs, videoDurationMs || null);
@@ -352,6 +400,7 @@ export async function resolveSegmentFromMoment(
           momentTimestamp: formatTimestampSeconds(timestampSeconds),
           timestampSeconds,
           label: timelineEvent.title || `${momentType} at ${formatTimestampSeconds(timestampSeconds)}`,
+          wasRepaired,
         },
       };
     }
@@ -391,13 +440,17 @@ export async function resolveSegmentFromMoment(
       ? sessionTimeToVideoTime(explicitEndSessionMs, session.videoStartOffsetMs)
       : null;
 
-    // 4. Calculate clip range using video-time basis
-    const { startMs, endMs } = calculateClipRange(
+    // 4. Calculate clip range using video-time basis (with auto-repair)
+    const { startMs, endMs, wasRepaired } = calculateClipRange(
       videoTimestampMs,
       null, // No explicit start in annotations schema
       explicitEndVideoMs,
       videoDurationMs > 0 ? videoDurationMs : null
     );
+    
+    if (wasRepaired) {
+      console.log(`[SegmentResolver] Auto-repaired segment for annotation ${momentId}: ${startMs}ms-${endMs}ms`);
+    }
 
     // 5. Validate range
     const validationResult = validateRange(startMs, endMs, videoDurationMs || null);
@@ -415,6 +468,7 @@ export async function resolveSegmentFromMoment(
     }
 
     // 5. Return resolved segment
+    // 6. Return resolved segment
     return {
       success: true,
       segment: {
@@ -427,6 +481,7 @@ export async function resolveSegmentFromMoment(
         momentTimestamp: formatTimestampSeconds(timestampSeconds),
         timestampSeconds,
         label: moment.title || `${momentType} at ${formatTimestampSeconds(timestampSeconds)}`,
+        wasRepaired,
       },
     };
   } catch (error) {
@@ -547,36 +602,54 @@ function extractVideoStartOffset(metadata: Record<string, unknown> | null): numb
 /**
  * Validate a clip range
  */
+/**
+ * Validate a clip range - only fails for truly unrecoverable issues
+ * 
+ * AUTO-REPAIR means most issues are fixed in calculateClipRange.
+ * This validation catches edge cases that couldn't be repaired:
+ * - Video too short to produce minimum segment
+ * - Completely invalid state after repair
+ */
 function validateRange(
   startMs: number,
   endMs: number,
   videoDurationMs: number | null
 ): { valid: true } | { valid: false; reason: SegmentResolutionError["reason"]; description: string } {
-  // Check startMs < endMs
+  // Check startMs < endMs (should be fixed by repair, but sanity check)
   if (startMs >= endMs) {
     return {
       valid: false,
       reason: "invalid_range",
-      description: `Invalid time range: start (${startMs}ms) >= end (${endMs}ms)`,
+      description: `Invalid time range after repair: start (${startMs}ms) >= end (${endMs}ms)`,
     };
   }
 
-  // Check minimum duration
+  // Check minimum duration (should be ensured by repair)
   const durationMs = endMs - startMs;
   if (durationMs < MIN_CLIP_DURATION_MS) {
+    // Only fail if video is too short to produce minimum segment
+    if (videoDurationMs !== null && videoDurationMs < MIN_CLIP_DURATION_MS) {
+      return {
+        valid: false,
+        reason: "duration_too_short",
+        description: `Video duration (${videoDurationMs}ms) is too short for minimum clip (${MIN_CLIP_DURATION_MS}ms)`,
+      };
+    }
+    // Otherwise this shouldn't happen after repair
     return {
       valid: false,
       reason: "duration_too_short",
-      description: `Clip duration (${durationMs}ms) is less than minimum (${MIN_CLIP_DURATION_MS}ms)`,
+      description: `Clip duration (${durationMs}ms) is less than minimum after repair`,
     };
   }
 
-  // Check against video duration if known
-  if (videoDurationMs !== null && videoDurationMs > 0 && endMs > videoDurationMs) {
+  // Note: We no longer fail for exceeds_video_duration because calculateClipRange clamps it
+  // Only check for obviously invalid state
+  if (videoDurationMs !== null && videoDurationMs > 0 && startMs >= videoDurationMs) {
     return {
       valid: false,
       reason: "exceeds_video_duration",
-      description: `Clip end (${endMs}ms) exceeds video duration (${videoDurationMs}ms)`,
+      description: `Clip start (${startMs}ms) is at or beyond video end (${videoDurationMs}ms)`,
     };
   }
 
