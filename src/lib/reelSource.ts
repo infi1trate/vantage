@@ -400,13 +400,29 @@ export async function checkReelSourceReadiness(
           };
         
         case "missing":
+          // FIX: If ReelSource is "missing" BUT video_url exists,
+          // this is a legacy session with playable video - NOT truly missing
+          // The video works for playback but just lacks ReelSource metadata
+          if (session.video_url) {
+            console.log(`[ReelSource] ReelSource marked missing but video_url exists - treating as legacy with video`);
+            return {
+              isReady: true,
+              reelSource,
+              message: "Legacy session with video (ReelSource needs upgrade)",
+              isRecoverable: false,
+              isLegacy: true, // Treat as legacy to trigger backfill on reel creation
+              videoUrl: session.video_url,
+            };
+          }
+          
+          // Truly no video exists
           return {
             isReady: false,
             reelSource,
-            message: "No source video available",
+            message: "No recording available for this session",
             isRecoverable: false,
             isLegacy: false,
-            videoUrl: session.video_url,
+            videoUrl: null,
           };
       }
     }
@@ -439,11 +455,12 @@ export async function checkReelSourceReadiness(
       };
     }
     
-    // Legacy session with no video
+    // Truly no video - recording never started or file permanently lost
+    // Reserve "no video" ONLY for this case
     return {
       isReady: false,
       reelSource: null,
-      message: "No video available for this session",
+      message: "No recording available for this session",
       isRecoverable: false,
       isLegacy: true,
       videoUrl: null,

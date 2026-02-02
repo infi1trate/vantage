@@ -128,12 +128,13 @@ export async function checkAssetReadiness(
         };
       }
       
-      // Status is "ready" or something else but no video URL - permanent failure
+      // Status is "ready" or something else but no video URL
+      // Reserve "no_video" ONLY for truly missing recordings
       return {
         status: "no_video",
         videoUrl: null,
         durationSeconds: session.duration_seconds,
-        message: "No video available for this session",
+        message: "No recording available for this session",
         isRecoverable: false,
       };
     }
@@ -245,7 +246,7 @@ export function getAssetStatusMessage(status: AssetReadinessStatus): string {
     case "not_found":
       return "Session not found";
     case "no_video":
-      return "This session has no gameplay video.";
+      return "No recording available for this session";
     case "failed":
       return "Session processing failed.";
     case "timeout":
