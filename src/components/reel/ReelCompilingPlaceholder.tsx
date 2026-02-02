@@ -15,6 +15,8 @@ import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
 import { ClipValidationError, formatTimestamp, parseClipValidationError } from "@/lib/reels";
 
+import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
+
 /**
  * Assembly progress from useReelAssembly hook
  */
@@ -23,6 +25,12 @@ export interface AssemblyProgress {
   stage: number;
   step: AssemblyStep | null;
   stepStartedAt: string | null;
+  /** For collecting_clips: which segment is currently being resolved (1-indexed for display) */
+  currentSegmentIndex?: number;
+  /** For collecting_clips: total number of segments */
+  totalSegments?: number;
+  /** For collecting_clips: status of each segment */
+  segments?: SegmentProgress[];
 }
 
 interface ReelCompilingPlaceholderProps {
@@ -53,6 +61,12 @@ interface ReelCompilingPlaceholderProps {
     stepStartedAt: string | null;
     stepCompletedAt: string | null;
     reelUpdatedAt: string | null;
+    /** Per-segment status for debug panel */
+    segments?: SegmentProgress[];
+    /** Current segment being resolved (1-indexed) */
+    currentSegmentIndex?: number;
+    /** Total segments */
+    totalSegments?: number;
   };
 }
 
@@ -431,17 +445,22 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                             ) : null}
                           </div>
                           <span className={cn(
-                            "font-medium",
+                            "font-medium flex-1",
                             isComplete 
                               ? "text-vantage-success" 
                               : isActive 
                                 ? "text-foreground"
                                 : "text-muted-foreground"
                           )}>
-                            {step.label}
+                            {/* Show "Resolving clip X of Y" when actively collecting clips */}
+                            {isActive && step.id === "collecting_clips" && progress?.currentSegmentIndex !== undefined && progress?.totalSegments ? (
+                              <span>Resolving clip {progress.currentSegmentIndex} of {progress.totalSegments}</span>
+                            ) : (
+                              step.label
+                            )}
                           </span>
                           {isActive && (
-                            <span className="text-xs text-muted-foreground ml-auto tabular-nums">
+                            <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                               {Math.round(displayProgress)}%
                             </span>
                           )}
@@ -463,6 +482,9 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     stepStartedAt={debugData.stepStartedAt}
                     stepCompletedAt={debugData.stepCompletedAt}
                     reelUpdatedAt={debugData.reelUpdatedAt}
+                    segments={debugData.segments}
+                    currentSegmentIndex={debugData.currentSegmentIndex}
+                    totalSegments={debugData.totalSegments}
                   />
                 )}
                 

@@ -547,6 +547,9 @@ export default function ReelEditor() {
                     stepStartedAt: reel.step_started_at || null,
                     stepCompletedAt: reel.step_completed_at || null,
                     reelUpdatedAt: reel.updated_at || null,
+                    segments: assemblyState.progress.segments,
+                    currentSegmentIndex: assemblyState.progress.currentSegmentIndex,
+                    totalSegments: assemblyState.progress.totalSegments,
                   }}
                 />
               ) : (

@@ -4,11 +4,12 @@
  * Subtle instrumentation panel showing assembly step details.
  * Helps identify exactly where stalls occur (e.g., rendering_preview vs finalizing_manifest).
  * 
+ * Enhanced to show per-segment status during collecting_clips.
  * Hidden behind an "i" icon to avoid overwhelming normal users.
  */
 
 import { memo, useState, useEffect } from "react";
-import { Info, ChevronDown, ChevronUp, Clock, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Info, ChevronDown, ChevronUp, Clock, CheckCircle2, AlertCircle, Loader2, Circle, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
 
 /**
  * Assembly steps (MANIFEST-FIRST)
@@ -45,6 +47,12 @@ interface AssemblyDebugPanelProps {
   stepStartedAt: string | null;
   stepCompletedAt: string | null;
   reelUpdatedAt: string | null;
+  /** Per-segment status for collecting_clips */
+  segments?: SegmentProgress[];
+  /** Current segment being resolved (1-indexed) */
+  currentSegmentIndex?: number;
+  /** Total segments */
+  totalSegments?: number;
   className?: string;
 }
 
@@ -71,11 +79,36 @@ function formatTimestamp(timestamp: string | null): string {
   });
 }
 
+function formatMomentTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+const SEGMENT_STATUS_ICONS: Record<SegmentStatus, React.ReactNode> = {
+  pending: <Circle className="h-3 w-3 text-muted-foreground" />,
+  resolving: <Loader2 className="h-3 w-3 text-primary animate-spin" />,
+  resolved: <CheckCircle2 className="h-3 w-3 text-vantage-success" />,
+  failed: <AlertCircle className="h-3 w-3 text-destructive" />,
+  skipped: <SkipForward className="h-3 w-3 text-muted-foreground" />,
+};
+
+const SEGMENT_STATUS_COLORS: Record<SegmentStatus, string> = {
+  pending: "text-muted-foreground",
+  resolving: "text-primary",
+  resolved: "text-vantage-success",
+  failed: "text-destructive",
+  skipped: "text-muted-foreground opacity-60",
+};
+
 export const AssemblyDebugPanel = memo(function AssemblyDebugPanel({
   currentStep,
   stepStartedAt,
   stepCompletedAt,
   reelUpdatedAt,
+  segments,
+  currentSegmentIndex,
+  totalSegments,
   className,
 }: AssemblyDebugPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -97,6 +130,7 @@ export const AssemblyDebugPanel = memo(function AssemblyDebugPanel({
   
   const currentStepIndex = currentStep ? STEP_ORDER.indexOf(currentStep) : -1;
   const isTerminal = currentStep === "ready" || currentStep === "failed";
+  const showSegments = currentStep === "collecting_clips" && segments && segments.length > 0;
   
   return (
     <Collapsible
@@ -147,6 +181,11 @@ export const AssemblyDebugPanel = memo(function AssemblyDebugPanel({
             <div className="flex-1 min-w-0">
               <p className="font-medium text-foreground">
                 {currentStep ? STEP_LABELS[currentStep] : "Unknown"}
+                {currentSegmentIndex !== undefined && totalSegments ? (
+                  <span className="ml-1 text-muted-foreground font-normal">
+                    ({currentSegmentIndex}/{totalSegments})
+                  </span>
+                ) : null}
               </p>
               {!isTerminal && (
                 <p className="text-muted-foreground">
@@ -155,6 +194,37 @@ export const AssemblyDebugPanel = memo(function AssemblyDebugPanel({
               )}
             </div>
           </div>
+          
+          {/* Per-Segment Status (when collecting clips) */}
+          {showSegments && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                Segment Status
+              </p>
+              <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                {segments.map((segment, idx) => (
+                  <div
+                    key={segment.momentId}
+                    className={cn(
+                      "flex items-center gap-2 py-0.5 px-1.5 rounded text-[11px]",
+                      segment.status === "resolving" && "bg-primary/10",
+                      segment.status === "failed" && "bg-destructive/10"
+                    )}
+                  >
+                    <span className="shrink-0 w-4">
+                      {SEGMENT_STATUS_ICONS[segment.status]}
+                    </span>
+                    <span className={cn("flex-1 truncate", SEGMENT_STATUS_COLORS[segment.status])}>
+                      {segment.label} @ {formatMomentTimestamp(segment.timestampSeconds)}
+                    </span>
+                    <span className="text-muted-foreground/60 shrink-0 tabular-nums">
+                      #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           {/* Step Timeline */}
           <div className="space-y-1.5">
