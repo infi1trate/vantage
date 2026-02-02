@@ -37,6 +37,14 @@ export type {
   EffectRenderGroup,
 } from "./effectEvents";
 
+// ReelSource (versioned video compatibility layer)
+export type {
+  ReelSource,
+  ReelSourceVersion,
+  ReelSourceStatus,
+  ReelSourceReadinessResult,
+} from "./reelSource";
+
 // Re-export constants
 export { 
   REEL_PACKAGES, 
@@ -55,3 +63,11 @@ export {
   getDefaultIntensity,
   getDefaultVolume,
 } from "./effectEvents";
+
+// ReelSource helpers
+export {
+  CURRENT_REEL_SOURCE_VERSION,
+  checkReelSourceReadiness,
+  getReelSourceStatusMessage,
+  supportsFeature,
+} from "./reelSource";

@@ -1,4 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  createPreparingReelSource,
+  createReadyReelSource,
+  createFailedReelSource,
+  saveReelSource,
+  updateSessionReelSourceStatus,
+  type ReelSource,
+} from "./reelSource";
 
 // ==================== User & Profile ====================
 export interface Profile {
@@ -526,6 +534,79 @@ export async function createPlaceholderVideoAsset(params: {
 }
 
 /**
+ * Create a placeholder video asset AND initialize ReelSource in "preparing" status.
+ * 
+ * This is the main entry point for new recordings.
+ * Called immediately when recording stops to establish durable references.
+ */
+export async function createPlaceholderVideoAssetWithReelSource(params: {
+  sessionId: string;
+  userId: string;
+  durationMs: number;
+  fileSize: number;
+  mimeType: string;
+}): Promise<{ asset: VideoAsset; reelSource: ReelSource }> {
+  const { sessionId, userId, durationMs, fileSize, mimeType } = params;
+  
+  // 1) Create placeholder video asset
+  const asset = await createPlaceholderVideoAsset({
+    sessionId,
+    userId,
+    durationMs,
+    fileSize,
+    mimeType,
+  });
+  
+  // 2) Create ReelSource in "preparing" status
+  const reelSource = createPreparingReelSource(asset.id, durationMs);
+  
+  // 3) Save ReelSource to session metadata
+  await saveReelSource(sessionId, reelSource);
+  
+  console.log(`[captures] Created placeholder asset ${asset.id} and ReelSource for session ${sessionId}`);
+  
+  return { asset, reelSource };
+}
+
+/**
+ * Update video asset status AND sync ReelSource status.
+ * 
+ * When video processing completes (ready) or fails, the ReelSource is updated accordingly.
+ * This keeps the ReelSource and video asset in sync.
+ */
+export async function updateVideoAssetStatusWithReelSource(
+  assetId: string,
+  sessionId: string,
+  status: "ready" | "failed",
+  updates?: {
+    storageUrl?: string;
+    errorMessage?: string;
+    processingProgress?: number;
+    durationMs?: number;
+  }
+): Promise<{ asset: VideoAsset; reelSourceStatus: "ready" | "failed" }> {
+  // 1) Update the video asset
+  const asset = await updateVideoAssetStatus(assetId, status, updates);
+  
+  // 2) Update ReelSource to match
+  if (status === "ready") {
+    const reelSource = createReadyReelSource(assetId, updates?.durationMs || asset.duration_ms);
+    await saveReelSource(sessionId, reelSource);
+    console.log(`[captures] ReelSource marked ready for session ${sessionId}`);
+    return { asset, reelSourceStatus: "ready" };
+  } else {
+    const reelSource = createFailedReelSource(
+      assetId,
+      asset.duration_ms,
+      updates?.errorMessage || "Video processing failed"
+    );
+    await saveReelSource(sessionId, reelSource);
+    console.log(`[captures] ReelSource marked failed for session ${sessionId}`);
+    return { asset, reelSourceStatus: "failed" };
+  }
+}
+
+/**
  * Update a video asset status after upload completes or fails
  */
 export async function updateVideoAssetStatus(
@@ -619,10 +700,20 @@ export async function retrySessionVideoProcessing(sessionId: string): Promise<{
       }
     }
     
-    // 4) Update session to processing state with gameplay_video_status
+    // 4) Update session to processing state with gameplay_video_status + ReelSource
     const existingMetadata = (typeof session.metadata === 'object' && session.metadata !== null) 
       ? session.metadata as Record<string, any>
       : {};
+    
+    // Reset ReelSource to "preparing" if it exists
+    const existingReelSource = existingMetadata.reelSource;
+    const updatedReelSource = existingReelSource ? {
+      ...existingReelSource,
+      status: "preparing",
+      lastError: undefined,
+      seekable: false,
+      updatedAt: new Date().toISOString(),
+    } : undefined;
     
     const { data: updatedSession, error: updateSessionError } = await supabase
       .from("capture_sessions")
@@ -634,6 +725,7 @@ export async function retrySessionVideoProcessing(sessionId: string): Promise<{
           last_error: null,
           retry_count: ((existingMetadata.retry_count as number) || 0) + 1,
           retry_triggered_at: new Date().toISOString(),
+          ...(updatedReelSource ? { reelSource: updatedReelSource } : {}),
         },
         updated_at: new Date().toISOString(),
       })
@@ -645,7 +737,7 @@ export async function retrySessionVideoProcessing(sessionId: string): Promise<{
       return { success: false, error: updateSessionError.message };
     }
     
-    console.log("[captures] Session reset to processing:", sessionId);
+    console.log("[captures] Session reset to processing with ReelSource:", sessionId);
     
     return { success: true, session: updatedSession as CaptureSession };
   } catch (err) {
