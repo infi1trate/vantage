@@ -49,6 +49,8 @@ interface AnnotationsPanelProps {
   sessionTitle?: string;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
+  /** Callback to navigate to Session Media panel */
+  onViewSessionMedia?: () => void;
 }
 
 const MARKER_TYPES = [
@@ -82,6 +84,7 @@ export function AnnotationsPanel({
   commentsEnabled = false,
   sessionTitle,
   reelEligibility = { ok: true },
+  onViewSessionMedia,
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
@@ -146,6 +149,7 @@ export function AnnotationsPanel({
         onSeekTo={onMarkerClick}
         sessionTitle={sessionTitle}
         reelEligibility={reelEligibility}
+        onViewSessionMedia={onViewSessionMedia}
       />
     );
   }

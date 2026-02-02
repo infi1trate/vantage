@@ -34,6 +34,8 @@ interface MomentsSectionProps {
   sessionTitle?: string;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
+  /** Callback to navigate to Session Media panel */
+  onViewSessionMedia?: () => void;
 }
 
 // Unified Moment type configuration
@@ -152,6 +154,7 @@ export const HighlightsSection = memo(function HighlightsSection({
   sessionId = "",
   sessionTitle,
   reelEligibility = { ok: true },
+  onViewSessionMedia,
 }: MomentsSectionProps) {
   const [reelModalOpen, setReelModalOpen] = useState(false);
   
@@ -268,6 +271,7 @@ export const HighlightsSection = memo(function HighlightsSection({
         sessionId={sessionId}
         sessionTitle={sessionTitle}
         reelEligibility={reelEligibility}
+        onViewSessionMedia={onViewSessionMedia}
       />
     </div>
   );

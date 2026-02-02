@@ -212,6 +212,11 @@ export default function SessionReview() {
     }
   }, [shouldOpenMediaPanel, loading]);
 
+  // Callback to navigate to Session Media panel (for Create Reel error CTA)
+  const handleViewSessionMedia = useCallback(() => {
+    mediaPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   const loadSessionData = async () => {
     if (!sessionId) return;
 
@@ -1035,6 +1040,7 @@ export default function SessionReview() {
               commentsEnabled={false}
               sessionTitle={displayTitle}
               reelEligibility={reelEligibility}
+              onViewSessionMedia={handleViewSessionMedia}
             />
           )}
         </div>

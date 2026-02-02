@@ -47,6 +47,8 @@ interface SessionRightRailProps {
   sessionTitle?: string;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
+  /** Callback to navigate to Session Media panel */
+  onViewSessionMedia?: () => void;
 }
 
 export const SessionRightRail = memo(function SessionRightRail({
@@ -72,6 +74,7 @@ export const SessionRightRail = memo(function SessionRightRail({
   isSessionShared = false,
   sessionTitle,
   reelEligibility = { ok: true },
+  onViewSessionMedia,
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
@@ -196,6 +199,7 @@ export const SessionRightRail = memo(function SessionRightRail({
             sessionId={sessionId}
             sessionTitle={sessionTitle}
             reelEligibility={reelEligibility}
+            onViewSessionMedia={onViewSessionMedia}
           />
         </TabsContent>
 
