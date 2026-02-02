@@ -23,6 +23,7 @@ export { AssemblyDebugPanel } from "./AssemblyDebugPanel";
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";
 export type { CompilationPhase } from "./ReelCompilationStatus";
+export type { AssemblyProgress } from "./ReelCompilingPlaceholder";
 export type {
   StyleKey,
   AudioMode,

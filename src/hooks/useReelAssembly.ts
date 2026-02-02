@@ -7,24 +7,27 @@
  * - Retry mechanism for failed assembly
  * - Telemetry logging for duration, failures, and retries
  * - Integration with global render queue for cross-app visibility
+ * - Single source of truth: assembly_attempt_id prevents stale updates
+ * 
+ * CRITICAL: Progress is derived from actual assembly_step, NOT simulated.
  * 
  * States:
  * - idle: No assembly running
  * - assembling: Assembly in progress
  * - ready: Assembly complete, preview available
  * - failed: Assembly failed with error
+ * - needs_attention: Timeout reached but recoverable
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ReelStatus, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob } from "@/lib/reels";
+import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
   updateRenderJob,
   getReelAssemblyJob,
   resetRenderJobForRetry,
-  loadRenderJobs,
   RenderJob,
 } from "@/lib/renderQueue";
 
@@ -34,12 +37,30 @@ const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
 const MAX_RETRY_ATTEMPTS = 3;
 
-// Assembly step progress ranges (matches ReelCompilingPlaceholder)
-const ASSEMBLY_STEP_PROGRESS: Record<string, { stage: number; progress: number }> = {
-  collecting: { stage: 0, progress: 20 },
-  stitching: { stage: 1, progress: 70 },
-  preparing: { stage: 2, progress: 100 },
+/**
+ * Step-based progress configuration
+ * Maps assembly_step to progress range [min, max]
+ * Progress smoothly animates WITHIN the range but NEVER advances past it
+ */
+const STEP_PROGRESS_RANGES: Record<AssemblyStep, { min: number; max: number; stage: number }> = {
+  collecting_clips: { min: 0, max: 20, stage: 0 },
+  stitching_sequence: { min: 20, max: 70, stage: 1 },
+  rendering_preview: { min: 70, max: 90, stage: 2 },
+  finalizing_manifest: { min: 90, max: 98, stage: 2 },
+  ready: { min: 100, max: 100, stage: 2 },
+  failed: { min: 0, max: 0, stage: 0 },
 };
+
+export interface AssemblyProgress {
+  /** Current progress percentage (0-100) */
+  percent: number;
+  /** Current stage index (0-2) */
+  stage: number;
+  /** Current assembly step from database */
+  step: AssemblyStep | null;
+  /** When the current step started */
+  stepStartedAt: string | null;
+}
 
 export interface ReelAssemblyState {
   /** Current assembly state */
@@ -65,6 +86,12 @@ export interface ReelAssemblyState {
   
   /** Retry assembly function */
   retry: () => Promise<void>;
+  
+  /** Step-based progress (truthful, not simulated) */
+  progress: AssemblyProgress;
+  
+  /** Current attempt ID for this assembly run */
+  attemptId: string | null;
 }
 
 /**
@@ -77,6 +104,7 @@ function logAssemblyTelemetry(
     durationMs?: number;
     reason?: string;
     retryCount?: number;
+    attemptId?: string;
   }
 ) {
   const timestamp = new Date().toISOString();
@@ -89,9 +117,48 @@ function logAssemblyTelemetry(
   
   // Log to console in structured format
   console.log(`[ReelAssembly:Telemetry]`, JSON.stringify(logData));
+}
+
+/**
+ * Calculate progress from assembly step
+ * Smoothly interpolates within the step's range based on elapsed time
+ */
+function calculateStepProgress(
+  step: AssemblyStep | null,
+  stepStartedAt: string | null,
+  maxStepDurationMs: number = 15_000
+): AssemblyProgress {
+  if (!step || step === "failed") {
+    return { percent: 0, stage: 0, step, stepStartedAt };
+  }
   
-  // In production, this would send to an analytics service
-  // e.g., analytics.track('reel_assembly', logData);
+  if (step === "ready") {
+    return { percent: 100, stage: 2, step, stepStartedAt };
+  }
+  
+  const range = STEP_PROGRESS_RANGES[step];
+  if (!range) {
+    return { percent: 0, stage: 0, step, stepStartedAt };
+  }
+  
+  // Calculate progress within the step's range based on elapsed time
+  let progressWithinStep = 0;
+  if (stepStartedAt) {
+    const elapsed = Date.now() - new Date(stepStartedAt).getTime();
+    // Smooth ease-out within the step, capped at 95% of the range
+    const t = Math.min(elapsed / maxStepDurationMs, 1);
+    const eased = 1 - Math.pow(1 - t, 2);
+    progressWithinStep = eased * 0.95; // Never reach max within the step
+  }
+  
+  const percent = Math.round(range.min + progressWithinStep * (range.max - range.min));
+  
+  return {
+    percent: Math.min(percent, range.max - 1), // Always leave room for next step
+    stage: range.stage,
+    step,
+    stepStartedAt,
+  };
 }
 
 /**
@@ -106,6 +173,12 @@ export function useReelAssembly(
     reelTitle?: string;
     aspectRatio?: string;
     clipCount?: number;
+    /** Initial assembly step from reel data */
+    assemblyStep?: AssemblyStep | null;
+    /** Initial step started time */
+    stepStartedAt?: string | null;
+    /** Initial attempt ID */
+    assemblyAttemptId?: string | null;
   }
 ): ReelAssemblyState {
   const queryClient = useQueryClient();
@@ -122,13 +195,29 @@ export function useReelAssembly(
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   
+  // Track the current attempt ID to filter stale updates
+  const [currentAttemptId, setCurrentAttemptId] = useState<string | null>(
+    reelMetadata?.assemblyAttemptId || null
+  );
+  
+  // Step-based progress state (truthful, from database)
+  const [currentStep, setCurrentStep] = useState<AssemblyStep | null>(
+    reelMetadata?.assemblyStep || null
+  );
+  const [stepStartedAt, setStepStartedAt] = useState<string | null>(
+    reelMetadata?.stepStartedAt || null
+  );
+  
+  // Smooth progress animation within current step
+  const [displayProgress, setDisplayProgress] = useState<number>(0);
+  
   const timeoutRef = useRef<number | null>(null);
   const pollRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const assemblyStartRef = useRef<number | null>(null);
-  const progressSimulationRef = useRef<number | null>(null);
+  const progressAnimationRef = useRef<number | null>(null);
   const renderJobIdRef = useRef<string | null>(null);
-  const activeJobIdRef = useRef<string | null>(null); // Tracks current assembly job_id
+  const activeJobIdRef = useRef<string | null>(null);
   
   // Clear all timers
   const clearTimers = useCallback(() => {
@@ -140,21 +229,55 @@ export function useReelAssembly(
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    if (progressSimulationRef.current) {
-      clearInterval(progressSimulationRef.current);
-      progressSimulationRef.current = null;
+    if (progressAnimationRef.current) {
+      clearInterval(progressAnimationRef.current);
+      progressAnimationRef.current = null;
     }
   }, []);
+  
+  // Calculate current progress from step (non-simulated)
+  const progress = useMemo((): AssemblyProgress => {
+    return calculateStepProgress(currentStep, stepStartedAt);
+  }, [currentStep, stepStartedAt]);
+  
+  // Smooth animation of display progress toward target
+  useEffect(() => {
+    if (state !== "assembling") {
+      // Not assembling - snap to target
+      setDisplayProgress(progress.percent);
+      return;
+    }
+    
+    // Animate toward target progress
+    const animate = () => {
+      setDisplayProgress(prev => {
+        const target = progress.percent;
+        if (prev >= target) return prev; // Never go backwards, never exceed target
+        
+        // Smooth approach to target
+        const diff = target - prev;
+        const step = Math.max(0.5, diff * 0.1);
+        return Math.min(prev + step, target);
+      });
+    };
+    
+    progressAnimationRef.current = window.setInterval(animate, 100);
+    
+    return () => {
+      if (progressAnimationRef.current) {
+        clearInterval(progressAnimationRef.current);
+        progressAnimationRef.current = null;
+      }
+    };
+  }, [state, progress.percent]);
   
   // Create or get the render queue job for this reel
   const ensureRenderJob = useCallback(() => {
     if (!reelId) return null;
     
-    // Check if job already exists
     let job = getReelAssemblyJob(reelId);
     
     if (!job && reelMetadata?.sessionId) {
-      // Create new job
       job = createRenderJob({
         type: "reel_assembly",
         sessionId: reelMetadata.sessionId,
@@ -174,14 +297,14 @@ export function useReelAssembly(
     return job;
   }, [reelId, reelMetadata]);
   
-  // Update render job progress
-  const updateJobProgress = useCallback((stage: number, progress: number) => {
+  // Update render job with current step progress
+  const updateJobProgress = useCallback((stage: number, progressPercent: number) => {
     if (!renderJobIdRef.current) return;
     
     updateRenderJob(renderJobIdRef.current, {
       status: "processing",
       currentStageIndex: stage,
-      overallProgress: progress,
+      overallProgress: progressPercent,
       startedAt: new Date().toISOString(),
     });
   }, []);
@@ -190,29 +313,17 @@ export function useReelAssembly(
   const completeJob = useCallback(() => {
     if (!renderJobIdRef.current) return;
     
-    // Stop progress simulation first
-    if (progressSimulationRef.current) {
-      clearInterval(progressSimulationRef.current);
-      progressSimulationRef.current = null;
-    }
-    
     updateRenderJob(renderJobIdRef.current, {
       status: "completed",
       overallProgress: 100,
-      currentStageIndex: 2, // Final stage
+      currentStageIndex: 2,
     });
     renderJobIdRef.current = null;
   }, []);
   
-  // Fail render job (hard failure)
+  // Fail render job
   const failJob = useCallback((errorMessage: string) => {
     if (!renderJobIdRef.current) return;
-    
-    // Stop progress simulation
-    if (progressSimulationRef.current) {
-      clearInterval(progressSimulationRef.current);
-      progressSimulationRef.current = null;
-    }
     
     updateRenderJob(renderJobIdRef.current, {
       status: "failed",
@@ -220,15 +331,9 @@ export function useReelAssembly(
     });
   }, []);
   
-  // Mark job as needing attention (soft failure, recoverable)
+  // Mark job as needing attention
   const markJobNeedsAttention = useCallback((errorMessage: string) => {
     if (!renderJobIdRef.current) return;
-    
-    // Stop progress simulation but keep job reference for retry
-    if (progressSimulationRef.current) {
-      clearInterval(progressSimulationRef.current);
-      progressSimulationRef.current = null;
-    }
     
     updateRenderJob(renderJobIdRef.current, {
       status: "needs_attention",
@@ -236,53 +341,45 @@ export function useReelAssembly(
     });
   }, []);
   
-  // Start simulating progress for the render job
-  const startProgressSimulation = useCallback(() => {
-    if (progressSimulationRef.current) return;
-    
-    let elapsed = 0;
-    const maxDuration = 25000; // 25 seconds to reach 85%
-    
-    progressSimulationRef.current = window.setInterval(() => {
-      elapsed += 500;
-      const t = Math.min(elapsed / maxDuration, 1);
-      // Ease-out curve
-      const easedProgress = 1 - Math.pow(1 - t, 3);
-      // Cap at 85% - hold there until real completion
-      const progress = Math.min(85, Math.round(easedProgress * 85));
-      
-      // Determine which stage we're in
-      let stage = 0;
-      if (progress >= 70) stage = 2;
-      else if (progress >= 20) stage = 1;
-      
-      updateJobProgress(stage, progress);
-    }, 500);
-  }, [updateJobProgress]);
-  
-  // Handle status update from any source
-  const handleStatusChange = useCallback((newStatus: ReelStatus) => {
+  // Handle status/step update from any source
+  const handleReelUpdate = useCallback((
+    newStatus: ReelStatus,
+    newStep: AssemblyStep | null,
+    newStepStartedAt: string | null,
+    attemptId: string | null
+  ) => {
     if (!mountedRef.current || !reelId) return;
     
-    console.log("[ReelAssembly] Status changed:", newStatus);
+    // CRITICAL: Ignore updates from stale attempts
+    if (currentAttemptId && attemptId && attemptId !== currentAttemptId) {
+      console.log("[ReelAssembly] Ignoring stale attempt update:", attemptId, "current:", currentAttemptId);
+      return;
+    }
+    
+    console.log("[ReelAssembly] Update:", { status: newStatus, step: newStep, attemptId });
+    
+    // Update step tracking
+    setCurrentStep(newStep);
+    setStepStartedAt(newStepStartedAt);
+    
+    // Update render job with step-based progress
+    if (newStep && STEP_PROGRESS_RANGES[newStep]) {
+      const range = STEP_PROGRESS_RANGES[newStep];
+      updateJobProgress(range.stage, range.min);
+    }
     
     if (newStatus === "compiling") {
       setState("assembling");
       setError(null);
-      // Track assembly start
       if (!assemblyStartRef.current) {
         assemblyStartRef.current = Date.now();
-        logAssemblyTelemetry("start", reelId);
-        // Create render job and start progress simulation
+        logAssemblyTelemetry("start", reelId, { attemptId: attemptId || undefined });
         ensureRenderJob();
-        startProgressSimulation();
       }
     } else if (newStatus === "failed") {
       setState("failed");
       clearTimers();
-      // Fail the render job
       failJob("Reel assembly failed. Please try again.");
-      // Log failure with duration
       const durationMs = assemblyStartRef.current 
         ? Date.now() - assemblyStartRef.current 
         : undefined;
@@ -290,6 +387,7 @@ export function useReelAssembly(
         durationMs,
         reason: "status_changed_to_failed",
         retryCount,
+        attemptId: attemptId || undefined,
       });
       assemblyStartRef.current = null;
     } else {
@@ -297,23 +395,20 @@ export function useReelAssembly(
       setState("ready");
       setError(null);
       clearTimers();
-      // Complete the render job
       completeJob();
-      // Log success with duration
       const durationMs = assemblyStartRef.current 
         ? Date.now() - assemblyStartRef.current 
         : undefined;
       if (durationMs) {
-        logAssemblyTelemetry("success", reelId, { durationMs, retryCount });
+        logAssemblyTelemetry("success", reelId, { durationMs, retryCount, attemptId: attemptId || undefined });
       }
       assemblyStartRef.current = null;
     }
     
-    // Update React Query cache
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, completeJob, failJob]);
+  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, updateJobProgress, completeJob, failJob, currentAttemptId]);
   
-  // Fail the assembly with timeout - marks as "needs_attention" for recovery
+  // Fail the assembly with timeout
   const failWithTimeout = useCallback(async () => {
     if (!reelId || !mountedRef.current) return;
     
@@ -325,16 +420,14 @@ export function useReelAssembly(
       durationMs, 
       reason: "timeout_45s",
       retryCount,
+      attemptId: currentAttemptId || undefined,
     });
     
     console.warn("[ReelAssembly] Assembly timed out after 45s");
     
-    // Mark job as needing attention (not hard failure - recoverable)
     markJobNeedsAttention("This is taking longer than expected.");
     
     try {
-      // Update reel - we keep it as "compiling" in DB but mark UI as needs_attention
-      // This allows background completion to still work
       await supabase
         .from("reels")
         .update({ 
@@ -344,7 +437,6 @@ export function useReelAssembly(
         .eq("id", reelId);
       
       if (mountedRef.current) {
-        // Set to needs_attention - allows "Leave and notify me" to work
         setState("needs_attention");
         setError("This is taking longer than expected.");
         clearTimers();
@@ -354,7 +446,7 @@ export function useReelAssembly(
     } catch (err) {
       console.error("[ReelAssembly] Failed to update timeout status:", err);
     }
-  }, [reelId, queryClient, clearTimers, retryCount, markJobNeedsAttention]);
+  }, [reelId, queryClient, clearTimers, retryCount, markJobNeedsAttention, currentAttemptId]);
   
   // Poll for status as a backup mechanism
   const pollStatus = useCallback(async () => {
@@ -363,12 +455,17 @@ export function useReelAssembly(
     try {
       const reel = await getReel(reelId);
       if (reel && mountedRef.current) {
-        handleStatusChange(reel.status as ReelStatus);
+        handleReelUpdate(
+          reel.status as ReelStatus,
+          reel.assembly_step,
+          reel.step_started_at,
+          reel.assembly_attempt_id
+        );
       }
     } catch (err) {
       console.error("[ReelAssembly] Poll error:", err);
     }
-  }, [reelId, handleStatusChange]);
+  }, [reelId, handleReelUpdate]);
   
   // Setup real-time subscription and timeout
   useEffect(() => {
@@ -389,10 +486,18 @@ export function useReelAssembly(
         },
         (payload) => {
           console.log("[ReelAssembly] Real-time update:", payload);
-          const newStatus = (payload.new as { status: ReelStatus })?.status;
-          if (newStatus) {
-            handleStatusChange(newStatus);
-          }
+          const newData = payload.new as {
+            status: ReelStatus;
+            assembly_step: AssemblyStep | null;
+            step_started_at: string | null;
+            assembly_attempt_id: string | null;
+          };
+          handleReelUpdate(
+            newData.status,
+            newData.assembly_step,
+            newData.step_started_at,
+            newData.assembly_attempt_id
+          );
         }
       )
       .subscribe((status) => {
@@ -406,13 +511,9 @@ export function useReelAssembly(
         assemblyStartRef.current = Date.now();
       }
       
-      // Ensure render job exists for global queue visibility
       ensureRenderJob();
-      startProgressSimulation();
       
       timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
-      
-      // Also setup polling as backup (realtime might not always work)
       pollRef.current = window.setInterval(pollStatus, POLL_INTERVAL_MS);
     }
     
@@ -421,9 +522,9 @@ export function useReelAssembly(
       clearTimers();
       supabase.removeChannel(channel);
     };
-  }, [reelId, state, handleStatusChange, failWithTimeout, pollStatus, clearTimers, ensureRenderJob, startProgressSimulation]);
+  }, [reelId, state, handleReelUpdate, failWithTimeout, pollStatus, clearTimers, ensureRenderJob]);
   
-  // Sync state when initialStatus changes (e.g., from React Query refetch)
+  // Sync state when initialStatus changes
   useEffect(() => {
     const newState = getStateFromStatus(initialStatus);
     if (newState !== state && initialStatus) {
@@ -435,7 +536,6 @@ export function useReelAssembly(
       }
       
       if (initialStatus === "failed") {
-        // Try to get the error message
         getReel(reelId!).then((reel) => {
           if (reel?.render_error && mountedRef.current) {
             setError(reel.render_error);
@@ -445,13 +545,25 @@ export function useReelAssembly(
     }
   }, [initialStatus, reelId, state, getStateFromStatus, clearTimers]);
   
-  // Retry assembly - resets the existing job instead of creating duplicates
+  // Sync attempt ID from metadata
+  useEffect(() => {
+    if (reelMetadata?.assemblyAttemptId && reelMetadata.assemblyAttemptId !== currentAttemptId) {
+      setCurrentAttemptId(reelMetadata.assemblyAttemptId);
+    }
+    if (reelMetadata?.assemblyStep !== undefined) {
+      setCurrentStep(reelMetadata.assemblyStep);
+    }
+    if (reelMetadata?.stepStartedAt !== undefined) {
+      setStepStartedAt(reelMetadata.stepStartedAt);
+    }
+  }, [reelMetadata?.assemblyAttemptId, reelMetadata?.assemblyStep, reelMetadata?.stepStartedAt, currentAttemptId]);
+  
+  // Retry assembly
   const retry = useCallback(async () => {
     if (!reelId) return;
     
     const newRetryCount = retryCount + 1;
     
-    // Check max retries
     if (newRetryCount > MAX_RETRY_ATTEMPTS) {
       console.warn("[ReelAssembly] Max retries exceeded");
       setError("Still having trouble — try again later.");
@@ -466,57 +578,51 @@ export function useReelAssembly(
       await cancelAssemblyJob(reelId);
     }
     
-    // Clear all timers from previous attempt
     clearTimers();
     
-    // Stop any existing progress simulation
-    if (progressSimulationRef.current) {
-      clearInterval(progressSimulationRef.current);
-      progressSimulationRef.current = null;
-    }
-    
     setRetryCount(newRetryCount);
-    logAssemblyTelemetry("retry", reelId, { retryCount: newRetryCount });
-    
     setState("assembling");
     setError(null);
     assemblyStartRef.current = Date.now();
     
     try {
-      // Use the new retryAssembly function that properly resets state
-      const { reel, jobId } = await retryAssembly(reelId);
+      const { reel, jobId, attemptId } = await retryAssembly(reelId);
+      
+      // Update to new attempt ID - this will filter out any stale updates
+      setCurrentAttemptId(attemptId);
       activeJobIdRef.current = jobId;
       
-      console.log("[ReelAssembly] Retry initiated with job:", jobId);
+      // Reset step tracking
+      setCurrentStep("collecting_clips");
+      setStepStartedAt(reel.step_started_at);
+      setDisplayProgress(0);
       
-      // Reset the existing render job instead of creating a new one
+      logAssemblyTelemetry("retry", reelId, { retryCount: newRetryCount, attemptId });
+      
+      console.log("[ReelAssembly] Retry initiated with job:", jobId, "attemptId:", attemptId);
+      
+      // Reset the existing render job
       if (renderJobIdRef.current) {
         const resetJob = resetRenderJobForRetry(renderJobIdRef.current);
         if (!resetJob) {
-          // Job not found or max retries - try to create new
           console.log("[ReelAssembly] Creating new render job for retry");
           ensureRenderJob();
         }
       } else {
-        // No existing job - create one
         ensureRenderJob();
       }
-      
-      // Start progress simulation
-      startProgressSimulation();
       
       // Start timeout
       timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
       pollRef.current = window.setInterval(pollStatus, POLL_INTERVAL_MS);
       
       // Simulate assembly completing (in production, this would be a backend job)
-      // For now, we transition to draft after a short delay
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Before completing, verify this job is still active (not superseded by another retry)
-      const stillActive = await isJobActive(reelId, jobId);
+      // Before completing, verify this attempt is still active
+      const stillActive = await isAttemptActive(reelId, attemptId);
       if (!stillActive) {
-        console.log("[ReelAssembly] Job superseded, aborting completion:", jobId);
+        console.log("[ReelAssembly] Attempt superseded, aborting completion:", attemptId);
         return;
       }
       
@@ -528,7 +634,8 @@ export function useReelAssembly(
           render_error: null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", reelId);
+        .eq("id", reelId)
+        .eq("assembly_attempt_id", attemptId); // Only update if attempt matches
       
       queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     } catch (err) {
@@ -544,7 +651,6 @@ export function useReelAssembly(
         retryCount: newRetryCount,
       });
       
-      // Fail the render job
       failJob("Something interrupted the assembly process. Please try again.");
       
       setState("failed");
@@ -553,10 +659,15 @@ export function useReelAssembly(
       assemblyStartRef.current = null;
       activeJobIdRef.current = null;
     }
-  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, failJob]);
+  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, failJob]);
   
-  // Whether retry is available (failed or needs_attention, and not exceeded max)
   const canRetry = (state === "failed" || state === "needs_attention") && retryCount < MAX_RETRY_ATTEMPTS;
+  
+  // Final progress with animated display
+  const finalProgress: AssemblyProgress = {
+    ...progress,
+    percent: Math.round(displayProgress),
+  };
   
   return {
     state,
@@ -567,5 +678,7 @@ export function useReelAssembly(
     retryCount,
     maxRetries: MAX_RETRY_ATTEMPTS,
     retry,
+    progress: finalProgress,
+    attemptId: currentAttemptId,
   };
 }

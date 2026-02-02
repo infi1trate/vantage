@@ -1176,6 +1176,7 @@ export type Database = {
       reels: {
         Row: {
           aspect_ratio: string
+          assembly_attempt_id: string | null
           assembly_step: string | null
           attempt_count: number | null
           created_at: string
@@ -1204,6 +1205,7 @@ export type Database = {
         }
         Insert: {
           aspect_ratio?: string
+          assembly_attempt_id?: string | null
           assembly_step?: string | null
           attempt_count?: number | null
           created_at?: string
@@ -1232,6 +1234,7 @@ export type Database = {
         }
         Update: {
           aspect_ratio?: string
+          assembly_attempt_id?: string | null
           assembly_step?: string | null
           attempt_count?: number | null
           created_at?: string
