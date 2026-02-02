@@ -23,6 +23,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
 import { resolveAllSegments, toMomentSegmentInputs } from "@/lib/segmentResolver";
+import { waitForAssetReadiness, checkAssetReadiness, getAssetStatusMessage, AssetReadinessStatus } from "@/lib/assetReadiness";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -32,7 +33,7 @@ import {
   RenderJob,
 } from "@/lib/renderQueue";
 
-export type AssemblyState = "idle" | "assembling" | "ready" | "failed" | "needs_attention";
+export type AssemblyState = "idle" | "waiting_for_source" | "assembling" | "ready" | "failed" | "needs_attention";
 
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
@@ -737,6 +738,106 @@ export function useReelAssembly(
           setError("No session associated with this reel");
           setState("needs_attention");
           return;
+        }
+        
+        // ============ ASSET READINESS GATE ============
+        // Check if source video is ready before collecting clips
+        console.log("[ReelAssembly] Checking asset readiness for session:", sessionId);
+        
+        const initialReadiness = await checkAssetReadiness(sessionId);
+        
+        if (initialReadiness.status !== "ready") {
+          // Video not ready yet - transition to waiting_for_source
+          console.log("[ReelAssembly] Video not ready, status:", initialReadiness.status);
+          
+          if (initialReadiness.status === "processing") {
+            // Update reel status and transition to waiting state
+            await supabase
+              .from("reels")
+              .update({
+                status: "waiting_for_source",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", reelId);
+            
+            setState("waiting_for_source");
+            
+            // Poll for readiness with bounded wait (30s max)
+            const readinessResult = await waitForAssetReadiness(sessionId, (progress) => {
+              console.log(`[ReelAssembly] Waiting for source: ${progress.elapsedMs}ms/${progress.maxMs}ms (attempt ${progress.attempt})`);
+              // Could update UI progress here if needed
+            });
+            
+            if (readinessResult.status !== "ready") {
+              // Timeout or permanent failure
+              const errorMessage = getAssetStatusMessage(readinessResult.status);
+              console.warn("[ReelAssembly] Asset readiness timeout or failure:", readinessResult);
+              
+              setError(errorMessage);
+              setState("needs_attention");
+              
+              await supabase
+                .from("reels")
+                .update({
+                  status: "needs_attention",
+                  render_error: JSON.stringify({
+                    reason: "asset_not_ready",
+                    description: errorMessage,
+                    assetStatus: readinessResult.status,
+                  }),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", reelId);
+              
+              if (renderJobIdRef.current) {
+                markJobNeedsAttention(errorMessage);
+              }
+              
+              clearTimers();
+              queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+              return;
+            }
+            
+            // Asset is now ready - continue with assembly
+            console.log("[ReelAssembly] Asset became ready, continuing assembly");
+            
+            // Update status back to compiling
+            await supabase
+              .from("reels")
+              .update({
+                status: "compiling",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", reelId);
+            
+            setState("assembling");
+          } else {
+            // Permanent failure (not_found, no_video, error)
+            const errorMessage = getAssetStatusMessage(initialReadiness.status);
+            setError(errorMessage);
+            setState("needs_attention");
+            
+            await supabase
+              .from("reels")
+              .update({
+                status: "needs_attention",
+                render_error: JSON.stringify({
+                  reason: "asset_not_ready",
+                  description: errorMessage,
+                  assetStatus: initialReadiness.status,
+                }),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", reelId);
+            
+            if (renderJobIdRef.current) {
+              markJobNeedsAttention(errorMessage);
+            }
+            
+            clearTimers();
+            queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+            return;
+          }
         }
         
         console.log("[ReelAssembly] Resolving segments using single source of truth resolver");

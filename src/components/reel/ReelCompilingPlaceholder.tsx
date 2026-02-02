@@ -41,6 +41,8 @@ interface ReelCompilingPlaceholderProps {
   isFailed?: boolean;
   /** Whether assembly needs attention (stalled but recoverable) */
   isNeedsAttention?: boolean;
+  /** Whether waiting for source video to be ready */
+  isWaitingForSource?: boolean;
   /** Error message to display (may be JSON for structured clip errors) */
   errorMessage?: string | null;
   /** Retry handler */
@@ -108,6 +110,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   className,
   isFailed = false,
   isNeedsAttention = false,
+  isWaitingForSource = false,
   errorMessage,
   onRetry,
   isRetrying = false,
@@ -402,6 +405,79 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     ? "Skip this clip to continue with remaining clips, or retry."
                     : "Your format and clips are saved. You'll get a notification when it's ready."}
                 </p>
+              </>
+            ) : isWaitingForSource ? (
+              <>
+                {/* Waiting for Source State */}
+                <motion.div
+                  className="relative"
+                  animate={{ scale: [1, 1.02, 1] }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                >
+                  <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                    <Clock className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <motion.div
+                    className="absolute -top-1 -right-1"
+                    animate={{ 
+                      opacity: [0.5, 1, 0.5],
+                    }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  >
+                    <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                  </motion.div>
+                </motion.div>
+                
+                {/* Title + Subtitle */}
+                <div className="text-center">
+                  <p className="text-base font-semibold text-foreground">
+                    Finishing session processing…
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Reel will assemble when ready.
+                  </p>
+                </div>
+                
+                {/* Pulsing progress indicator */}
+                <div className="w-full max-w-xs">
+                  <div className="relative h-2 bg-muted/50 rounded-full overflow-hidden">
+                    <motion.div
+                      className="absolute inset-y-0 left-0 bg-primary/50 rounded-full"
+                      initial={{ width: "0%" }}
+                      animate={{ width: ["0%", "30%", "0%"] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Background helper text */}
+                <p className="text-xs text-muted-foreground/70 text-center mt-2">
+                  You can leave this page — we'll keep working in the background.
+                </p>
+                
+                {/* Leave and notify / Cancel options */}
+                <div className="flex flex-col items-center gap-3 mt-3">
+                  {onLeaveAndNotify && (
+                    <Button
+                      variant="outline"
+                      onClick={onLeaveAndNotify}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      <Bell className="h-4 w-4" />
+                      Leave and notify me
+                    </Button>
+                  )}
+                  
+                  {onCancel && (
+                    <button
+                      onClick={onCancel}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                    >
+                      Back to session
+                    </button>
+                  )}
+                </div>
               </>
             ) : (
               <>

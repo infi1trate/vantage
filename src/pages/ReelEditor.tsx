@@ -524,12 +524,13 @@ export default function ReelEditor() {
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
               {!editorState.previewAvailable ? (
-                // Compiling/failed/needs_attention/exporting state - show friendly placeholder
+                // Compiling/failed/needs_attention/waiting_for_source/exporting state - show friendly placeholder
                 <ReelCompilingPlaceholder
                   clipCount={reel.source_moment_ids?.length || 0}
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
                   isFailed={editorState.state === "failed"}
                   isNeedsAttention={editorState.state === "needs_attention"}
+                  isWaitingForSource={editorState.state === "waiting_for_source"}
                   errorMessage={reel.render_error || assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
