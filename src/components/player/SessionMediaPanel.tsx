@@ -43,12 +43,132 @@ import {
   ExternalLink,
   RefreshCw,
   HelpCircle,
+  Clapperboard,
+  Settings2,
+  Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, format } from "date-fns";
 import { useProcessing } from "@/contexts/ProcessingContext";
+import { getReelSourceFromMetadata, ReelSource, ReelSourceStatus } from "@/lib/reelSource";
 
 export type MediaAssetStatus = "ready" | "processing" | "missing" | "failed";
+
+/**
+ * Reel compatibility status
+ * - ready: Full reel support (has ReelSource v2)
+ * - preparing: ReelSource is being prepared (new recording processing)
+ * - legacy: Older recording that needs one-time setup (will be auto-prepared)
+ * - not_supported: No video available, cannot create reels
+ */
+export type ReelCompatibilityStatus = "ready" | "preparing" | "legacy" | "not_supported";
+
+interface ReelCompatibilityInfo {
+  status: ReelCompatibilityStatus;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  colorClass: string;
+}
+
+function getReelCompatibilityInfo(
+  reelSource: ReelSource | null,
+  hasVideoUrl: boolean,
+  overallVideoStatus: MediaAssetStatus
+): ReelCompatibilityInfo {
+  // No video available at all
+  if (overallVideoStatus === "missing" || overallVideoStatus === "failed") {
+    return {
+      status: "not_supported",
+      label: "Not supported",
+      description: "No recording available for reel creation.",
+      icon: <Ban className="h-4 w-4" />,
+      colorClass: "text-muted-foreground",
+    };
+  }
+  
+  // Video is still processing
+  if (overallVideoStatus === "processing") {
+    return {
+      status: "preparing",
+      label: "Preparing",
+      description: "Recording is still processing. Reel creation will be available once complete.",
+      icon: <Loader2 className="h-4 w-4 animate-spin" />,
+      colorClass: "text-vantage-warning",
+    };
+  }
+  
+  // Check ReelSource status
+  if (reelSource) {
+    switch (reelSource.status) {
+      case "ready":
+        return {
+          status: "ready",
+          label: "Ready",
+          description: "Full reel features available.",
+          icon: <CheckCircle2 className="h-4 w-4" />,
+          colorClass: "text-vantage-green",
+        };
+      
+      case "preparing":
+        return {
+          status: "preparing",
+          label: "Preparing",
+          description: "Recording metadata is being prepared for reels.",
+          icon: <Loader2 className="h-4 w-4 animate-spin" />,
+          colorClass: "text-vantage-warning",
+        };
+      
+      case "failed":
+        return {
+          status: "not_supported",
+          label: "Setup failed",
+          description: "Reel preparation failed. Try creating a reel to retry.",
+          icon: <AlertCircle className="h-4 w-4" />,
+          colorClass: "text-destructive",
+        };
+      
+      case "missing":
+        // ReelSource exists but marked missing - check if video actually exists
+        if (hasVideoUrl) {
+          return {
+            status: "legacy",
+            label: "Needs setup",
+            description: "This recording was created before reels were available. We'll prepare it automatically when you create a reel.",
+            icon: <Settings2 className="h-4 w-4" />,
+            colorClass: "text-primary",
+          };
+        }
+        return {
+          status: "not_supported",
+          label: "Not supported",
+          description: "No recording available for reel creation.",
+          icon: <Ban className="h-4 w-4" />,
+          colorClass: "text-muted-foreground",
+        };
+    }
+  }
+  
+  // No ReelSource but video exists - legacy session
+  if (hasVideoUrl) {
+    return {
+      status: "legacy",
+      label: "Needs setup",
+      description: "This recording was created before reels were available. We'll prepare it automatically when you create a reel.",
+      icon: <Settings2 className="h-4 w-4" />,
+      colorClass: "text-primary",
+    };
+  }
+  
+  // Fallback
+  return {
+    status: "not_supported",
+    label: "Not supported",
+    description: "Reel creation is not available for this session.",
+    icon: <Ban className="h-4 w-4" />,
+    colorClass: "text-muted-foreground",
+  };
+}
 
 interface SessionMediaPanelProps {
   session: CaptureSession | null;
@@ -282,6 +402,18 @@ export const SessionMediaPanel = forwardRef<HTMLDivElement, SessionMediaPanelPro
       return "Video is not available. The upload may have been interrupted.";
     }, [overallVideoStatus, session, videoAssets, localSession, isLocalSession, processingJob]);
 
+    // Reel compatibility status
+    const reelCompatibility = useMemo((): ReelCompatibilityInfo => {
+      // Extract ReelSource from session metadata
+      const reelSource = session?.metadata 
+        ? getReelSourceFromMetadata(session.metadata as Record<string, unknown>)
+        : null;
+      
+      const hasVideoUrl = !!session?.video_url;
+      
+      return getReelCompatibilityInfo(reelSource, hasVideoUrl, overallVideoStatus);
+    }, [session, overallVideoStatus]);
+
     // Build debug data
     const debugData = useMemo(() => ({
       sessionId: session?.id || localSession?.id,
@@ -304,6 +436,14 @@ export const SessionMediaPanel = forwardRef<HTMLDivElement, SessionMediaPanelPro
       gameAudio: { present: gameAudio.present, status: gameAudio.status },
       dropboxSyncStatus,
       
+      reelCompatibility: {
+        status: reelCompatibility.status,
+        hasReelSource: !!session?.metadata && !!getReelSourceFromMetadata(session.metadata as Record<string, unknown>),
+        reelSourceStatus: session?.metadata 
+          ? getReelSourceFromMetadata(session.metadata as Record<string, unknown>)?.status 
+          : null,
+      },
+      
       processingJob: processingJob ? {
         id: processingJob.id,
         status: processingJob.status,
@@ -311,7 +451,7 @@ export const SessionMediaPanel = forwardRef<HTMLDivElement, SessionMediaPanelPro
       } : null,
       
       timestamp: new Date().toISOString(),
-    }), [session, localSession, isLocalSession, overallVideoStatus, screenVideo, facecam, micAudio, gameAudio, dropboxSyncStatus, processingJob]);
+    }), [session, localSession, isLocalSession, overallVideoStatus, screenVideo, facecam, micAudio, gameAudio, dropboxSyncStatus, reelCompatibility, processingJob]);
 
     const handleCopyDebug = useCallback(() => {
       navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
@@ -592,6 +732,40 @@ export const SessionMediaPanel = forwardRef<HTMLDivElement, SessionMediaPanelPro
                   </Badge>
                 </div>
               )}
+
+              {/* Reel Compatibility Status */}
+              <div className={cn(
+                "flex items-start gap-3 py-2.5 px-3 rounded-lg border",
+                reelCompatibility.status === "ready" && "bg-vantage-green/5 border-vantage-green/20",
+                reelCompatibility.status === "preparing" && "bg-vantage-warning/5 border-vantage-warning/20",
+                reelCompatibility.status === "legacy" && "bg-primary/5 border-primary/20",
+                reelCompatibility.status === "not_supported" && "bg-muted/30 border-border/30",
+              )}>
+                <div className={cn("shrink-0 mt-0.5", reelCompatibility.colorClass)}>
+                  <Clapperboard className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">Reel compatibility</span>
+                    <Badge 
+                      variant="outline" 
+                      className={cn(
+                        "text-[10px] h-5 gap-1 shrink-0",
+                        reelCompatibility.status === "ready" && "text-vantage-green border-vantage-green/30",
+                        reelCompatibility.status === "preparing" && "text-vantage-warning border-vantage-warning/30",
+                        reelCompatibility.status === "legacy" && "text-primary border-primary/30",
+                        reelCompatibility.status === "not_supported" && "text-muted-foreground border-border/50",
+                      )}
+                    >
+                      {reelCompatibility.icon}
+                      {reelCompatibility.label}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    {reelCompatibility.description}
+                  </p>
+                </div>
+              </div>
 
               {/* Debug Section */}
               <Collapsible open={showDebug} onOpenChange={setShowDebug}>
