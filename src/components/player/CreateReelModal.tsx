@@ -47,6 +47,10 @@ import {
   type ReelEligibilityResult, 
   getReelIneligibilityMessage,
 } from "@/lib/reelEligibility";
+import { 
+  startLegacyBackfill, 
+  checkReelSourceReadiness,
+} from "@/lib/reelSource";
 
 interface CreateReelModalProps {
   open: boolean;
@@ -712,6 +716,10 @@ function ReelCreatorContent({
     setSelectedIds(new Set());
   }, []);
 
+  // State for legacy backfill preparation
+  const [isPreparingLegacy, setIsPreparingLegacy] = useState(false);
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+
   const handleGenerate = useCallback(async () => {
     if (selectedMoments.length === 0) {
       toast.error("Select at least one moment");
@@ -719,18 +727,61 @@ function ReelCreatorContent({
     }
 
     setIsGenerating(true);
+    setPreparationError(null);
     
     try {
-      // Create the reel entity in the database
-      const reel = await createReel({
-        sessionId,
-        title: sessionTitle ? `${sessionTitle} Reel` : "Untitled Reel",
-        aspectRatio: aspectRatio as AspectRatio,
-        momentIds: Array.from(selectedIds),
-      });
+      // 1) Check current ReelSource readiness
+      const readiness = await checkReelSourceReadiness(sessionId);
       
-      // Navigate to Reel Editor
-      onReelCreated(reel.id);
+      // 2) If ready, proceed directly
+      if (readiness.isReady) {
+        const reel = await createReel({
+          sessionId,
+          title: sessionTitle ? `${sessionTitle} Reel` : "Untitled Reel",
+          aspectRatio: aspectRatio as AspectRatio,
+          momentIds: Array.from(selectedIds),
+        });
+        onReelCreated(reel.id);
+        return;
+      }
+      
+      // 3) If legacy session with video but no ReelSource, trigger backfill
+      if (readiness.isLegacy && readiness.videoUrl) {
+        console.log("[CreateReel] Legacy session detected, starting backfill...");
+        setIsPreparingLegacy(true);
+        
+        // Start backfill
+        const backfillResult = await startLegacyBackfill(sessionId);
+        
+        if (!backfillResult.success) {
+          console.error("[CreateReel] Backfill failed:", backfillResult.message);
+          setPreparationError(backfillResult.message);
+          setIsPreparingLegacy(false);
+          setIsGenerating(false);
+          return;
+        }
+        
+        // Backfill succeeded, now create the reel
+        console.log("[CreateReel] Backfill complete, creating reel...");
+        setIsPreparingLegacy(false);
+        
+        const reel = await createReel({
+          sessionId,
+          title: sessionTitle ? `${sessionTitle} Reel` : "Untitled Reel",
+          aspectRatio: aspectRatio as AspectRatio,
+          momentIds: Array.from(selectedIds),
+        });
+        onReelCreated(reel.id);
+        return;
+      }
+      
+      // 4) Truly no video - hard fail with specific message
+      console.error("[CreateReel] No video available:", readiness.message);
+      toast.error("Cannot create reel", {
+        description: readiness.message || "No recording available for this session",
+      });
+      setIsGenerating(false);
+      
     } catch (error) {
       console.error("Failed to create reel:", error);
       
@@ -744,6 +795,7 @@ function ReelCreatorContent({
           description: error instanceof Error ? error.message : "Please try again",
         });
       }
+      setIsPreparingLegacy(false);
       setIsGenerating(false);
     }
   }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated]);
@@ -838,6 +890,19 @@ function ReelCreatorContent({
         </ScrollArea>
       </section>
 
+      {/* Preparation Error Banner */}
+      {preparationError && (
+        <div className="shrink-0 mx-4 mb-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-destructive">Preparation failed</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{preparationError}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer CTA - dynamic text based on format */}
       <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
         <Button
@@ -845,7 +910,12 @@ function ReelCreatorContent({
           onClick={handleGenerate}
           disabled={selectedMoments.length === 0 || isGenerating}
         >
-          {isGenerating ? (
+          {isPreparingLegacy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Preparing recording (one-time)...
+            </>
+          ) : isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Generating...
@@ -863,7 +933,10 @@ function ReelCreatorContent({
           )}
         </Button>
         <p className="text-[11px] text-muted-foreground text-center mt-2.5">
-          You'll be taken to the Reel Editor next.
+          {isPreparingLegacy 
+            ? "This older recording needs one-time preparation for reels."
+            : "You'll be taken to the Reel Editor next."
+          }
         </p>
       </div>
     </div>
