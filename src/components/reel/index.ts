@@ -13,6 +13,7 @@ export { ReelEffectsPanel } from "./ReelEffectsPanel";
 export { ReelEditorModeBanner } from "./ReelEditorModeBanner";
 export { ReelCompilationStatus } from "./ReelCompilationStatus";
 export { ReelCompilingPlaceholder } from "./ReelCompilingPlaceholder";
+export { PreviewRenderingPill } from "./PreviewRenderingPill";
 export { ReelEditorIntroModal } from "./ReelEditorIntroModal";
 export { PageTransitionOverlay } from "./PageTransitionOverlay";
 export { EditorStateBadge } from "./EditorStateBadge";
