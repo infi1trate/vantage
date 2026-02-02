@@ -2,16 +2,27 @@
  * Reel Compiling Placeholder
  * 
  * Shows assembly progress with step-based indicators.
+ * Progress is TRUTHFUL - derived from actual assembly_step, NOT simulated.
  * Also handles failed state with retry option.
  */
 
-import { memo, useState, useEffect, useRef, useCallback } from "react";
+import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, X, ArrowLeft, Bell } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell } from "lucide-react";
+import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
+
+/**
+ * Assembly progress from useReelAssembly hook
+ */
+export interface AssemblyProgress {
+  percent: number;
+  stage: number;
+  step: AssemblyStep | null;
+  stepStartedAt: string | null;
+}
 
 interface ReelCompilingPlaceholderProps {
   clipCount?: number;
@@ -31,6 +42,8 @@ interface ReelCompilingPlaceholderProps {
   onCancel?: () => void;
   /** Leave and notify handler - keeps job in background */
   onLeaveAndNotify?: () => void;
+  /** Real progress from assembly hook (truthful, not simulated) */
+  progress?: AssemblyProgress;
   /** Debug instrumentation data */
   debugData?: {
     assemblyStep: AssemblyStep | null;
@@ -40,20 +53,40 @@ interface ReelCompilingPlaceholderProps {
   };
 }
 
-// Assembly steps configuration
+// Assembly steps configuration - maps step IDs to display
 const ASSEMBLY_STEPS = [
-  { id: "collecting", label: "Collecting clips", range: [0, 20] },
-  { id: "stitching", label: "Stitching sequence", range: [20, 70] },
-  { id: "preparing", label: "Preparing preview", range: [70, 100] },
+  { id: "collecting_clips", label: "Collecting clips", range: [0, 20] },
+  { id: "stitching_sequence", label: "Stitching sequence", range: [20, 70] },
+  { id: "rendering_preview", label: "Preparing preview", range: [70, 100] },
 ] as const;
 
-function getActiveStep(progress: number): number {
-  for (let i = 0; i < ASSEMBLY_STEPS.length; i++) {
-    if (progress <= ASSEMBLY_STEPS[i].range[1]) {
-      return i;
-    }
+/**
+ * Get active step index from current assembly step
+ */
+function getActiveStepFromStep(step: AssemblyStep | null): number {
+  if (!step) return 0;
+  
+  switch (step) {
+    case "collecting_clips":
+      return 0;
+    case "stitching_sequence":
+      return 1;
+    case "rendering_preview":
+    case "finalizing_manifest":
+      return 2;
+    case "ready":
+      return 3; // All complete
+    default:
+      return 0;
   }
-  return ASSEMBLY_STEPS.length - 1;
+}
+
+/**
+ * Check if a step is complete based on current step
+ */
+function isStepComplete(stepIndex: number, currentStep: AssemblyStep | null): boolean {
+  const activeIndex = getActiveStepFromStep(currentStep);
+  return stepIndex < activeIndex || currentStep === "ready";
 }
 
 export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
@@ -67,54 +100,16 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   isRetrying = false,
   onCancel,
   onLeaveAndNotify,
+  progress,
   debugData,
 }: ReelCompilingPlaceholderProps) {
   // Determine if we're in an error-like state (failed or needs attention)
   const hasIssue = isFailed || isNeedsAttention;
-  // Simulated progress: 0 → 85% over ~25 seconds, then holds
-  const [progress, setProgress] = useState(0);
-  const intervalRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
   
-  // Progress simulation - smooth increase to 85%, then hold
-  useEffect(() => {
-    if (hasIssue || isRetrying) {
-      // Reset on failure/attention or retry
-      if (isRetrying) {
-        setProgress(0);
-        startTimeRef.current = Date.now();
-      }
-      return;
-    }
-    
-    // Target 85% over ~25 seconds with easing
-    const DURATION_MS = 25_000;
-    const MAX_PROGRESS = 85;
-    
-    intervalRef.current = window.setInterval(() => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const t = Math.min(elapsed / DURATION_MS, 1);
-      
-      // Ease-out curve: starts fast, slows down
-      const eased = 1 - Math.pow(1 - t, 3);
-      const newProgress = Math.min(eased * MAX_PROGRESS, MAX_PROGRESS);
-      
-      setProgress(newProgress);
-      
-      // Stop interval once we hit max
-      if (newProgress >= MAX_PROGRESS && intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    }, 100);
-    
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [hasIssue, isRetrying]);
-  
-  const activeStepIndex = getActiveStep(progress);
+  // Use real progress from props (truthful)
+  const displayProgress = progress?.percent ?? 0;
+  const currentStep = progress?.step ?? null;
+  const activeStepIndex = getActiveStepFromStep(currentStep);
   
   // Aspect ratio to padding-bottom percentage
   const aspectPadding = {
@@ -325,7 +320,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     <motion.div
                       className="absolute inset-y-0 left-0 bg-primary rounded-full"
                       initial={{ width: 0 }}
-                      animate={{ width: `${progress}%` }}
+                      animate={{ width: `${displayProgress}%` }}
                       transition={{ duration: 0.3, ease: "easeOut" }}
                     />
                   </div>
@@ -333,8 +328,8 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   {/* Step checklist */}
                   <div className="space-y-2">
                     {ASSEMBLY_STEPS.map((step, index) => {
-                      const isComplete = progress > step.range[1];
-                      const isActive = index === activeStepIndex && !isComplete;
+                      const isComplete = isStepComplete(index, currentStep);
+                      const isActive = index === activeStepIndex && !isComplete && currentStep !== "ready";
                       
                       return (
                         <div
@@ -370,7 +365,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           </span>
                           {isActive && (
                             <span className="text-xs text-muted-foreground ml-auto tabular-nums">
-                              {Math.round(progress)}%
+                              {Math.round(displayProgress)}%
                             </span>
                           )}
                         </div>

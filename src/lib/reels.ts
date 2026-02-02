@@ -67,6 +67,8 @@ export interface Reel {
   // Retry tracking
   attempt_count: number;
   job_id: string | null;
+  /** Unique ID for the current assembly attempt - prevents stale updates */
+  assembly_attempt_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +109,8 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
 
   // Create with "compiling" status and initial assembly step
   const now = new Date().toISOString();
+  const attemptId = crypto.randomUUID();
+  
   const { data, error } = await supabase
     .from("reels")
     .insert({
@@ -118,6 +122,7 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
       status: "compiling",
       assembly_step: "collecting_clips",
       step_started_at: now,
+      assembly_attempt_id: attemptId,
     })
     .select()
     .single();
@@ -337,6 +342,13 @@ function generateJobId(): string {
 }
 
 /**
+ * Generate a unique attempt ID for assembly tracking
+ */
+function generateAttemptId(): string {
+  return crypto.randomUUID();
+}
+
+/**
  * Retry reel assembly with clean state reset
  * 
  * This function:
@@ -345,14 +357,16 @@ function generateJobId(): string {
  * 3. Sets status back to "compiling" with "collecting_clips" step
  * 4. Increments attempt count
  * 5. Generates a new job_id to prevent duplicate concurrent jobs
+ * 6. Generates a new assembly_attempt_id to filter stale UI updates
  * 
- * @returns The new job_id that should be used to track this assembly attempt
+ * @returns The new job_id and attemptId that should be used to track this assembly attempt
  */
-export async function retryAssembly(reelId: string): Promise<{ reel: Reel; jobId: string }> {
+export async function retryAssembly(reelId: string): Promise<{ reel: Reel; jobId: string; attemptId: string }> {
   const now = new Date().toISOString();
   const newJobId = generateJobId();
+  const newAttemptId = generateAttemptId();
   
-  console.log(`[Reels] Retrying assembly for ${reelId} with job ${newJobId}`);
+  console.log(`[Reels] Retrying assembly for ${reelId} with job ${newJobId}, attempt ${newAttemptId}`);
   
   // Get current attempt count
   const currentReel = await getReel(reelId);
@@ -375,9 +389,10 @@ export async function retryAssembly(reelId: string): Promise<{ reel: Reel; jobId
       render_error: null,
       render_started_at: null,
       render_completed_at: null,
-      // Increment attempt count and set new job ID
+      // Increment attempt count and set new job ID + attempt ID
       attempt_count: newAttemptCount,
       job_id: newJobId,
+      assembly_attempt_id: newAttemptId,
       updated_at: now,
     })
     .eq("id", reelId)
@@ -386,9 +401,18 @@ export async function retryAssembly(reelId: string): Promise<{ reel: Reel; jobId
 
   if (error) throw error;
   
-  console.log(`[Reels] Assembly retry initiated, attempt ${newAttemptCount}, job ${newJobId}`);
+  console.log(`[Reels] Assembly retry initiated, attempt #${newAttemptCount}, job ${newJobId}, attemptId ${newAttemptId}`);
   
-  return { reel: toReel(data), jobId: newJobId };
+  return { reel: toReel(data), jobId: newJobId, attemptId: newAttemptId };
+}
+
+/**
+ * Check if an attempt ID is still the active one for a reel
+ * Used to prevent stale UI updates from old attempts
+ */
+export async function isAttemptActive(reelId: string, attemptId: string): Promise<boolean> {
+  const reel = await getReel(reelId);
+  return reel?.assembly_attempt_id === attemptId;
 }
 
 /**

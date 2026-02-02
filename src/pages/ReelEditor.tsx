@@ -85,7 +85,7 @@ export default function ReelEditor() {
   const [previewUnavailable, setPreviewUnavailable] = useState(false);
 
   // Reel assembly state with real-time subscription + timeout
-  // Pass metadata for global render queue integration
+  // Pass metadata for global render queue integration AND step tracking
   const assemblyState = useReelAssembly(
     reelId, 
     reel?.status as ReelStatus | undefined,
@@ -95,6 +95,10 @@ export default function ReelEditor() {
       reelTitle: reel?.title || "Untitled Reel",
       aspectRatio: reel?.aspect_ratio,
       clipCount: reel?.source_moment_ids?.length,
+      // Pass step tracking for truthful progress
+      assemblyStep: reel?.assembly_step as import("@/lib/reels").AssemblyStep | null,
+      stepStartedAt: reel?.step_started_at || null,
+      assemblyAttemptId: reel?.assembly_attempt_id || null,
     }
   );
   
@@ -117,11 +121,12 @@ export default function ReelEditor() {
   // Derive video loaded state
   const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
   
-  // Use the editor state machine with assembly state
+  // Use the editor state machine with assembly state + progress
   const editorState = useEditorState(
     assemblyState.state,
     reel?.session_id || undefined,
-    isVideoLoaded
+    isVideoLoaded,
+    assemblyState.progress
   );
   
   // Convenience flag for ready state
@@ -473,6 +478,8 @@ export default function ReelEditor() {
                     });
                     goBack();
                   }}
+                  // Truthful progress from assembly hook
+                  progress={assemblyState.progress}
                   debugData={{
                     assemblyStep: (reel.assembly_step as import("@/components/reel/AssemblyDebugPanel").AssemblyStep) || null,
                     stepStartedAt: reel.step_started_at || null,

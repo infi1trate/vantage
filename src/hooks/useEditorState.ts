@@ -26,7 +26,7 @@
 import { useMemo } from "react";
 import { ReelStatus } from "@/lib/reels";
 import { useExportState } from "@/hooks/useRenderQueue";
-import { AssemblyState } from "@/hooks/useReelAssembly";
+import { AssemblyState, AssemblyProgress } from "@/hooks/useReelAssembly";
 
 /**
  * Editor-specific lifecycle states
@@ -73,7 +73,8 @@ export function deriveEditorState(
   assemblyState: AssemblyState,
   isVideoLoaded: boolean,
   isExporting: boolean,
-  exportProgress: number
+  exportProgress: number,
+  assemblyProgress?: AssemblyProgress
 ): EditorStateConfig {
   // EXPORTING: Editor locked, progress shown
   if (isExporting) {
@@ -135,7 +136,7 @@ export function deriveEditorState(
       timelineInteractive: false,
       statusLabel: "Assembling...",
       showProgress: true,
-      progressPercent: 0, // Indeterminate
+      progressPercent: assemblyProgress?.percent ?? 0,
     };
   }
   
@@ -160,11 +161,13 @@ export function deriveEditorState(
  * @param assemblyState - Current assembly state from useReelAssembly
  * @param sessionId - Session ID for export state tracking
  * @param isVideoLoaded - Whether the video is loaded
+ * @param assemblyProgress - Optional progress data from assembly hook
  */
 export function useEditorState(
   assemblyState: AssemblyState,
   sessionId: string | undefined,
-  isVideoLoaded: boolean
+  isVideoLoaded: boolean,
+  assemblyProgress?: AssemblyProgress
 ): EditorStateConfig {
   const exportState = useExportState(sessionId || "");
   
@@ -172,8 +175,8 @@ export function useEditorState(
   const exportProgress = exportState.progress || 0;
   
   return useMemo(
-    () => deriveEditorState(assemblyState, isVideoLoaded, isExporting, exportProgress),
-    [assemblyState, isVideoLoaded, isExporting, exportProgress]
+    () => deriveEditorState(assemblyState, isVideoLoaded, isExporting, exportProgress, assemblyProgress),
+    [assemblyState, isVideoLoaded, isExporting, exportProgress, assemblyProgress]
   );
 }
 
