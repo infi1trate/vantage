@@ -3,16 +3,18 @@
  * 
  * Main popover component that orchestrates all states.
  * This is the primary UI for the desktop capture experience.
+ * 
+ * Can accept external popover state for syncing with other UI components (e.g., HUD).
  */
 
 import { PopoverShell } from "./PopoverShell";
 import { PrimaryCTA } from "./PrimaryCTA";
-import { HUDMini } from "./HUDMini";
 import { PopoverToast } from "./PopoverToast";
 import { WindowPickerGrid } from "./WindowPickerGrid";
 import { SourceTypeSheet } from "./SourceTypeSheet";
 import { IdleStateBody } from "./IdleStateBody";
-import { usePopoverState } from "./usePopoverState";
+import { RecordingStateBody } from "./RecordingStateBody";
+import { usePopoverState, type UsePopoverStateReturn } from "./usePopoverState";
 import { MOCK_WINDOWS } from "./types";
 import { Shield } from "lucide-react";
 
@@ -20,26 +22,35 @@ interface DesktopCapturePopoverProps {
   className?: string;
   onClose?: () => void;
   onHome?: () => void;
+  /** External popover state for syncing with other components */
+  externalState?: UsePopoverStateReturn;
 }
 
-export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCapturePopoverProps) {
-  const popover = usePopoverState();
+export function DesktopCapturePopover({ 
+  className, 
+  onClose, 
+  onHome,
+  externalState,
+}: DesktopCapturePopoverProps) {
+  // Use internal state only if external state not provided
+  const internalState = usePopoverState();
+  const popover = externalState || internalState;
 
-  // ============= RECORDING STATE - Show HUD =============
-  if (popover.state === "recording" || (popover.state === "countdown" && popover.countdown === null)) {
+  // ============= RECORDING/PAUSED STATE =============
+  if (popover.state === "recording" || popover.state === "paused") {
     return (
       <div className={className}>
-        <HUDMini
-          duration={popover.duration}
-          isPaused={popover.isPaused}
-          micEnabled={popover.config.micEnabled}
-          cameraEnabled={popover.config.cameraEnabled}
-          onPause={popover.pauseRecording}
-          onResume={popover.resumeRecording}
-          onStop={popover.stopRecording}
-          onToggleMic={() => popover.setMicEnabled(!popover.config.micEnabled)}
-          onToggleCamera={() => popover.setCameraEnabled(!popover.config.cameraEnabled)}
-        />
+        <PopoverShell onClose={onClose} onHome={onHome}>
+          <RecordingStateBody
+            duration={popover.duration}
+            isPaused={popover.isPaused}
+            sourceType={popover.config.selectedSource?.type || "screen"}
+            sourceName={popover.selectedWindow?.name}
+            onPause={popover.pauseRecording}
+            onResume={popover.resumeRecording}
+            onStop={popover.stopRecording}
+          />
+        </PopoverShell>
       </div>
     );
   }

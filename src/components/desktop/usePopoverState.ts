@@ -22,7 +22,7 @@ import {
 // Extended state to include source picker
 type ExtendedPopoverState = PopoverState | "selecting_source_type";
 
-interface UsePopoverStateReturn {
+export interface UsePopoverStateReturn {
   // Current state
   state: ExtendedPopoverState;
   config: PopoverConfig;

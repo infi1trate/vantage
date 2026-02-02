@@ -11,6 +11,7 @@ export { PopoverToast } from "./PopoverToast";
 export { WindowPickerGrid } from "./WindowPickerGrid";
 export { SourceTypeSheet } from "./SourceTypeSheet";
 export { IdleStateBody } from "./IdleStateBody";
+export { RecordingStateBody } from "./RecordingStateBody";
 export { DesktopCapturePopover } from "./DesktopCapturePopover";
 export { usePopoverState } from "./usePopoverState";
 export * from "./types";
