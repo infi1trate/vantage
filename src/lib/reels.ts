@@ -576,9 +576,76 @@ export interface ClipValidationError {
     | "session_not_found"
     | "invalid_moment_id"
     | "invalid_duration"
+    | "video_not_ready"
     | "unknown";
   /** Human-readable description */
   description: string;
+}
+
+/**
+ * User-friendly reason labels for clip validation errors
+ */
+export type ErrorCategory = "video_not_ready" | "invalid_range" | "missing_source" | "other";
+
+/**
+ * Get error category from clip validation error reason
+ */
+export function getErrorCategory(reason: ClipValidationError["reason"]): ErrorCategory {
+  switch (reason) {
+    case "video_not_ready":
+    case "timeout_resolving_source":
+      return "video_not_ready";
+    case "invalid_range":
+    case "invalid_duration":
+      return "invalid_range";
+    case "missing_source_video":
+    case "session_not_found":
+    case "invalid_moment_id":
+      return "missing_source";
+    default:
+      return "other";
+  }
+}
+
+/**
+ * Get user-friendly reason label for display
+ */
+export function getReasonLabel(reason: ClipValidationError["reason"]): string {
+  switch (reason) {
+    case "video_not_ready":
+    case "timeout_resolving_source":
+      return "Video not ready yet";
+    case "invalid_range":
+    case "invalid_duration":
+      return "Clip range invalid";
+    case "missing_source_video":
+    case "session_not_found":
+    case "invalid_moment_id":
+      return "Source video missing";
+    default:
+      return "Unable to process clip";
+  }
+}
+
+/**
+ * Get primary CTA configuration based on error reason
+ */
+export function getPrimaryCtaConfig(reason: ClipValidationError["reason"]): {
+  label: string;
+  action: "wait_retry" | "auto_fix" | "skip_clip";
+  icon: "clock" | "wand" | "skip";
+} {
+  const category = getErrorCategory(reason);
+  switch (category) {
+    case "video_not_ready":
+      return { label: "Wait and try again", action: "wait_retry", icon: "clock" };
+    case "invalid_range":
+      return { label: "Auto-fix clip", action: "auto_fix", icon: "wand" };
+    case "missing_source":
+      return { label: "Skip clip & continue", action: "skip_clip", icon: "skip" };
+    default:
+      return { label: "Skip clip & continue", action: "skip_clip", icon: "skip" };
+  }
 }
 
 /**
