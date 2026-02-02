@@ -30,6 +30,19 @@ export type PreviewStatus = "pending" | "rendering" | "ready" | "failed";
 export type PlaybackMode = "preview" | "manifest";
 
 /**
+ * Custom error for assembly failures with user-friendly message
+ */
+export class AssemblyError extends Error {
+  readonly userMessage: string;
+  
+  constructor(devMessage: string, userMessage: string) {
+    super(devMessage);
+    this.name = "AssemblyError";
+    this.userMessage = userMessage;
+  }
+}
+
+/**
  * Manifest clip entry - ordered clip list with timing info
  */
 export interface ManifestClip {
@@ -507,7 +520,159 @@ export interface AssemblyResult {
   success: boolean;
   reel: Reel | null;
   error?: string;
+  /** User-friendly error message */
+  userMessage?: string;
   previewAvailable: boolean;
+}
+
+/**
+ * Clip validation result
+ */
+interface ClipValidationResult {
+  valid: boolean;
+  clips: ManifestClip[];
+  failedSegment?: {
+    index: number;
+    momentId: string;
+    reason: string;
+  };
+}
+
+// Timeouts for collecting_clips step
+const SEGMENT_VALIDATION_TIMEOUT_MS = 5_000; // 5 seconds per segment
+const COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS = 20_000; // 20 seconds total
+
+/**
+ * Validate a single clip segment with timeout
+ */
+async function validateClipSegment(
+  moment: { momentId: string; durationMs: number },
+  index: number,
+  sessionId: string | null
+): Promise<{ valid: boolean; clip?: ManifestClip; reason?: string }> {
+  // Create a timeout promise
+  const timeoutPromise = new Promise<{ valid: false; reason: string }>((resolve) => {
+    setTimeout(() => {
+      resolve({ valid: false, reason: `Segment validation timed out after ${SEGMENT_VALIDATION_TIMEOUT_MS / 1000}s` });
+    }, SEGMENT_VALIDATION_TIMEOUT_MS);
+  });
+  
+  // Create the validation promise
+  const validationPromise = (async (): Promise<{ valid: boolean; clip?: ManifestClip; reason?: string }> => {
+    try {
+      // Validate moment ID exists
+      if (!moment.momentId || typeof moment.momentId !== "string") {
+        return { valid: false, reason: "Invalid moment ID" };
+      }
+      
+      // Validate duration is positive
+      if (!moment.durationMs || moment.durationMs <= 0) {
+        return { valid: false, reason: `Invalid duration: ${moment.durationMs}ms` };
+      }
+      
+      // Validate duration is reasonable (max 1 hour per clip)
+      if (moment.durationMs > 3600_000) {
+        return { valid: false, reason: `Duration too long: ${moment.durationMs}ms (max 1 hour)` };
+      }
+      
+      // Check if we can reference the session (if sessionId provided)
+      if (sessionId) {
+        const { data: session, error } = await supabase
+          .from("capture_sessions")
+          .select("id, video_url, status")
+          .eq("id", sessionId)
+          .maybeSingle();
+        
+        if (error) {
+          console.warn(`[Reels] Session lookup error for segment ${index}:`, error);
+          return { valid: false, reason: `Cannot access session: ${error.message}` };
+        }
+        
+        if (!session) {
+          return { valid: false, reason: "Source session not found" };
+        }
+        
+        if (!session.video_url) {
+          return { valid: false, reason: "Source session has no video" };
+        }
+      }
+      
+      // Validation passed - create clip
+      const clip: ManifestClip = {
+        momentId: moment.momentId,
+        startMs: 0, // TODO: Calculate from annotation timestamps
+        endMs: moment.durationMs,
+        durationMs: moment.durationMs,
+        order: index,
+      };
+      
+      return { valid: true, clip };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown validation error";
+      return { valid: false, reason: message };
+    }
+  })();
+  
+  // Race validation against timeout
+  return Promise.race([validationPromise, timeoutPromise]);
+}
+
+/**
+ * Validate all clip segments with global timeout
+ */
+async function validateAllClips(
+  momentDurations: { momentId: string; durationMs: number }[],
+  sessionId: string | null
+): Promise<ClipValidationResult> {
+  console.log(`[Reels] Validating ${momentDurations.length} clip segments...`);
+  
+  // Create global timeout
+  const globalTimeoutPromise = new Promise<ClipValidationResult>((resolve) => {
+    setTimeout(() => {
+      resolve({
+        valid: false,
+        clips: [],
+        failedSegment: {
+          index: -1,
+          momentId: "timeout",
+          reason: `Clip collection timed out after ${COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS / 1000}s`,
+        },
+      });
+    }, COLLECTING_CLIPS_GLOBAL_TIMEOUT_MS);
+  });
+  
+  // Create validation promise
+  const validationPromise = (async (): Promise<ClipValidationResult> => {
+    const clips: ManifestClip[] = [];
+    
+    for (let i = 0; i < momentDurations.length; i++) {
+      const moment = momentDurations[i];
+      const result = await validateClipSegment(moment, i, sessionId);
+      
+      if (!result.valid) {
+        console.error(`[Reels] Segment ${i} validation failed:`, result.reason);
+        return {
+          valid: false,
+          clips,
+          failedSegment: {
+            index: i,
+            momentId: moment.momentId,
+            reason: result.reason || "Unknown error",
+          },
+        };
+      }
+      
+      if (result.clip) {
+        clips.push(result.clip);
+      }
+    }
+    
+    console.log(`[Reels] All ${clips.length} segments validated successfully`);
+    return { valid: true, clips };
+  })();
+  
+  // Race validation against global timeout
+  return Promise.race([validationPromise, globalTimeoutPromise]);
 }
 
 /**
@@ -517,7 +682,7 @@ export interface AssemblyResult {
  * Preview is started as a SEPARATE background job and doesn't block ready state.
  * 
  * Flow:
- * 1. collecting_clips: Resolve clip segment references
+ * 1. collecting_clips: Resolve + validate clip segment references (with timeouts)
  * 2. finalizing_manifest: Write manifest + totalDurationMs
  * 3. ready: Mark reel as ready (editor becomes usable!)
  * 4. (Background) Start preview generation as optional enhancement
@@ -529,27 +694,73 @@ export async function executeAssembly(
   const now = () => new Date().toISOString();
   
   try {
-    console.log(`[Reels] Starting manifest-first assembly for ${reelId}`);
+    console.log(`[Reels] Starting manifest-first assembly for ${reelId} with ${momentDurations.length} moments`);
     
-    // STEP 1: Collecting clips
+    // Validate inputs early
+    if (!momentDurations || momentDurations.length === 0) {
+      throw new AssemblyError(
+        "No clips provided for assembly",
+        "Please select at least one clip for your reel."
+      );
+    }
+    
+    // STEP 1: Collecting clips with validation + timeouts
     await updateAssemblyStep(reelId, "collecting_clips");
     
-    // Build the manifest from moments
-    const clips: ManifestClip[] = momentDurations.map((m, index) => ({
-      momentId: m.momentId,
-      startMs: 0, // TODO: Calculate from annotation timestamps
-      endMs: m.durationMs,
-      durationMs: m.durationMs,
-      order: index,
-    }));
-    
-    const totalDurationMs = clips.reduce((sum, c) => sum + c.durationMs, 0);
-    
-    // Get current reel for aspect ratio
+    // Get current reel for session reference
     const currentReel = await getReel(reelId);
     if (!currentReel) {
-      throw new Error("Reel not found during assembly");
+      throw new AssemblyError(
+        "Reel not found during assembly",
+        "The reel could not be found. Please try creating a new one."
+      );
     }
+    
+    // Validate all clip segments with timeouts
+    const validationResult = await validateAllClips(momentDurations, currentReel.session_id);
+    
+    if (!validationResult.valid) {
+      const failedSegment = validationResult.failedSegment;
+      
+      // Determine if this is a timeout (needs_attention) or hard failure
+      const isTimeout = failedSegment?.reason?.includes("timed out");
+      
+      if (isTimeout) {
+        // Timeout - mark as needs_attention for retry
+        console.warn(`[Reels] Clip collection timed out for ${reelId}`);
+        
+        await supabase
+          .from("reels")
+          .update({
+            status: "compiling", // Keep as compiling
+            render_error: "Clip collection is taking longer than expected.",
+            updated_at: now(),
+          })
+          .eq("id", reelId);
+        
+        return {
+          success: false,
+          reel: await getReel(reelId),
+          error: failedSegment?.reason || "Clip collection timed out",
+          userMessage: "This is taking longer than expected. Please try again.",
+          previewAvailable: false,
+        };
+      }
+      
+      // Hard failure - segment validation failed
+      const devDetail = failedSegment 
+        ? `Segment ${failedSegment.index + 1}: ${failedSegment.reason}`
+        : "Unknown validation error";
+      
+      throw new AssemblyError(
+        devDetail,
+        "We couldn't access one of the clips needed for this reel."
+      );
+    }
+    
+    const clips = validationResult.clips;
+    
+    const totalDurationMs = clips.reduce((sum, c) => sum + c.durationMs, 0);
     
     await completeAssemblyStep(reelId);
     
@@ -621,17 +832,22 @@ export async function executeAssembly(
     // TERMINAL STATE: Failed
     console.error(`[Reels] Assembly failed for ${reelId}:`, error);
     
-    const errorMessage = error instanceof Error ? error.message : "Assembly failed unexpectedly";
+    // Extract error messages
+    const devMessage = error instanceof Error ? error.message : "Assembly failed unexpectedly";
+    const userMessage = error instanceof AssemblyError 
+      ? error.userMessage 
+      : "Something went wrong while creating your reel.";
     
     try {
       await updateAssemblyStep(reelId, "failed");
       
+      // Store user-friendly message in render_error for UI display
       const { data: failedReel } = await supabase
         .from("reels")
         .update({
           status: "failed",
           assembly_step: "failed",
-          render_error: errorMessage,
+          render_error: userMessage,
           updated_at: now(),
         })
         .eq("id", reelId)
@@ -641,7 +857,8 @@ export async function executeAssembly(
       return {
         success: false,
         reel: failedReel ? toReel(failedReel) : null,
-        error: errorMessage,
+        error: devMessage,
+        userMessage,
         previewAvailable: false,
       };
     } catch (updateError) {
@@ -649,7 +866,8 @@ export async function executeAssembly(
       return {
         success: false,
         reel: null,
-        error: errorMessage,
+        error: devMessage,
+        userMessage,
         previewAvailable: false,
       };
     }

@@ -163,7 +163,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     Couldn't assemble this reel
                   </p>
                   <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                    {errorMessage || "Something interrupted the assembly process."}
+                    {errorMessage || "We couldn't access one of the clips needed for this reel."}
                   </p>
                 </div>
                 
@@ -184,7 +184,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       ) : (
                         <>
                           <RefreshCw className="h-4 w-4" />
-                          Retry assembly
+                          Retry
                         </>
                       )}
                     </Button>
