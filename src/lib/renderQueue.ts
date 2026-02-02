@@ -47,6 +47,11 @@ export interface RenderStage {
   completedAt?: string;
 }
 
+/**
+ * Primary CTA action type for queue item
+ */
+export type RenderJobCtaAction = "fix" | "open" | "retry" | "wait_retry";
+
 export interface RenderJob {
   id: string;
   type: RenderJobType;
@@ -86,11 +91,22 @@ export interface RenderJob {
   warningMessages?: string[];
   canCancel: boolean;
   
+  // User-facing status info for queue display
+  /** Short reason for current status (e.g., "Video not ready yet", "Ready to export") */
+  shortReason?: string;
+  /** Primary CTA label (e.g., "Fix", "Open", "Retry") */
+  primaryCtaLabel?: string;
+  /** Primary CTA action type */
+  primaryCtaAction?: RenderJobCtaAction;
+  /** Error category for contextual UI */
+  errorCategory?: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other";
+  
   // Timestamps
   createdAt: string;
   startedAt?: string;
   previewReadyAt?: string;
   completedAt?: string;
+  updatedAt?: string;
   
   // Retry
   retryCount: number;
