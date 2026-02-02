@@ -2,8 +2,10 @@
  * Reel Package Config Hook
  * 
  * React Query hooks for managing reel package configurations.
+ * Integrates with AI generation pipeline.
  */
 
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,7 +17,15 @@ import {
   mapDbToReelPackageConfig,
   mapReelPackageConfigToDb,
   createDefaultReelPackageConfig,
+  DEFAULT_ENERGY_PROFILE,
 } from "@/lib/reelPackageConfig";
+import {
+  generateReelAssets,
+  computeEnergyProfile,
+  GenerationInputs,
+  GenerationProgress,
+  GenerationResult,
+} from "@/lib/aiGeneration";
 
 // ============= Query Keys =============
 
@@ -177,6 +187,7 @@ export function useUpdateReelPackageConfig() {
 
 /**
  * Trigger generation of reel package assets
+ * Uses local AI generation pipeline (can be swapped for server-side)
  */
 export function useTriggerGeneration() {
   const queryClient = useQueryClient();
@@ -186,14 +197,18 @@ export function useTriggerGeneration() {
     mutationFn: async ({
       configId,
       sessionId,
+      inputs,
+      onProgress,
     }: {
       configId: string;
       sessionId: string;
-    }) => {
+      inputs: GenerationInputs;
+      onProgress?: (progress: GenerationProgress) => void;
+    }): Promise<{ config: ReelPackageConfig; result: GenerationResult }> => {
       if (!user) throw new Error("Not authenticated");
       
       // Update status to pending
-      const { data, error } = await supabase
+      await supabase
         .from("reel_package_configs")
         .update({
           generation_status: "pending",
@@ -204,20 +219,72 @@ export function useTriggerGeneration() {
           },
         } as any)
         .eq("id", configId)
-        .eq("user_id", user.id)
-        .select()
-        .single();
+        .eq("user_id", user.id);
       
-      if (error) throw error;
+      // Update to generating
+      await supabase
+        .from("reel_package_configs")
+        .update({
+          generation_status: "generating",
+        } as any)
+        .eq("id", configId);
       
-      // TODO: Call edge function to start generation
-      // For now, simulate by setting to "generating"
-      // In production, this would trigger a background job
-      
-      return mapDbToReelPackageConfig(data as Record<string, unknown>);
+      try {
+        // Run generation pipeline
+        const result = await generateReelAssets(inputs, (progress) => {
+          // Update progress in DB
+          supabase
+            .from("reel_package_configs")
+            .update({
+              generation_progress: progress.progress,
+            } as any)
+            .eq("id", configId)
+            .then(() => {});
+          
+          onProgress?.(progress);
+        });
+        
+        // Update with results
+        const { data, error } = await supabase
+          .from("reel_package_configs")
+          .update({
+            generation_status: "ready",
+            generation_progress: 100,
+            energy_profile: inputs.energyProfile,
+            intro_asset_id: result.introTemplate?.id || null,
+            outro_asset_id: result.outroTemplate?.id || null,
+            transition_asset_ids: result.transitionTemplates.map(t => t.id),
+            generation_metadata: {
+              ...result.metadata,
+              frameVariantCount: result.frameVariants.length,
+            },
+          } as any)
+          .eq("id", configId)
+          .eq("user_id", user.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        return {
+          config: mapDbToReelPackageConfig(data as Record<string, unknown>),
+          result,
+        };
+      } catch (err) {
+        // Update with error
+        await supabase
+          .from("reel_package_configs")
+          .update({
+            generation_status: "failed",
+            generation_error: err instanceof Error ? err.message : "Unknown error",
+          } as any)
+          .eq("id", configId);
+        
+        throw err;
+      }
     },
-    onSuccess: (data, { sessionId }) => {
-      queryClient.setQueryData(QUERY_KEYS.config(sessionId), data);
+    onSuccess: ({ config }, { sessionId }) => {
+      queryClient.setQueryData(QUERY_KEYS.config(sessionId), config);
     },
   });
 }
@@ -271,12 +338,21 @@ export interface UseReelPackageResult {
   setStatOverlayEnabled: (enabled: boolean) => void;
   
   // Actions
-  generate: () => void;
-  regenerate: () => void;
+  generate: (sessionData?: {
+    durationSeconds?: number;
+    momentCount?: number;
+    gameName?: string;
+  }) => void;
+  regenerate: (sessionData?: {
+    durationSeconds?: number;
+    momentCount?: number;
+    gameName?: string;
+  }) => void;
   
   // State
   isGenerating: boolean;
   canGenerate: boolean;
+  generationProgress: number;
 }
 
 export function useReelPackage(sessionId: string | undefined): UseReelPackageResult {
@@ -321,15 +397,36 @@ export function useReelPackage(sessionId: string | undefined): UseReelPackageRes
   const setBeatSource = (beatSource: BeatSource) => updateField("beatSource", beatSource);
   const setStatOverlayEnabled = (enabled: boolean) => updateField("statOverlayEnabled", enabled);
   
-  const generate = async () => {
+  const generate = async (sessionData?: {
+    durationSeconds?: number;
+    momentCount?: number;
+    gameName?: string;
+  }) => {
     if (!sessionId || !user) return;
     
     const currentConfig = await ensureConfig();
     if (!currentConfig) return;
     
+    // Build generation inputs from config and session data
+    const inputs: GenerationInputs = {
+      styleKey: currentConfig.styleKey,
+      gameName: sessionData?.gameName,
+      energyProfile: currentConfig.energyProfile || computeEnergyProfile({
+        durationSeconds: sessionData?.durationSeconds || 60,
+        momentCount: sessionData?.momentCount || 3,
+      }),
+      durationSeconds: sessionData?.durationSeconds,
+      clipCount: sessionData?.momentCount,
+    };
+    
     await generateMutation.mutateAsync({
       configId: currentConfig.id,
       sessionId,
+      inputs,
+      onProgress: (progress) => {
+        // Progress is handled by the mutation
+        console.log("[ReelPackage] Generation progress:", progress.stage, progress.progress);
+      },
     });
   };
   
@@ -357,5 +454,6 @@ export function useReelPackage(sessionId: string | undefined): UseReelPackageRes
     regenerate,
     isGenerating,
     canGenerate: canGenerate ?? false,
+    generationProgress: config?.generationProgress ?? 0,
   };
 }

@@ -192,7 +192,7 @@ export const ReelPackageSection = memo(function ReelPackageSection({
                   <Button
                     variant="outline"
                     className="w-full gap-2"
-                    onClick={regenerate}
+                    onClick={() => regenerate()}
                     disabled={isGenerating}
                   >
                     <RefreshCw className={cn("h-4 w-4", isGenerating && "animate-spin")} />
@@ -201,7 +201,7 @@ export const ReelPackageSection = memo(function ReelPackageSection({
                 ) : (
                   <Button
                     className="w-full gap-2"
-                    onClick={generate}
+                    onClick={() => generate()}
                     disabled={!canGenerate || isGenerating}
                   >
                     {isGenerating ? (
