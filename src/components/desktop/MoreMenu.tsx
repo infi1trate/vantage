@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SettingsModal } from "./SettingsModal";
 import { QuitConfirmDialog } from "./QuitConfirmDialog";
+import { QuickStartSheet } from "./QuickStartSheet";
 
 interface MoreMenuProps {
   trigger: React.ReactNode;
@@ -46,6 +47,7 @@ export function MoreMenu({
 }: MoreMenuProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quitOpen, setQuitOpen] = useState(false);
+  const [quickStartOpen, setQuickStartOpen] = useState(false);
 
   return (
     <>
@@ -121,7 +123,7 @@ export function MoreMenu({
           
           {/* Quick start */}
           <DropdownMenuItem 
-            onClick={() => console.log("Quick start - stub")}
+            onClick={() => setQuickStartOpen(true)}
             className="text-xs cursor-pointer"
           >
             <Rocket className="w-4 h-4 mr-2 text-muted-foreground" />
@@ -186,6 +188,12 @@ export function MoreMenu({
           console.log("Quit confirmed - stub");
           setQuitOpen(false);
         }}
+      />
+
+      {/* Quick Start Sheet */}
+      <QuickStartSheet
+        isOpen={quickStartOpen}
+        onClose={() => setQuickStartOpen(false)}
       />
     </>
   );
