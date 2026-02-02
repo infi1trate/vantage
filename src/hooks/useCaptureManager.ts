@@ -6,6 +6,7 @@ import { useCompositeRecorder } from "./useCompositeRecorder";
 import { tryRecordWithFallback, type RecordingMimeTypeInfo } from "@/lib/recordingMimeTypes";
 import { type CaptureError, type CaptureErrorCode, type RecorderErrorDiagnostics, parseMediaError, createNoDataError, createRecorderError, validateCompositeStream } from "@/lib/captureErrors";
 import { startMemoryMonitoring, stopMemoryMonitoring, onMemoryPressure } from "@/lib/memoryGuard";
+import { markCaptureStarted, markCaptureEnded } from "@/lib/backfillGuardrails";
 
 /**
  * EXPLICIT CAPTURE STATE MACHINE
@@ -622,6 +623,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       }
     }, 1000);
 
+    // Mark capture as active to block background tasks (e.g., legacy backfill)
+    markCaptureStarted();
+    
     setCaptureState("recording");
     console.log("[Capture] Recording confirmed - MediaRecorder is producing data");
     return true;
@@ -958,6 +962,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
 
       setCaptureState("saved");
       console.log("[Capture] Recording saved successfully (single composite file)");
+      
+      // Mark capture as ended to allow background tasks to resume
+      markCaptureEnded();
 
       return {
         compositeBlob,
@@ -979,6 +986,9 @@ export function useCaptureManager(): UseCaptureManagerReturn {
       
       // Full cleanup on error
       fullCleanup();
+      
+      // Mark capture as ended even on error to allow background tasks
+      markCaptureEnded();
       
       const captureError: CaptureError = err.code ? err : {
         code: "RECORDER_ERROR" as const,
