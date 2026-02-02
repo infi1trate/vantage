@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
 import { ReelStatus } from "@/lib/reels";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function ReelEditor() {
   const { reelId } = useParams<{ reelId: string }>();
@@ -67,6 +68,7 @@ export default function ReelEditor() {
   } | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
 
   // Player state
   const [currentTime, setCurrentTime] = useState(0);
@@ -77,6 +79,7 @@ export default function ReelEditor() {
   const [showEffects, setShowEffects] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isReloadingPreview, setIsReloadingPreview] = useState(false);
   
   // Derive video loaded state
   const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
@@ -127,6 +130,22 @@ export default function ReelEditor() {
   // Clear effects mutation
   const clearEffectsMutation = useClearSessionEffects();
 
+  // Determine the best video source for preview
+  // Priority: reel.preview_url > session.video_url (fallback)
+  const getPreviewSource = useCallback(() => {
+    // Prefer reel's assembled preview URL when available
+    if (reel?.preview_url) {
+      return { url: reel.preview_url, isFallback: false };
+    }
+    // Fallback to session's source video
+    if (sessionData?.videoUrl) {
+      return { url: sessionData.videoUrl, isFallback: true };
+    }
+    return { url: null, isFallback: false };
+  }, [reel?.preview_url, sessionData?.videoUrl]);
+
+  const previewSource = getPreviewSource();
+
   // Load session data when reel is loaded
   useEffect(() => {
     async function loadSessionData() {
@@ -158,6 +177,48 @@ export default function ReelEditor() {
 
     loadSessionData();
   }, [reel?.session_id]);
+
+  // Reload preview handler
+  const handleReloadPreview = useCallback(async () => {
+    if (!reelId) return;
+    
+    setIsReloadingPreview(true);
+    try {
+      // Re-fetch the reel to get updated preview_url
+      const { data: freshReel } = await supabase
+        .from("reels")
+        .select("preview_url")
+        .eq("id", reelId)
+        .single();
+      
+      if (freshReel?.preview_url) {
+        // Force a refresh of the reel query
+        window.location.reload();
+      } else {
+        toast.info("Preview still not ready. Using source video.");
+      }
+    } catch (err) {
+      console.error("Failed to reload preview:", err);
+      toast.error("Failed to reload preview");
+    } finally {
+      setIsReloadingPreview(false);
+    }
+  }, [reelId]);
+
+  // Show preview unavailable warning when ready but using fallback
+  useEffect(() => {
+    if (editorState.state === "ready" && previewSource.isFallback && !previewUnavailable) {
+      setPreviewUnavailable(true);
+      toast.warning("Preview unavailable — export will still work.", {
+        description: "Showing source video instead of assembled preview.",
+        action: {
+          label: "Reload preview",
+          onClick: handleReloadPreview,
+        },
+        duration: 8000,
+      });
+    }
+  }, [editorState.state, previewSource.isFallback, previewUnavailable, handleReloadPreview]);
 
   // Auth redirect
   useEffect(() => {
@@ -373,9 +434,10 @@ export default function ReelEditor() {
                 />
               ) : (
                 // Ready state - show player with effects
+                // Uses previewSource which prioritizes reel.preview_url over session fallback
                 <PlayerWithEffects
                   sessionId={reel.session_id || ""}
-                  videoUrl={sessionData?.videoUrl}
+                  videoUrl={previewSource.url}
                   duration={duration}
                   currentTime={currentTime}
                   onTimeUpdate={handleTimeUpdate}
