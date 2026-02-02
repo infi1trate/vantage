@@ -946,6 +946,8 @@ export default function SessionReview() {
               isLoadingSuggestions={isLoadingSuggestions}
               coachError={coachError}
               commentsEnabled={false}
+              sessionTitle={displayTitle}
+              videoAvailable={!!videoUrl}
             />
           )}
         </div>

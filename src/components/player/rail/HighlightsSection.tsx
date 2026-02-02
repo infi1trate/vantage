@@ -10,9 +10,15 @@ import {
   Trash2,
   Film,
   Sparkles,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateReelModal } from "../CreateReelModal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MomentsSectionProps {
   annotations: Annotation[];
@@ -22,6 +28,8 @@ interface MomentsSectionProps {
   onAnnotationDelete?: (annotationId: string) => void;
   sessionId?: string;
   sessionTitle?: string;
+  /** Whether the session has a video available for reel creation */
+  videoAvailable?: boolean;
 }
 
 // Unified Moment type configuration
@@ -139,8 +147,12 @@ export const HighlightsSection = memo(function HighlightsSection({
   onAnnotationDelete,
   sessionId = "",
   sessionTitle,
+  videoAvailable = true,
 }: MomentsSectionProps) {
   const [reelModalOpen, setReelModalOpen] = useState(false);
+  
+  // Determine if reel creation is possible
+  const canCreateReel = videoAvailable;
   // Sort moments chronologically
   const moments = useMemo(() => {
     return [...annotations].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds);
@@ -181,21 +193,47 @@ export const HighlightsSection = memo(function HighlightsSection({
     <div className="flex flex-col h-full">
       {/* Create Reel CTA - prominent but not overwhelming */}
       <div className="shrink-0 px-3 pt-3 pb-2 border-b border-border/20">
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-auto py-2.5 gap-2 bg-gradient-to-r from-primary/5 via-transparent to-accent/5 border-primary/20 hover:border-primary/40 hover:bg-primary/10 transition-all group flex-col items-start"
-          onClick={() => setReelModalOpen(true)}
-        >
-          <div className="flex items-center gap-2 w-full">
-            <Sparkles className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium">Create Reel</span>
-            <Film className="h-3.5 w-3.5 text-muted-foreground ml-auto" />
-          </div>
-          <span className="text-[11px] text-muted-foreground font-normal pl-6">
-            Edit clips, add effects, and export
-          </span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "w-full h-auto py-2.5 gap-2 transition-all group flex-col items-start",
+                  canCreateReel
+                    ? "bg-gradient-to-r from-primary/5 via-transparent to-accent/5 border-primary/20 hover:border-primary/40 hover:bg-primary/10"
+                    : "bg-muted/30 border-border/50 opacity-60 cursor-not-allowed"
+                )}
+                onClick={() => canCreateReel && setReelModalOpen(true)}
+                disabled={!canCreateReel}
+              >
+                <div className="flex items-center gap-2 w-full">
+                  {canCreateReel ? (
+                    <Sparkles className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <span className="text-sm font-medium">Create Reel</span>
+                  <Film className="h-3.5 w-3.5 text-muted-foreground ml-auto" />
+                </div>
+                <span className="text-[11px] text-muted-foreground font-normal pl-6">
+                  {canCreateReel 
+                    ? "Edit clips, add effects, and export"
+                    : "Session video not available yet"
+                  }
+                </span>
+              </Button>
+            </div>
+          </TooltipTrigger>
+          {!canCreateReel && (
+            <TooltipContent side="bottom" className="max-w-[200px]">
+              <p className="text-xs">
+                Session video is still processing. Reel creation will be available once the video is ready.
+              </p>
+            </TooltipContent>
+          )}
+        </Tooltip>
       </div>
 
       {/* Scrollable moment list */}
@@ -222,6 +260,7 @@ export const HighlightsSection = memo(function HighlightsSection({
         moments={moments}
         sessionId={sessionId}
         sessionTitle={sessionTitle}
+        videoAvailable={videoAvailable}
       />
     </div>
   );

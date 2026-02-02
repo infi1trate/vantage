@@ -42,6 +42,9 @@ interface SessionRightRailProps {
   onOpenVoice?: () => void;
   onReactionVisibilityChange?: (id: string, isPublic: boolean) => void;
   isSessionShared?: boolean;
+  // Session/video availability
+  sessionTitle?: string;
+  videoAvailable?: boolean;
 }
 
 export const SessionRightRail = memo(function SessionRightRail({
@@ -65,6 +68,8 @@ export const SessionRightRail = memo(function SessionRightRail({
   onOpenVoice,
   onReactionVisibilityChange,
   isSessionShared = false,
+  sessionTitle,
+  videoAvailable = true,
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
@@ -187,6 +192,8 @@ export const SessionRightRail = memo(function SessionRightRail({
             onMarkerClick={onMarkerClick}
             onAnnotationDelete={onAnnotationDelete}
             sessionId={sessionId}
+            sessionTitle={sessionTitle}
+            videoAvailable={videoAvailable}
           />
         </TabsContent>
 
