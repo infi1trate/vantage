@@ -21,7 +21,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError } from "@/lib/reels";
+import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -56,11 +56,39 @@ const STEP_PROGRESS_RANGES: Record<AssemblyStep, { min: number; max: number; sta
  */
 export type SegmentStatus = "pending" | "resolving" | "resolved" | "failed" | "skipped";
 
+/**
+ * Moment type for display (derived from annotation_type)
+ */
+export type MomentType = "Kill" | "Death" | "Highlight" | "Objective" | "Marker" | "Note";
+
+/**
+ * Full segment progress with instrumentation
+ * This tells us exactly which clip is hanging or failing
+ */
 export interface SegmentProgress {
+  /** 0-based index of the segment */
+  segmentIndex: number;
+  /** Moment ID that this segment references */
   momentId: string;
+  /** Type of moment (Kill, Death, Highlight, etc.) */
+  momentType: MomentType;
+  /** Human-readable label (e.g., "Kill at 3:14") */
   label: string;
+  /** Formatted timestamp (e.g., "3:14") */
+  momentTimestamp: string;
+  /** Raw timestamp in seconds */
   timestampSeconds: number;
+  /** Intended clip range in milliseconds */
+  intendedRangeMs: {
+    startMs: number;
+    endMs: number;
+  };
+  /** Reference to source video (session ID or video URL) */
+  sourceRef: string | null;
+  /** Current status of this segment */
   status: SegmentStatus;
+  /** Error reason if status is "failed" */
+  errorReason?: string;
 }
 
 export interface AssemblyProgress {
@@ -257,6 +285,9 @@ export function useReelAssembly(
     reelMetadata?.stepStartedAt || null
   );
   
+  // Segment-level progress tracking for collecting_clips
+  const [segments, setSegments] = useState<SegmentProgress[]>([]);
+  
   // Smooth progress animation within current step
   const [displayProgress, setDisplayProgress] = useState<number>(0);
   
@@ -284,10 +315,32 @@ export function useReelAssembly(
     }
   }, []);
   
-  // Calculate current progress from step (non-simulated)
+  // Calculate current progress from step, including segment-based progress
   const progress = useMemo((): AssemblyProgress => {
-    return calculateStepProgress(currentStep, stepStartedAt);
-  }, [currentStep, stepStartedAt]);
+    const baseProgress = calculateStepProgress(currentStep, stepStartedAt);
+    
+    // Enhance with segment data for collecting_clips
+    if (currentStep === "collecting_clips" && segments.length > 0) {
+      const resolvedCount = segments.filter(s => s.status === "resolved" || s.status === "skipped").length;
+      const resolvingIndex = segments.findIndex(s => s.status === "resolving");
+      const currentIndex = resolvingIndex >= 0 ? resolvingIndex + 1 : resolvedCount + 1;
+      
+      // Calculate segment-based percent (0-50% range for collecting_clips)
+      const segmentPercent = segments.length > 0 
+        ? Math.round((resolvedCount / segments.length) * 50) 
+        : 0;
+      
+      return {
+        ...baseProgress,
+        percent: segmentPercent,
+        currentSegmentIndex: Math.min(currentIndex, segments.length),
+        totalSegments: segments.length,
+        segments,
+      };
+    }
+    
+    return baseProgress;
+  }, [currentStep, stepStartedAt, segments]);
   
   // Smooth animation of display progress toward target
   useEffect(() => {

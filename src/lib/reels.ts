@@ -698,6 +698,92 @@ export function getErrorMessage(renderError: string | null): string {
 }
 
 /**
+ * Moment type for display - derived from annotation_type
+ */
+export type MomentType = "Kill" | "Death" | "Highlight" | "Objective" | "Marker" | "Note";
+
+/**
+ * Segment status for tracking progress
+ */
+export type SegmentStatusType = "pending" | "resolving" | "resolved" | "failed" | "skipped";
+
+/**
+ * Full segment progress with instrumentation
+ */
+export interface SegmentProgressInfo {
+  segmentIndex: number;
+  momentId: string;
+  momentType: MomentType;
+  label: string;
+  momentTimestamp: string;
+  timestampSeconds: number;
+  intendedRangeMs: { startMs: number; endMs: number };
+  sourceRef: string | null;
+  status: SegmentStatusType;
+  errorReason?: string;
+}
+
+/**
+ * Map annotation type to display MomentType
+ */
+export function getDisplayMomentType(annotationType: string | null | undefined): MomentType {
+  switch (annotationType) {
+    case "kill":
+      return "Kill";
+    case "death":
+      return "Death";
+    case "highlight":
+      return "Highlight";
+    case "objective":
+      return "Objective";
+    case "note":
+      return "Note";
+    case "marker":
+    default:
+      return "Marker";
+  }
+}
+
+/**
+ * Build initial segment progress array from moment IDs and annotations
+ * All segments start as "pending"
+ */
+export function buildSegmentProgress(
+  momentIds: string[],
+  annotations: Array<{
+    id: string;
+    annotation_type?: string | null;
+    title?: string | null;
+    timestamp_seconds?: number;
+    end_timestamp_seconds?: number | null;
+  }>,
+  sessionId: string | null
+): SegmentProgressInfo[] {
+  return momentIds.map((momentId, index) => {
+    // Find the matching annotation
+    const annotation = annotations.find(a => a.id === momentId);
+    const momentType = getDisplayMomentType(annotation?.annotation_type);
+    const timestampSeconds = annotation?.timestamp_seconds ?? 0;
+    const endTimestampSeconds = annotation?.end_timestamp_seconds ?? timestampSeconds + 5; // Default 5s duration
+    
+    const startMs = Math.round(timestampSeconds * 1000);
+    const endMs = Math.round(endTimestampSeconds * 1000);
+    
+    return {
+      segmentIndex: index,
+      momentId,
+      momentType,
+      label: annotation?.title || `${momentType} at ${formatTimestamp(timestampSeconds)}`,
+      momentTimestamp: formatTimestamp(timestampSeconds),
+      timestampSeconds,
+      intendedRangeMs: { startMs, endMs },
+      sourceRef: sessionId,
+      status: "pending" as SegmentStatusType,
+    };
+  });
+}
+
+/**
  * Validate a single clip segment with timeout and full metadata
  */
 async function validateClipSegment(

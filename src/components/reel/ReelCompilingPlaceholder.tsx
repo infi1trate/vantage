@@ -131,8 +131,26 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
     return getErrorMessage(errorMessage ?? null);
   }, [errorMessage]);
 
-  // Use real progress from props (truthful)
-  const displayProgress = progress?.percent ?? 0;
+  // Calculate truthful progress based on resolved segments for collecting_clips
+  const segmentProgress = useMemo(() => {
+    if (!progress?.segments || progress.segments.length === 0) {
+      return { resolvedCount: 0, totalCount: 0, progressPercent: 0 };
+    }
+    const resolved = progress.segments.filter(s => s.status === "resolved" || s.status === "skipped").length;
+    const total = progress.segments.length;
+    // collecting_clips = 0-50%, so scale resolved/total to that range
+    const progressPercent = total > 0 ? Math.round((resolved / total) * 50) : 0;
+    return { resolvedCount: resolved, totalCount: total, progressPercent };
+  }, [progress?.segments]);
+  
+  // Use truthful progress: for collecting_clips, use segment-based progress
+  const displayProgress = useMemo(() => {
+    if (progress?.step === "collecting_clips" && segmentProgress.totalCount > 0) {
+      return segmentProgress.progressPercent;
+    }
+    return progress?.percent ?? 0;
+  }, [progress?.step, progress?.percent, segmentProgress.progressPercent, segmentProgress.totalCount]);
+  
   const currentStep = progress?.step ?? null;
   const activeStepIndex = getActiveStepFromStep(currentStep);
 
@@ -453,7 +471,16 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                                 : "text-muted-foreground"
                           )}>
                             {/* Show "Resolving clip X of Y" when actively collecting clips */}
-                            {isActive && step.id === "collecting_clips" && progress?.currentSegmentIndex !== undefined && progress?.totalSegments ? (
+                            {isActive && step.id === "collecting_clips" && segmentProgress.totalCount > 0 ? (
+                              <span>
+                                Resolving clip {segmentProgress.resolvedCount + 1} of {segmentProgress.totalCount}
+                                {segmentProgress.resolvedCount > 0 && (
+                                  <span className="text-vantage-success/80 ml-1">
+                                    ({segmentProgress.resolvedCount} done)
+                                  </span>
+                                )}
+                              </span>
+                            ) : isActive && step.id === "collecting_clips" && progress?.currentSegmentIndex !== undefined && progress?.totalSegments ? (
                               <span>Resolving clip {progress.currentSegmentIndex} of {progress.totalSegments}</span>
                             ) : (
                               step.label
