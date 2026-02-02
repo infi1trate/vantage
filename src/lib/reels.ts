@@ -16,6 +16,28 @@ export type AssemblyStep =
   | "finalizing_manifest"
   | "ready"
   | "failed";
+export type PlaybackMode = "preview" | "manifest";
+
+/**
+ * Manifest clip entry - ordered clip list with timing info
+ */
+export interface ManifestClip {
+  momentId: string;
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  order: number;
+}
+
+/**
+ * Reel manifest - complete playback specification
+ */
+export interface ReelManifest {
+  clips: ManifestClip[];
+  totalDurationMs: number;
+  aspectRatio: AspectRatio;
+  createdAt: string;
+}
 
 export interface Reel {
   id: string;
@@ -37,6 +59,11 @@ export interface Reel {
   assembly_step: AssemblyStep | null;
   step_started_at: string | null;
   step_completed_at: string | null;
+  // Manifest and playback
+  manifest: ReelManifest | null;
+  preview_ref: string | null;
+  playback_mode: PlaybackMode;
+  total_duration_ms: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +73,23 @@ export interface CreateReelInput {
   title?: string;
   aspectRatio: AspectRatio;
   momentIds: string[];
+}
+
+/**
+ * Convert raw Supabase row to typed Reel
+ * Handles JSON -> typed object conversion for manifest
+ */
+function toReel(row: unknown): Reel {
+  const r = row as Record<string, unknown>;
+  return {
+    ...r,
+    manifest: r.manifest as ReelManifest | null,
+    playback_mode: (r.playback_mode as PlaybackMode) || "preview",
+  } as Reel;
+}
+
+function toReelArray(rows: unknown[]): Reel[] {
+  return rows.map(toReel);
 }
 
 /**
@@ -87,7 +131,7 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
     .single();
 
   if (updateError) throw updateError;
-  return updatedData as Reel;
+  return toReel(updatedData);
 }
 
 /**
@@ -101,7 +145,7 @@ export async function getReel(reelId: string): Promise<Reel | null> {
     .maybeSingle();
 
   if (error) throw error;
-  return data as Reel | null;
+  return data ? toReel(data) : null;
 }
 
 /**
@@ -115,7 +159,7 @@ export async function getReelsForSession(sessionId: string): Promise<Reel[]> {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data || []) as Reel[];
+  return toReelArray(data || []);
 }
 
 /**
@@ -128,7 +172,7 @@ export async function getUserReels(): Promise<Reel[]> {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data || []) as Reel[];
+  return toReelArray(data || []);
 }
 
 /**
@@ -149,7 +193,7 @@ export async function updateReel(
     .single();
 
   if (error) throw error;
-  return data as Reel;
+  return toReel(data);
 }
 
 /**
@@ -181,7 +225,7 @@ export async function startReelRender(reelId: string): Promise<Reel> {
     .single();
 
   if (error) throw error;
-  return data as Reel;
+  return toReel(data);
 }
 
 /**
@@ -206,7 +250,7 @@ export async function completeReelRender(
     .single();
 
   if (error) throw error;
-  return data as Reel;
+  return toReel(data);
 }
 
 /**
@@ -279,5 +323,203 @@ export async function failReelRender(reelId: string, errorMessage: string): Prom
     .single();
 
   if (error) throw error;
-  return data as Reel;
+  return toReel(data);
+}
+
+/**
+ * Deterministic assembly result
+ */
+export interface AssemblyResult {
+  success: boolean;
+  reel: Reel | null;
+  error?: string;
+  previewAvailable: boolean;
+}
+
+/**
+ * Execute deterministic reel assembly
+ * 
+ * CRITICAL: This function ALWAYS ends with reel.status = "ready" or "failed"
+ * It wraps all steps in try/catch and ensures terminal state is set.
+ * 
+ * If preview rendering fails but manifest exists, we still mark ready with
+ * playback_mode = "manifest" to allow export to work.
+ */
+export async function executeAssembly(
+  reelId: string,
+  momentDurations: { momentId: string; durationMs: number }[]
+): Promise<AssemblyResult> {
+  const now = () => new Date().toISOString();
+  let previewAvailable = false;
+  
+  try {
+    console.log(`[Reels] Starting deterministic assembly for ${reelId}`);
+    
+    // STEP 1: Collecting clips
+    await updateAssemblyStep(reelId, "collecting_clips");
+    
+    // Build the manifest from moments
+    const clips: ManifestClip[] = momentDurations.map((m, index) => ({
+      momentId: m.momentId,
+      startMs: 0, // TODO: Calculate from annotation timestamps
+      endMs: m.durationMs,
+      durationMs: m.durationMs,
+      order: index,
+    }));
+    
+    const totalDurationMs = clips.reduce((sum, c) => sum + c.durationMs, 0);
+    
+    await completeAssemblyStep(reelId);
+    
+    // STEP 2: Stitching sequence
+    await updateAssemblyStep(reelId, "stitching_sequence", { completesPrevious: true });
+    
+    // Get current reel for aspect ratio
+    const currentReel = await getReel(reelId);
+    if (!currentReel) {
+      throw new Error("Reel not found during assembly");
+    }
+    
+    const manifest: ReelManifest = {
+      clips,
+      totalDurationMs,
+      aspectRatio: currentReel.aspect_ratio,
+      createdAt: now(),
+    };
+    
+    // Save manifest (serialize to JSON for Supabase)
+    await supabase
+      .from("reels")
+      .update({
+        manifest: JSON.parse(JSON.stringify(manifest)),
+        total_duration_ms: totalDurationMs,
+        duration_seconds: Math.round(totalDurationMs / 1000),
+        updated_at: now(),
+      })
+      .eq("id", reelId);
+    
+    await completeAssemblyStep(reelId);
+    
+    // STEP 3: Rendering preview
+    await updateAssemblyStep(reelId, "rendering_preview", { completesPrevious: true });
+    
+    // Attempt preview render (this may fail, which is recoverable)
+    try {
+      // TODO: Actual preview rendering logic
+      // For now, simulate with the session video as preview
+      if (currentReel.session_id) {
+        const { data: session } = await supabase
+          .from("capture_sessions")
+          .select("video_url")
+          .eq("id", currentReel.session_id)
+          .maybeSingle();
+        
+        if (session?.video_url) {
+          await supabase
+            .from("reels")
+            .update({
+              preview_ref: session.video_url,
+              preview_url: session.video_url, // Use session video as preview for now
+              playback_mode: "preview",
+              updated_at: now(),
+            })
+            .eq("id", reelId);
+          
+          previewAvailable = true;
+        }
+      }
+      
+      await completeAssemblyStep(reelId);
+    } catch (previewError) {
+      // Preview failed, but we can continue with manifest mode
+      console.warn(`[Reels] Preview render failed, falling back to manifest mode:`, previewError);
+      
+      await supabase
+        .from("reels")
+        .update({
+          preview_ref: null,
+          playback_mode: "manifest",
+          updated_at: now(),
+        })
+        .eq("id", reelId);
+      
+      previewAvailable = false;
+    }
+    
+    // STEP 4: Finalizing manifest
+    await updateAssemblyStep(reelId, "finalizing_manifest", { completesPrevious: true });
+    
+    // Validate required fields before marking ready
+    const finalReel = await getReel(reelId);
+    if (!finalReel?.manifest) {
+      throw new Error("Manifest is required but missing");
+    }
+    if (!finalReel.total_duration_ms || finalReel.total_duration_ms <= 0) {
+      throw new Error("Total duration is required but invalid");
+    }
+    
+    await completeAssemblyStep(reelId);
+    
+    // TERMINAL STATE: Ready
+    await updateAssemblyStep(reelId, "ready", { completesPrevious: true });
+    
+    const { data: readyReel, error: readyError } = await supabase
+      .from("reels")
+      .update({
+        status: "draft", // draft = ready for editing
+        assembly_step: "ready",
+        render_error: previewAvailable ? null : "Preview unavailable (export will still work)",
+        updated_at: now(),
+      })
+      .eq("id", reelId)
+      .select()
+      .single();
+    
+    if (readyError) throw readyError;
+    
+    console.log(`[Reels] Assembly complete for ${reelId}, preview: ${previewAvailable}`);
+    
+    return {
+      success: true,
+      reel: toReel(readyReel),
+      previewAvailable,
+    };
+    
+  } catch (error) {
+    // TERMINAL STATE: Failed
+    console.error(`[Reels] Assembly failed for ${reelId}:`, error);
+    
+    const errorMessage = error instanceof Error ? error.message : "Assembly failed unexpectedly";
+    
+    try {
+      await updateAssemblyStep(reelId, "failed");
+      
+      const { data: failedReel } = await supabase
+        .from("reels")
+        .update({
+          status: "failed",
+          assembly_step: "failed",
+          render_error: errorMessage,
+          updated_at: now(),
+        })
+        .eq("id", reelId)
+        .select()
+        .single();
+      
+      return {
+        success: false,
+        reel: failedReel ? toReel(failedReel) : null,
+        error: errorMessage,
+        previewAvailable: false,
+      };
+    } catch (updateError) {
+      console.error(`[Reels] Failed to update failure state:`, updateError);
+      return {
+        success: false,
+        reel: null,
+        error: errorMessage,
+        previewAvailable: false,
+      };
+    }
+  }
 }
