@@ -577,15 +577,18 @@ export interface ClipValidationError {
     | "invalid_moment_id"
     | "invalid_duration"
     | "video_not_ready"
+    | "asset_not_ready"
     | "unknown";
   /** Human-readable description */
   description: string;
+  /** Asset status when reason is asset_not_ready */
+  assetStatus?: "no_video" | "processing" | "timeout" | "not_found" | "error";
 }
 
 /**
  * User-friendly reason labels for clip validation errors
  */
-export type ErrorCategory = "video_not_ready" | "invalid_range" | "missing_source" | "other";
+export type ErrorCategory = "video_not_ready" | "invalid_range" | "missing_source" | "asset_not_ready" | "other";
 
 /**
  * Get error category from clip validation error reason
@@ -595,6 +598,8 @@ export function getErrorCategory(reason: ClipValidationError["reason"]): ErrorCa
     case "video_not_ready":
     case "timeout_resolving_source":
       return "video_not_ready";
+    case "asset_not_ready":
+      return "asset_not_ready";
     case "invalid_range":
     case "invalid_duration":
       return "invalid_range";
@@ -615,6 +620,8 @@ export function getReasonLabel(reason: ClipValidationError["reason"]): string {
     case "video_not_ready":
     case "timeout_resolving_source":
       return "Video not ready yet";
+    case "asset_not_ready":
+      return "Session video unavailable";
     case "invalid_range":
     case "invalid_duration":
       return "Clip range invalid";
@@ -632,19 +639,79 @@ export function getReasonLabel(reason: ClipValidationError["reason"]): string {
  */
 export function getPrimaryCtaConfig(reason: ClipValidationError["reason"]): {
   label: string;
-  action: "wait_retry" | "auto_fix" | "skip_clip";
-  icon: "clock" | "wand" | "skip";
+  action: "wait_retry" | "auto_fix" | "skip_clip" | "check_session";
+  icon: "clock" | "wand" | "skip" | "search";
 } {
   const category = getErrorCategory(reason);
   switch (category) {
     case "video_not_ready":
       return { label: "Wait and try again", action: "wait_retry", icon: "clock" };
+    case "asset_not_ready":
+      return { label: "Check session video", action: "check_session", icon: "search" };
     case "invalid_range":
       return { label: "Auto-fix clip", action: "auto_fix", icon: "wand" };
     case "missing_source":
       return { label: "Skip clip & continue", action: "skip_clip", icon: "skip" };
     default:
       return { label: "Skip clip & continue", action: "skip_clip", icon: "skip" };
+  }
+}
+
+/**
+ * Structured content for asset_not_ready errors based on assetStatus
+ */
+export interface AssetErrorContent {
+  title: string;
+  body: string;
+  primaryCta: { label: string; action: "check_session" | "wait_retry" | "leave_notify" | "back_to_session" };
+  secondaryCta: { label: string; action: "leave_notify" | "back_to_session" };
+  tertiaryCta?: { label: string; action: "back_to_session" | "retry" };
+}
+
+/**
+ * Get human-friendly content for asset_not_ready errors
+ */
+export function getAssetErrorContent(assetStatus?: ClipValidationError["assetStatus"]): AssetErrorContent {
+  switch (assetStatus) {
+    case "no_video":
+      return {
+        title: "We can't find the session video yet",
+        body: "This session doesn't have a usable gameplay recording available right now. Once the video is ready, we can assemble your reel.",
+        primaryCta: { label: "Check session video", action: "check_session" },
+        secondaryCta: { label: "Leave and notify me", action: "leave_notify" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+      };
+    case "processing":
+      return {
+        title: "Session video is still processing",
+        body: "Your gameplay recording is being prepared. This usually takes a few moments. You can wait here or we'll let you know when it's ready.",
+        primaryCta: { label: "Wait and try again", action: "wait_retry" },
+        secondaryCta: { label: "Leave and notify me", action: "leave_notify" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+      };
+    case "timeout":
+      return {
+        title: "Taking longer than expected",
+        body: "The session video is taking a while to become available. You can continue waiting or check back later.",
+        primaryCta: { label: "Wait and try again", action: "wait_retry" },
+        secondaryCta: { label: "Leave and notify me", action: "leave_notify" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+      };
+    case "not_found":
+      return {
+        title: "Session not found",
+        body: "We couldn't locate this session. It may have been deleted or is no longer available.",
+        primaryCta: { label: "Back to session", action: "back_to_session" },
+        secondaryCta: { label: "Back to session", action: "back_to_session" },
+      };
+    case "error":
+    default:
+      return {
+        title: "Something went wrong",
+        body: "We ran into an issue checking the session video. Please try again or go back to the session.",
+        primaryCta: { label: "Try again", action: "wait_retry" },
+        secondaryCta: { label: "Back to session", action: "back_to_session" },
+      };
   }
 }
 
@@ -711,6 +778,8 @@ export function parseClipValidationError(renderError: string | null): ClipValida
   
   try {
     const parsed = JSON.parse(renderError);
+    
+    // Check for standard clip error format
     if (parsed.failingMomentId && parsed.failingMomentLabel !== undefined) {
       return {
         index: parsed.index ?? 0,
@@ -719,6 +788,20 @@ export function parseClipValidationError(renderError: string | null): ClipValida
         timestampSeconds: parsed.failingMomentTimestamp ?? 0,
         reason: parsed.reason || "unknown",
         description: parsed.description || "Unknown error",
+        assetStatus: parsed.assetStatus,
+      };
+    }
+    
+    // Check for asset_not_ready format (from waiting_for_source state)
+    if (parsed.reason === "asset_not_ready" && parsed.assetStatus) {
+      return {
+        index: 0,
+        momentId: "session",
+        momentLabel: "Session",
+        timestampSeconds: 0,
+        reason: "asset_not_ready",
+        description: parsed.description || "Asset not ready",
+        assetStatus: parsed.assetStatus as ClipValidationError["assetStatus"],
       };
     }
   } catch {

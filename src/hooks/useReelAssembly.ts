@@ -469,7 +469,7 @@ export function useReelAssembly(
     
     // Derive short reason from clip error if available
     let shortReason = "Assembly failed";
-    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other" = "other";
+    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "asset_not_ready" | "timeout" | "other" = "other";
     
     if (clipError) {
       errorCat = getErrorCategory(clipError.reason);
@@ -494,7 +494,7 @@ export function useReelAssembly(
     // Derive short reason from clip error or use generic timeout message
     let shortReason = "Taking longer than expected";
     let primaryCtaAction: RenderJobCtaAction = "fix";
-    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other" = "timeout";
+    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "asset_not_ready" | "timeout" | "other" = "timeout";
     
     if (clipError) {
       errorCat = getErrorCategory(clipError.reason);
