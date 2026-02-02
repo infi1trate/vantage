@@ -661,7 +661,135 @@ export function getPrimaryCtaConfig(reason: ClipValidationError["reason"]): {
 }
 
 /**
+ * Session gameplay video status values
+ * 
+ * This is the canonical state model for session video availability:
+ * - "processing": video expected soon (expected to become ready)
+ * - "ready": video available for playback
+ * - "failed": attempted processing but failed (has lastError)
+ * - "missing": no recording exists
+ * - "unknown": default when status not explicitly set
+ */
+export type GameplayVideoStatus = "processing" | "ready" | "failed" | "missing" | "unknown";
+
+/**
+ * Map AssetReadinessStatus to GameplayVideoStatus
+ */
+export function toGameplayVideoStatus(assetStatus?: string | null): GameplayVideoStatus {
+  switch (assetStatus) {
+    case "ready":
+      return "ready";
+    case "processing":
+    case "uploading":
+    case "timeout":
+      return "processing";
+    case "failed":
+    case "error":
+      return "failed";
+    case "no_video":
+    case "not_found":
+      return "missing";
+    default:
+      return "unknown";
+  }
+}
+
+/**
+ * Structured content for blocked reel editor based on gameplay video status
+ * 
+ * Asset states mapped to UI:
+ * A) processing/unknown: video expected → offer "Leave and notify me"
+ * B) failed: processing failed → offer "Retry processing"
+ * C) missing: no recording → offer "Check session video" + "Start new recording"
+ */
+export interface GameplayVideoContent {
+  title: string;
+  body: string;
+  primaryCta: { label: string; action: "leave_notify" | "retry_processing" | "check_session" };
+  secondaryCta: { label: string; action: "check_session" | "start_recording" };
+  tertiaryCta?: { label: string; action: "back_to_session" };
+  linkCta?: { label: string; action: "report_issue" };
+  /** Whether notification makes sense (video will eventually appear) */
+  canNotify: boolean;
+}
+
+/**
+ * Get UI content for blocked reel editor based on gameplay video status
+ * 
+ * Maps the canonical GameplayVideoStatus to user-facing copy and CTAs:
+ * 
+ * A) processing/unknown: "Session video is still getting ready"
+ *    - Primary: "Leave and notify me"
+ *    - Secondary: "Check session video"
+ *    - Tertiary: "Back to session"
+ * 
+ * B) failed: "Session video failed to process"
+ *    - Primary: "Retry processing"
+ *    - Secondary: "Check session video"
+ *    - Tertiary: "Back to session"
+ *    - Link: "Report issue"
+ * 
+ * C) missing: "Recording not available"
+ *    - Primary: "Check session video"
+ *    - Secondary: "Start a new recording"
+ *    - Link: "Report issue"
+ */
+export function getGameplayVideoContent(status: GameplayVideoStatus): GameplayVideoContent {
+  switch (status) {
+    // === A) PROCESSING / UNKNOWN: Video expected, can offer notification ===
+    case "processing":
+    case "unknown":
+      return {
+        title: "Session video is still getting ready",
+        body: "We'll assemble the reel as soon as gameplay video is available.",
+        primaryCta: { label: "Leave and notify me", action: "leave_notify" },
+        secondaryCta: { label: "Check session video", action: "check_session" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+        canNotify: true,
+      };
+    
+    // === B) FAILED: Processing failed, offer retry ===
+    case "failed":
+      return {
+        title: "Session video failed to process",
+        body: "We couldn't finalize the gameplay recording.",
+        primaryCta: { label: "Retry processing", action: "retry_processing" },
+        secondaryCta: { label: "Check session video", action: "check_session" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+        linkCta: { label: "Report issue", action: "report_issue" },
+        canNotify: false,
+      };
+    
+    // === C) MISSING: No recording exists ===
+    case "missing":
+      return {
+        title: "Recording not available",
+        body: "This session doesn't have a gameplay recording. The capture may have been interrupted or the file wasn't saved.",
+        primaryCta: { label: "Check session video", action: "check_session" },
+        secondaryCta: { label: "Start a new recording", action: "start_recording" },
+        linkCta: { label: "Report issue", action: "report_issue" },
+        canNotify: false,
+      };
+    
+    // === READY: Should not hit this path in blocked state ===
+    case "ready":
+    default:
+      // Fallback to processing-like behavior
+      return {
+        title: "Session video is still getting ready",
+        body: "We'll assemble the reel as soon as gameplay video is available.",
+        primaryCta: { label: "Leave and notify me", action: "leave_notify" },
+        secondaryCta: { label: "Check session video", action: "check_session" },
+        tertiaryCta: { label: "Back to session", action: "back_to_session" },
+        canNotify: true,
+      };
+  }
+}
+
+/**
  * Structured content for asset_not_ready errors based on assetStatus
+ * 
+ * @deprecated Use getGameplayVideoContent with GameplayVideoStatus instead
  * 
  * Asset states:
  * - processing: video expected soon (can offer "notify me")
@@ -672,8 +800,8 @@ export function getPrimaryCtaConfig(reason: ClipValidationError["reason"]): {
 export interface AssetErrorContent {
   title: string;
   body: string;
-  primaryCta: { label: string; action: "check_session" | "wait_retry" | "leave_notify" | "back_to_session" | "start_recording" };
-  secondaryCta: { label: string; action: "leave_notify" | "back_to_session" | "start_recording" | "report_issue" };
+  primaryCta: { label: string; action: "check_session" | "wait_retry" | "leave_notify" | "back_to_session" | "start_recording" | "retry_processing" };
+  secondaryCta: { label: string; action: "leave_notify" | "back_to_session" | "start_recording" | "report_issue" | "check_session" };
   tertiaryCta?: { label: string; action: "back_to_session" | "retry" | "report_issue" };
   /** Whether notification makes sense (video will eventually appear) */
   canNotify: boolean;
@@ -682,65 +810,31 @@ export interface AssetErrorContent {
 /**
  * Get human-friendly content for asset_not_ready errors
  * 
- * Split logic:
- * - processing/timeout: video expected → offer "Leave and notify me"
- * - no_video/not_found/error: video missing permanently → offer "Back to session" + "Start new recording"
+ * Maps legacy assetStatus to the new GameplayVideoStatus model
  */
 export function getAssetErrorContent(assetStatus?: ClipValidationError["assetStatus"]): AssetErrorContent {
-  switch (assetStatus) {
-    // === PROCESSING STATES: Video will eventually be ready ===
-    case "processing":
-      return {
-        title: "Session video is still processing",
-        body: "Your gameplay recording is being prepared. This usually takes a few moments. You can wait here or we'll let you know when it's ready.",
-        primaryCta: { label: "Wait and try again", action: "wait_retry" },
-        secondaryCta: { label: "Leave and notify me", action: "leave_notify" },
-        tertiaryCta: { label: "Back to session", action: "back_to_session" },
-        canNotify: true,
-      };
-    case "timeout":
-      // Timeout during processing - still expect video eventually
-      return {
-        title: "Taking longer than expected",
-        body: "The session video is taking a while to become available. You can continue waiting or check back later — we'll notify you when it's ready.",
-        primaryCta: { label: "Wait and try again", action: "wait_retry" },
-        secondaryCta: { label: "Leave and notify me", action: "leave_notify" },
-        tertiaryCta: { label: "Back to session", action: "back_to_session" },
-        canNotify: true,
-      };
-
-    // === MISSING/FAILED STATES: Video won't appear ===
-    case "no_video":
-      // No video file exists - cannot promise notification
-      return {
-        title: "Recording not available",
-        body: "This session doesn't have a gameplay recording. The capture may have been interrupted or the file wasn't saved.",
-        primaryCta: { label: "Back to session", action: "back_to_session" },
-        secondaryCta: { label: "Start a new recording", action: "start_recording" },
-        tertiaryCta: { label: "Report issue", action: "report_issue" },
-        canNotify: false,
-      };
-    case "not_found":
-      // Session itself is gone
-      return {
-        title: "Session not found",
-        body: "We couldn't locate this session. It may have been deleted or is no longer available.",
-        primaryCta: { label: "Back to session", action: "back_to_session" },
-        secondaryCta: { label: "Start a new recording", action: "start_recording" },
-        canNotify: false,
-      };
-    case "error":
-    default:
-      // Processing failed or unknown error
-      return {
-        title: "Recording failed",
-        body: "We ran into an issue with the session video. You can check the session details or start a new recording.",
-        primaryCta: { label: "Back to session", action: "back_to_session" },
-        secondaryCta: { label: "Start a new recording", action: "start_recording" },
-        tertiaryCta: { label: "Report issue", action: "report_issue" },
-        canNotify: false,
-      };
-  }
+  // Map legacy assetStatus to new GameplayVideoStatus
+  const gameplayStatus = toGameplayVideoStatus(assetStatus);
+  const content = getGameplayVideoContent(gameplayStatus);
+  
+  // Convert to legacy AssetErrorContent format for backward compatibility
+  return {
+    title: content.title,
+    body: content.body,
+    primaryCta: { 
+      label: content.primaryCta.label, 
+      action: content.primaryCta.action as AssetErrorContent["primaryCta"]["action"]
+    },
+    secondaryCta: { 
+      label: content.secondaryCta.label, 
+      action: content.secondaryCta.action as AssetErrorContent["secondaryCta"]["action"]
+    },
+    tertiaryCta: content.tertiaryCta ? {
+      label: content.tertiaryCta.label,
+      action: content.tertiaryCta.action,
+    } : undefined,
+    canNotify: content.canNotify,
+  };
 }
 
 /**

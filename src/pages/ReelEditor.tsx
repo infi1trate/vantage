@@ -44,7 +44,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
-import { ReelStatus, PreviewStatus, retryPreviewGeneration, getEffectivePlaybackMode, hasPlaybackAvailable } from "@/lib/reels";
+import { ReelStatus, PreviewStatus, retryPreviewGeneration, getEffectivePlaybackMode, hasPlaybackAvailable, GameplayVideoStatus } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ReelEditor() {
@@ -343,6 +343,70 @@ export default function ReelEditor() {
       setIsRetrying(false);
     }
   }, [assemblyState]);
+  
+  // Retry processing handler - triggers reprocessing of the session video
+  const handleRetryProcessing = useCallback(async () => {
+    if (!reel?.session_id) {
+      toast.error("No session to retry processing");
+      return;
+    }
+    
+    try {
+      // Update session status to trigger reprocessing
+      const { error } = await supabase
+        .from("capture_sessions")
+        .update({
+          status: "processing",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reel.session_id);
+      
+      if (error) throw error;
+      
+      toast.info("Retrying video processing...", {
+        description: "This may take a few moments.",
+        duration: 5000,
+      });
+      
+      // Retry assembly after triggering reprocessing
+      await assemblyState.retry();
+    } catch (err) {
+      console.error("Failed to retry processing:", err);
+      toast.error("Failed to retry processing");
+    }
+  }, [reel?.session_id, assemblyState]);
+  
+  // Determine gameplay video status from session data and editor state
+  // This provides the correct UI content in the waiting_for_source state
+  const gameplayVideoStatus = useMemo((): GameplayVideoStatus => {
+    // Check session data for explicit status
+    if (sessionData?.videoUrl) {
+      return "ready"; // Have video URL = ready
+    }
+    
+    // Check assembly error for asset-related issues
+    if (assemblyState.error) {
+      const errorLower = assemblyState.error.toLowerCase();
+      if (errorLower.includes("failed") || errorLower.includes("error")) {
+        return "failed";
+      }
+      if (errorLower.includes("missing") || errorLower.includes("not found") || errorLower.includes("no video")) {
+        return "missing";
+      }
+    }
+    
+    // Default based on editor state
+    if (editorState.state === "waiting_for_source") {
+      return "processing"; // Assume processing if waiting
+    }
+    if (editorState.state === "failed") {
+      return "failed";
+    }
+    if (editorState.state === "ready") {
+      return "ready";
+    }
+    return "unknown";
+  }, [sessionData?.videoUrl, assemblyState.error, editorState.state]);
 
   // Skip failing clip and retry assembly
   const handleSkipClip = useCallback(async (momentId: string) => {
@@ -531,6 +595,7 @@ export default function ReelEditor() {
                   isFailed={editorState.state === "failed"}
                   isNeedsAttention={editorState.state === "needs_attention"}
                   isWaitingForSource={editorState.state === "waiting_for_source"}
+                  gameplayVideoStatus={gameplayVideoStatus}
                   errorMessage={reel.render_error || assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
@@ -561,6 +626,7 @@ export default function ReelEditor() {
                       duration: 5000,
                     });
                   }}
+                  onRetryProcessing={handleRetryProcessing}
                   onSkipClip={handleSkipClip}
                   // Truthful progress from assembly hook
                   progress={assemblyState.progress}
