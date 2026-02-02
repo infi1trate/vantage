@@ -16,6 +16,7 @@ import { ProcessingJob, ProcessingStatus } from "./processingJobs";
 // ============= Render Job Types =============
 
 export type RenderJobType = 
+  | "reel_assembly"        // Initial reel assembly (stitching clips)
   | "composite_reel"       // Full reel compositing with effects
   | "apply_effects"        // Apply VFX/SFX to session
   | "generate_package"     // Generate intro/outro/transitions
@@ -23,6 +24,9 @@ export type RenderJobType =
   | "export_platform";     // Export for platform upload
 
 export type RenderStageId = 
+  | "collecting"           // Collecting clips for reel assembly
+  | "stitching"            // Stitching sequence together
+  | "preparing_preview"    // Preparing preview for playback
   | "validating"
   | "loading_assets"
   | "compositing_overlays"
@@ -52,6 +56,11 @@ export interface RenderJob {
   sessionId: string;
   sessionTitle: string;
   reelId?: string;
+  reelTitle?: string;
+  
+  // Reel assembly metadata
+  aspectRatio?: string;     // "16:9" | "9:16" | "1:1"
+  clipCount?: number;       // Number of clips being assembled
   
   // Input metadata references
   frameOverlayId?: string;
@@ -89,6 +98,12 @@ export interface RenderJob {
 }
 
 // ============= Stage Definitions =============
+
+const REEL_ASSEMBLY_STAGES: Omit<RenderStage, "status" | "progress">[] = [
+  { id: "collecting", label: "Collecting clips" },
+  { id: "stitching", label: "Stitching sequence" },
+  { id: "preparing_preview", label: "Preparing preview" },
+];
 
 const REEL_COMPOSITE_STAGES: Omit<RenderStage, "status" | "progress">[] = [
   { id: "validating", label: "Validating assets" },
@@ -135,6 +150,7 @@ const PLATFORM_EXPORT_STAGES: Omit<RenderStage, "status" | "progress">[] = [
 
 function getStagesForType(type: RenderJobType): RenderStage[] {
   const templates = {
+    reel_assembly: REEL_ASSEMBLY_STAGES,
     composite_reel: REEL_COMPOSITE_STAGES,
     apply_effects: EFFECT_APPLICATION_STAGES,
     generate_package: PACKAGE_GENERATION_STAGES,
@@ -220,6 +236,9 @@ export function createRenderJob(params: {
   sessionId: string;
   sessionTitle: string;
   reelId?: string;
+  reelTitle?: string;
+  aspectRatio?: string;
+  clipCount?: number;
   frameOverlayId?: string;
   effectEventIds?: string[];
   reelPackageConfigId?: string;
@@ -235,6 +254,9 @@ export function createRenderJob(params: {
     sessionId: params.sessionId,
     sessionTitle: params.sessionTitle,
     reelId: params.reelId,
+    reelTitle: params.reelTitle,
+    aspectRatio: params.aspectRatio,
+    clipCount: params.clipCount,
     frameOverlayId: params.frameOverlayId,
     effectEventIds: params.effectEventIds,
     reelPackageConfigId: params.reelPackageConfigId,
@@ -254,6 +276,14 @@ export function createRenderJob(params: {
   saveRenderJobs(jobs);
   
   return job;
+}
+
+/**
+ * Get reel assembly job by reelId (to check if one already exists)
+ */
+export function getReelAssemblyJob(reelId: string): RenderJob | null {
+  const jobs = loadRenderJobs();
+  return jobs.find(j => j.reelId === reelId && j.type === "reel_assembly") || null;
 }
 
 /**

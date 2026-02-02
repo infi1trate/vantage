@@ -10,6 +10,7 @@ import { ProcessingProvider } from "@/contexts/ProcessingContext";
 import { RouteErrorFallback } from "@/components/ErrorBoundary";
 import { DevPerfOverlay } from "@/components/dev/DevPerfOverlay";
 import { ProcessingFooter } from "@/components/processing/ProcessingFooter";
+import { RenderQueueFooter } from "@/components/processing/RenderQueueFooter";
 import { Loader2 } from "lucide-react";
 import ExtensionAuth from "./pages/ExtensionAuth";
 
@@ -85,6 +86,8 @@ const App = () => (
             <RouterProvider router={router} />
             {/* Background processing footer - shows active jobs */}
             <ProcessingFooter />
+            {/* Render queue footer - shows reel assembly, export, and rendering jobs */}
+            <RenderQueueFooter />
             {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
             <DevPerfOverlay />
           </TooltipProvider>

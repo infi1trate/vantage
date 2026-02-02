@@ -40,6 +40,9 @@ interface UseRenderQueueResult {
     sessionId: string;
     sessionTitle: string;
     reelId?: string;
+    reelTitle?: string;
+    aspectRatio?: string;
+    clipCount?: number;
     frameOverlayId?: string;
     effectEventIds?: string[];
     reelPackageConfigId?: string;
