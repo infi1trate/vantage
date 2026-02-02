@@ -2,13 +2,13 @@
  * Player with Effects Integration
  * 
  * Wrapper component that adds effects tray and lane to the CinematicPlayer.
- * Provides full drag-and-drop VFX/SFX functionality.
+ * Provides full drag-and-drop VFX/SFX functionality with smart pairing and AI suggestions.
  */
 
 import { memo, useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { CinematicPlayer, VideoDecodeError, VideoMetaInfo, SelectionState } from "./CinematicPlayer";
-import { EffectsTray, EffectsLane, SnapSettings } from "./effects";
+import { EffectsTray, EffectsLane, AutoEnhanceModal, SnapSettings } from "./effects";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { Annotation, VoiceNote } from "@/lib/captures";
 import { AnnotationSuggestion } from "./SuggestionMarkers";
@@ -71,6 +71,7 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
   showEffects = false,
 }: PlayerWithEffectsProps) {
   const [effectsTrayOpen, setEffectsTrayOpen] = useState(false);
+  const [showAutoEnhance, setShowAutoEnhance] = useState(false);
   
   // Effects timeline state
   const {
@@ -88,11 +89,22 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
     canRedo,
     undo,
     redo,
+    proposedEffects,
+    isAutoEnhancing,
+    generateSuggestions,
+    applyProposedEffects,
+    applyAllProposedEffects,
   } = useEffectsTimeline({
     sessionId,
     annotations,
     duration,
   });
+
+  // Handle Auto-enhance button click
+  const handleAutoEnhance = useCallback(() => {
+    generateSuggestions();
+    setShowAutoEnhance(true);
+  }, [generateSuggestions]);
 
   // Handle global drag end
   useEffect(() => {
@@ -185,6 +197,21 @@ export const PlayerWithEffects = memo(function PlayerWithEffects({
           onSnapSettingsChange={setSnapSettings}
           hasAudioAnalysis={false} // TODO: Connect to audio analysis
           onDragStart={handleDragStart}
+          onAutoEnhance={handleAutoEnhance}
+          isAutoEnhancing={isAutoEnhancing}
+        />
+      )}
+
+      {/* Auto-enhance Modal */}
+      {showEffects && (
+        <AutoEnhanceModal
+          isOpen={showAutoEnhance}
+          onClose={() => setShowAutoEnhance(false)}
+          proposedEffects={proposedEffects}
+          isGenerating={isAutoEnhancing}
+          onRegenerate={generateSuggestions}
+          onApplySelected={applyProposedEffects}
+          onApplyAll={applyAllProposedEffects}
         />
       )}
     </div>

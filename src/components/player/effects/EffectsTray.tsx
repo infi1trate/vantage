@@ -2,6 +2,7 @@
  * Effects Tray Component
  * 
  * Collapsible tray with VFX/SFX tabs for dragging effects onto the timeline.
+ * Includes Auto-enhance button for AI suggestions.
  */
 
 import { useState, useCallback, memo } from "react";
@@ -20,6 +21,7 @@ import {
   Volume2,
   Magnet,
   Music,
+  Sparkles,
 } from "lucide-react";
 
 export interface SnapSettings {
@@ -35,6 +37,8 @@ interface EffectsTrayProps {
   onSnapSettingsChange: (settings: SnapSettings) => void;
   hasAudioAnalysis?: boolean;
   onDragStart: (e: React.DragEvent, effectKey: string, type: "vfx" | "sfx") => void;
+  onAutoEnhance?: () => void;
+  isAutoEnhancing?: boolean;
 }
 
 export const EffectsTray = memo(function EffectsTray({
@@ -45,6 +49,8 @@ export const EffectsTray = memo(function EffectsTray({
   onSnapSettingsChange,
   hasAudioAnalysis = false,
   onDragStart,
+  onAutoEnhance,
+  isAutoEnhancing = false,
 }: EffectsTrayProps) {
   const [activeTab, setActiveTab] = useState<"vfx" | "sfx">("vfx");
 
@@ -129,6 +135,20 @@ export const EffectsTray = memo(function EffectsTray({
                 </Label>
               </div>
             </div>
+
+            {/* Auto-enhance button */}
+            {onAutoEnhance && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={onAutoEnhance}
+                disabled={isAutoEnhancing}
+              >
+                <Sparkles className={cn("h-3 w-3", isAutoEnhancing && "animate-pulse")} />
+                Auto-enhance
+              </Button>
+            )}
           </div>
         )}
       </div>
