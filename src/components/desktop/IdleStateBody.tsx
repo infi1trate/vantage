@@ -331,8 +331,6 @@ export function IdleStateBody({
           }
           username={username}
           onSignOut={onSignOut}
-          onSettings={() => console.log("Settings clicked - stub")}
-          onHelp={() => console.log("Help clicked - stub")}
         />
       </div>
     </div>
