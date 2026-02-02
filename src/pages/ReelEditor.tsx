@@ -471,6 +471,12 @@ export default function ReelEditor() {
                     });
                     goBack();
                   }}
+                  debugData={{
+                    assemblyStep: (reel.assembly_step as import("@/components/reel/AssemblyDebugPanel").AssemblyStep) || null,
+                    stepStartedAt: reel.step_started_at || null,
+                    stepCompletedAt: reel.step_completed_at || null,
+                    reelUpdatedAt: reel.updated_at || null,
+                  }}
                 />
               ) : (
                 // Ready state - show player with effects

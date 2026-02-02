@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, X, ArrowLeft, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
 
 interface ReelCompilingPlaceholderProps {
   clipCount?: number;
@@ -30,6 +31,13 @@ interface ReelCompilingPlaceholderProps {
   onCancel?: () => void;
   /** Leave and notify handler - keeps job in background */
   onLeaveAndNotify?: () => void;
+  /** Debug instrumentation data */
+  debugData?: {
+    assemblyStep: AssemblyStep | null;
+    stepStartedAt: string | null;
+    stepCompletedAt: string | null;
+    reelUpdatedAt: string | null;
+  };
 }
 
 // Assembly steps configuration
@@ -59,6 +67,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   isRetrying = false,
   onCancel,
   onLeaveAndNotify,
+  debugData,
 }: ReelCompilingPlaceholderProps) {
   // Determine if we're in an error-like state (failed or needs attention)
   const hasIssue = isFailed || isNeedsAttention;
@@ -374,6 +383,16 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                 <p className="text-xs text-muted-foreground/70 text-center mt-2">
                   Running in background — you can leave this page, we'll keep working.
                 </p>
+                
+                {/* Debug panel - subtle instrumentation for dev visibility */}
+                {debugData && (
+                  <AssemblyDebugPanel
+                    currentStep={debugData.assemblyStep}
+                    stepStartedAt={debugData.stepStartedAt}
+                    stepCompletedAt={debugData.stepCompletedAt}
+                    reelUpdatedAt={debugData.reelUpdatedAt}
+                  />
+                )}
                 
                 {/* Cancel option */}
                 {onCancel && (

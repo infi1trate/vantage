@@ -1176,6 +1176,7 @@ export type Database = {
       reels: {
         Row: {
           aspect_ratio: string
+          assembly_step: string | null
           created_at: string
           duration_seconds: number | null
           id: string
@@ -1188,6 +1189,8 @@ export type Database = {
           session_id: string | null
           source_moment_ids: string[] | null
           status: string
+          step_completed_at: string | null
+          step_started_at: string | null
           thumbnail_url: string | null
           title: string
           updated_at: string
@@ -1195,6 +1198,7 @@ export type Database = {
         }
         Insert: {
           aspect_ratio?: string
+          assembly_step?: string | null
           created_at?: string
           duration_seconds?: number | null
           id?: string
@@ -1207,6 +1211,8 @@ export type Database = {
           session_id?: string | null
           source_moment_ids?: string[] | null
           status?: string
+          step_completed_at?: string | null
+          step_started_at?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
@@ -1214,6 +1220,7 @@ export type Database = {
         }
         Update: {
           aspect_ratio?: string
+          assembly_step?: string | null
           created_at?: string
           duration_seconds?: number | null
           id?: string
@@ -1226,6 +1233,8 @@ export type Database = {
           session_id?: string | null
           source_moment_ids?: string[] | null
           status?: string
+          step_completed_at?: string | null
+          step_started_at?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
