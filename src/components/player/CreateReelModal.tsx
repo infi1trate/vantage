@@ -52,6 +52,7 @@ import {
   startLegacyBackfill, 
   checkReelSourceReadiness,
 } from "@/lib/reelSource";
+import { useRefreshSessionMediaStatus } from "@/hooks/useSessionQueries";
 
 // ============= Reason-specific toast messages =============
 
@@ -778,6 +779,9 @@ function ReelCreatorContent({
   // State for legacy backfill preparation
   const [isPreparingLegacy, setIsPreparingLegacy] = useState(false);
   const [preparationError, setPreparationError] = useState<string | null>(null);
+  
+  // Hook to refresh session media status before eligibility check
+  const refreshMediaStatus = useRefreshSessionMediaStatus();
 
   const handleGenerate = useCallback(async () => {
     if (selectedMoments.length === 0) {
@@ -789,7 +793,13 @@ function ReelCreatorContent({
     setPreparationError(null);
     
     try {
-      // 1) Check current ReelSource readiness
+      // 0) Refresh session media status to ensure we have fresh data
+      // This ensures Session Media and Create Reel see the same state
+      console.log("[CreateReel] Refreshing session media status...");
+      const freshMediaStatus = await refreshMediaStatus(sessionId);
+      console.log("[CreateReel] Fresh media status:", freshMediaStatus);
+      
+      // 1) Check current ReelSource readiness (will also see fresh data)
       const readiness = await checkReelSourceReadiness(sessionId);
       
       // 2) If ready, proceed directly
@@ -871,7 +881,7 @@ function ReelCreatorContent({
       setIsPreparingLegacy(false);
       setIsGenerating(false);
     }
-  }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated, onViewSessionMedia]);
+  }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated, onViewSessionMedia, refreshMediaStatus]);
 
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
