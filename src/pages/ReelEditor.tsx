@@ -27,6 +27,7 @@ import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
 import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
+import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -481,26 +482,43 @@ export default function ReelEditor() {
               ) : (
                 // Ready state - show player with effects
                 // Uses previewSource which prioritizes reel.preview_url over session fallback
-                <PlayerWithEffects
-                  sessionId={reel.session_id || ""}
-                  videoUrl={previewSource.url}
-                  duration={duration}
-                  currentTime={currentTime}
-                  onTimeUpdate={handleTimeUpdate}
-                  onSeek={handleSeek}
-                  annotations={reelMoments}
-                  voiceNotes={[]}
-                  onVideoLoaded={handleVideoLoaded}
-                  showEffects={showEffects}
-                  externalEffectsState={{
-                    effects,
-                    isDragging,
-                    handleDrop,
-                    handleEffectUpdate,
-                    handleEffectDelete,
-                    handleEffectDuplicate,
-                  }}
-                />
+                <div className="h-full flex flex-col">
+                  {/* Show banner if preview unavailable (manifest mode) */}
+                  {reel.playback_mode === "manifest" && !reel.preview_url && (
+                    <PreviewUnavailableBanner
+                      className="mx-4 mt-4"
+                      onGeneratePreview={() => {
+                        toast.info("Generating preview...", {
+                          description: "This may take a moment.",
+                        });
+                        // TODO: Trigger preview generation
+                      }}
+                    />
+                  )}
+                  
+                  <div className="flex-1 min-h-0">
+                    <PlayerWithEffects
+                      sessionId={reel.session_id || ""}
+                      videoUrl={previewSource.url}
+                      duration={duration}
+                      currentTime={currentTime}
+                      onTimeUpdate={handleTimeUpdate}
+                      onSeek={handleSeek}
+                      annotations={reelMoments}
+                      voiceNotes={[]}
+                      onVideoLoaded={handleVideoLoaded}
+                      showEffects={showEffects}
+                      externalEffectsState={{
+                        effects,
+                        isDragging,
+                        handleDrop,
+                        handleEffectUpdate,
+                        handleEffectDelete,
+                        handleEffectDuplicate,
+                      }}
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>

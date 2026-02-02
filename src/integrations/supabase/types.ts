@@ -1180,8 +1180,11 @@ export type Database = {
           created_at: string
           duration_seconds: number | null
           id: string
+          manifest: Json | null
           output_file_size_bytes: number | null
           output_url: string | null
+          playback_mode: string | null
+          preview_ref: string | null
           preview_url: string | null
           render_completed_at: string | null
           render_error: string | null
@@ -1193,6 +1196,7 @@ export type Database = {
           step_started_at: string | null
           thumbnail_url: string | null
           title: string
+          total_duration_ms: number | null
           updated_at: string
           user_id: string
         }
@@ -1202,8 +1206,11 @@ export type Database = {
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          manifest?: Json | null
           output_file_size_bytes?: number | null
           output_url?: string | null
+          playback_mode?: string | null
+          preview_ref?: string | null
           preview_url?: string | null
           render_completed_at?: string | null
           render_error?: string | null
@@ -1215,6 +1222,7 @@ export type Database = {
           step_started_at?: string | null
           thumbnail_url?: string | null
           title?: string
+          total_duration_ms?: number | null
           updated_at?: string
           user_id: string
         }
@@ -1224,8 +1232,11 @@ export type Database = {
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          manifest?: Json | null
           output_file_size_bytes?: number | null
           output_url?: string | null
+          playback_mode?: string | null
+          preview_ref?: string | null
           preview_url?: string | null
           render_completed_at?: string | null
           render_error?: string | null
@@ -1237,6 +1248,7 @@ export type Database = {
           step_started_at?: string | null
           thumbnail_url?: string | null
           title?: string
+          total_duration_ms?: number | null
           updated_at?: string
           user_id?: string
         }
