@@ -36,6 +36,8 @@ export const sessionKeys = {
   audioTracks: (sessionId: string) => [...sessionKeys.all, "audioTracks", sessionId] as const,
   facecamTracks: (sessionId: string) => [...sessionKeys.all, "facecamTracks", sessionId] as const,
   timelineEvents: (sessionId: string) => [...sessionKeys.all, "timelineEvents", sessionId] as const,
+  // Combined session + media status query key for eligibility checks
+  mediaStatus: (sessionId: string) => [...sessionKeys.all, "mediaStatus", sessionId] as const,
 };
 
 // Stale time constants (in milliseconds)
@@ -44,6 +46,7 @@ const STALE_TIMES = {
   detail: 5 * 60 * 1000,    // 5 minutes for session details
   assets: 5 * 60 * 1000,    // 5 minutes for assets (rarely change)
   annotations: 30 * 1000,   // 30 seconds for annotations (may be actively edited)
+  mediaStatus: 10 * 1000,   // 10 seconds for media status (needs to be fresh for eligibility)
 } as const;
 
 /**
@@ -157,6 +160,126 @@ export function useTimelineEvents(sessionId: string | undefined) {
   });
 }
 
+// ==================== Session Media Status (for Reel Eligibility) ====================
+
+import { supabase } from "@/integrations/supabase/client";
+import { getReelSourceFromMetadata, ReelSource, ReelSourceStatus } from "@/lib/reelSource";
+
+/**
+ * Combined session media status - single source of truth for eligibility checks
+ */
+export interface SessionMediaStatus {
+  sessionId: string;
+  /** Whether gameplay video is present and ready */
+  hasGameplayReady: boolean;
+  /** Gameplay video status */
+  gameplayStatus: "ready" | "processing" | "uploading" | "failed" | "missing" | null;
+  /** Gameplay video URL (if ready) */
+  gameplayUrl: string | null;
+  /** Legacy video_url from session (fallback) */
+  legacyVideoUrl: string | null;
+  /** ReelSource status from metadata */
+  reelSourceStatus: ReelSourceStatus | null;
+  /** ReelSource data (if present) */
+  reelSource: ReelSource | null;
+  /** Session status */
+  sessionStatus: string | null;
+}
+
+/**
+ * Fetch session media status - combines session, video_assets, and ReelSource
+ * This is used for reel eligibility checks
+ */
+async function fetchSessionMediaStatus(sessionId: string): Promise<SessionMediaStatus> {
+  // Fetch session and gameplay asset in parallel
+  const [sessionResult, gameplayResult] = await Promise.all([
+    supabase
+      .from("capture_sessions")
+      .select("id, metadata, video_url, status")
+      .eq("id", sessionId)
+      .single(),
+    supabase
+      .from("video_assets")
+      .select("id, storage_url, status")
+      .eq("session_id", sessionId)
+      .eq("asset_type", "gameplay")
+      .maybeSingle(),
+  ]);
+
+  if (sessionResult.error || !sessionResult.data) {
+    console.error("[SessionMediaStatus] Failed to fetch session:", sessionResult.error);
+    return {
+      sessionId,
+      hasGameplayReady: false,
+      gameplayStatus: null,
+      gameplayUrl: null,
+      legacyVideoUrl: null,
+      reelSourceStatus: null,
+      reelSource: null,
+      sessionStatus: null,
+    };
+  }
+
+  const session = sessionResult.data;
+  const gameplayAsset = gameplayResult.data;
+  
+  // Extract ReelSource from metadata
+  const reelSource = getReelSourceFromMetadata(
+    session.metadata as Record<string, unknown>
+  );
+
+  // Determine gameplay status
+  const gameplayStatus = gameplayAsset?.status as SessionMediaStatus["gameplayStatus"] || null;
+  const hasGameplayReady = gameplayStatus === "ready" && !!gameplayAsset?.storage_url;
+
+  return {
+    sessionId,
+    hasGameplayReady,
+    gameplayStatus: gameplayAsset ? gameplayStatus : "missing",
+    gameplayUrl: gameplayAsset?.storage_url || null,
+    legacyVideoUrl: session.video_url,
+    reelSourceStatus: reelSource?.status || null,
+    reelSource,
+    sessionStatus: session.status,
+  };
+}
+
+/**
+ * Hook to fetch session media status with short stale time
+ * Used for reel eligibility checks - ensures fresh data
+ */
+export function useSessionMediaStatus(sessionId: string | undefined) {
+  return useQuery({
+    queryKey: sessionKeys.mediaStatus(sessionId || ""),
+    queryFn: () => fetchSessionMediaStatus(sessionId!),
+    enabled: !!sessionId,
+    staleTime: STALE_TIMES.mediaStatus,
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+  });
+}
+
+/**
+ * Hook to get a function that refreshes session media status
+ * Call this before eligibility checks to ensure fresh data
+ */
+export function useRefreshSessionMediaStatus() {
+  const queryClient = useQueryClient();
+  
+  return async (sessionId: string): Promise<SessionMediaStatus> => {
+    // Force refetch and wait for result
+    const result = await queryClient.fetchQuery({
+      queryKey: sessionKeys.mediaStatus(sessionId),
+      queryFn: () => fetchSessionMediaStatus(sessionId),
+      staleTime: 0, // Force fresh fetch
+    });
+    
+    // Also invalidate video assets cache to keep them in sync
+    queryClient.invalidateQueries({ queryKey: sessionKeys.videoAssets(sessionId) });
+    
+    return result;
+  };
+}
+
 /**
  * Hook to prefetch session detail and related data on hover.
  * Returns a function that can be called onMouseEnter/onPointerEnter.
@@ -212,6 +335,11 @@ export function useInvalidateSessions() {
     },
     invalidateAnnotations: (sessionId: string) => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.annotations(sessionId) });
+    },
+    invalidateMediaStatus: (sessionId: string) => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.mediaStatus(sessionId) });
+      // Also invalidate video assets to keep in sync
+      queryClient.invalidateQueries({ queryKey: sessionKeys.videoAssets(sessionId) });
     },
     invalidateAll: () => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });

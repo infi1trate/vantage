@@ -65,6 +65,7 @@ import {
   extractEligibilityInput,
   type ReelEligibilityResult,
 } from "@/lib/reelEligibility";
+import { useSessionMediaStatus, useInvalidateSessions } from "@/hooks/useSessionQueries";
 
 // Cloud session processing states that indicate ongoing work
 const CLOUD_PROCESSING_STATUSES = ["recording", "processing", "uploading"];
@@ -134,6 +135,10 @@ export default function SessionReview() {
   
   // Keyboard shortcuts overlay
   const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts();
+  
+  // React Query hook for session media status - ensures consistency with CreateReelModal
+  // Must be called unconditionally (before any early returns)
+  const { data: sessionMediaStatus } = useSessionMediaStatus(sessionId);
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -667,6 +672,68 @@ export default function SessionReview() {
       retryJob(processingJob.id);
     }
   }, [processingJob, retryJob]);
+  
+  // ============ REEL ELIGIBILITY (SINGLE SOURCE OF TRUTH) ============
+  // Compute before early returns to satisfy React hooks rules
+  // sessionMediaStatus is fetched at the top of the component via React Query
+  const reelEligibility: ReelEligibilityResult = useMemo(() => {
+    // Loading or no data yet = not eligible
+    if (authLoading || loading) {
+      return { ok: false, reasonCode: "unknown" as const };
+    }
+    
+    // Find gameplay asset from videoAssets
+    const gameplayAsset = videoAssets.find(v => v.asset_type === "gameplay");
+    
+    // Local sessions with video are always eligible
+    const isLocal = isLocalSession && localSession;
+    if (isLocal && localVideoUrl) {
+      return { ok: true };
+    }
+    
+    // No session data yet = not eligible
+    if (!session) {
+      return { ok: false, reasonCode: "unknown" as const };
+    }
+    
+    // PREFER React Query data if available (most fresh)
+    // This ensures SessionMediaPanel and CreateReelModal see the same state
+    if (sessionMediaStatus && !isLocal) {
+      const eligibilityInput = {
+        screenVideo: {
+          present: sessionMediaStatus.hasGameplayReady || !!sessionMediaStatus.gameplayUrl,
+          status: sessionMediaStatus.gameplayStatus || "missing",
+          url: sessionMediaStatus.gameplayUrl,
+        },
+        videoUrl: sessionMediaStatus.legacyVideoUrl,
+        sessionStatus: sessionMediaStatus.sessionStatus,
+        reelSourceStatus: sessionMediaStatus.reelSourceStatus,
+      };
+      return checkReelEligibility(eligibilityInput);
+    }
+    
+    // Fallback to local state (initial render before query returns)
+    const hasGameplayAsset = !!gameplayAsset;
+    const gameplayStatus = gameplayAsset?.status as "ready" | "processing" | "uploading" | "failed" | "missing" | null;
+    
+    const eligibilityInput = {
+      screenVideo: {
+        present: hasGameplayAsset,
+        status: hasGameplayAsset ? (gameplayStatus || "ready") : "missing",
+        url: gameplayAsset?.storage_url || null,
+      },
+      videoUrl: session.video_url,
+      sessionStatus: session.status,
+      // ReelSource status from metadata (if present)
+      reelSourceStatus: extractEligibilityInput({
+        video_url: session.video_url,
+        status: session.status,
+        metadata: session.metadata as Record<string, unknown> | null,
+      }).reelSourceStatus,
+    };
+    
+    return checkReelEligibility(eligibilityInput);
+  }, [authLoading, loading, videoAssets, isLocalSession, localSession, localVideoUrl, session, sessionMediaStatus]);
 
   if (authLoading || loading) {
     return (
@@ -705,42 +772,7 @@ export default function SessionReview() {
   // Determine if we can show the player
   const canShowPlayer = !isProcessing && !isProcessingFailed && !isNotStoredLocally && !isCloudProcessing && !isCloudFailed && videoUrl;
 
-  // ============ REEL ELIGIBILITY (SINGLE SOURCE OF TRUTH) ============
-  // Use centralized eligibility function for Create Reel button/action
-  const reelEligibility: ReelEligibilityResult = useMemo(() => {
-    // Local sessions with video are always eligible
-    if (isLocal && localVideoUrl) {
-      return { ok: true };
-    }
-    
-    // No session data yet = not eligible
-    if (!session) {
-      return { ok: false, reasonCode: "unknown" as const };
-    }
-    
-    // Use centralized eligibility check with extracted session data
-    // Also consider gameplay asset status
-    const hasGameplayAsset = !!gameplayAsset;
-    const gameplayStatus = gameplayAsset?.status as "ready" | "processing" | "uploading" | "failed" | "missing" | null;
-    
-    const eligibilityInput = {
-      screenVideo: {
-        present: hasGameplayAsset,
-        status: hasGameplayAsset ? (gameplayStatus || "ready") : "missing",
-        url: gameplayAsset?.storage_url || null,
-      },
-      videoUrl: session.video_url,
-      sessionStatus: session.status,
-      // ReelSource status from metadata (if present)
-      reelSourceStatus: extractEligibilityInput({
-        video_url: session.video_url,
-        status: session.status,
-        metadata: session.metadata as Record<string, unknown> | null,
-      }).reelSourceStatus,
-    };
-    
-    return checkReelEligibility(eligibilityInput);
-  }, [isLocal, localVideoUrl, session, gameplayAsset]);
+  // reelEligibility is computed before early returns (see above)
 
   const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
     blobType: gameplayAsset.mime_type || null,
