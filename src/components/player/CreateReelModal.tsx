@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { AspectRatio as AspectRatioContainer } from "@/components/ui/aspect-ratio";
+import { PageTransitionOverlay } from "@/components/reel/PageTransitionOverlay";
 
 interface CreateReelModalProps {
   open: boolean;
@@ -876,11 +877,23 @@ export function CreateReelModal({
     onOpenChange(false);
   }, [onOpenChange]);
 
+  // Transition state for smooth mode change
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [pendingReelId, setPendingReelId] = useState<string | null>(null);
+
   const handleReelCreated = useCallback((reelId: string) => {
-    // Close modal and navigate to Reel Editor
+    // Start transition overlay
+    setPendingReelId(reelId);
+    setIsTransitioning(true);
+    // Close modal immediately (will be hidden by overlay)
     onOpenChange(false);
-    navigate(`/reel/${reelId}`);
-  }, [onOpenChange, navigate]);
+  }, [onOpenChange]);
+
+  const handleTransitionComplete = useCallback(() => {
+    if (pendingReelId) {
+      navigate(`/reel/${pendingReelId}`);
+    }
+  }, [pendingReelId, navigate]);
 
   const title = "Create Reel";
 
@@ -897,31 +910,43 @@ export function CreateReelModal({
   // Use Drawer on mobile, Dialog on desktop
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="max-h-[90vh]">
-          <DrawerHeader className="pb-0">
-            <DrawerTitle className="flex items-center gap-2 text-base">
-              <Film className="h-5 w-5 text-primary" />
-              {title}
-            </DrawerTitle>
-          </DrawerHeader>
-          {content}
-        </DrawerContent>
-      </Drawer>
+      <>
+        <PageTransitionOverlay
+          isActive={isTransitioning}
+          onFadeInComplete={handleTransitionComplete}
+        />
+        <Drawer open={open} onOpenChange={onOpenChange}>
+          <DrawerContent className="max-h-[90vh]">
+            <DrawerHeader className="pb-0">
+              <DrawerTitle className="flex items-center gap-2 text-base">
+                <Film className="h-5 w-5 text-primary" />
+                {title}
+              </DrawerTitle>
+            </DrawerHeader>
+            {content}
+          </DrawerContent>
+        </Drawer>
+      </>
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0 gap-0">
-        <DialogHeader className="px-4 pt-4 pb-2">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Film className="h-5 w-5 text-primary" />
-            {title}
-          </DialogTitle>
-        </DialogHeader>
-        {content}
-      </DialogContent>
-    </Dialog>
+    <>
+      <PageTransitionOverlay
+        isActive={isTransitioning}
+        onFadeInComplete={handleTransitionComplete}
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md p-0 gap-0">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Film className="h-5 w-5 text-primary" />
+              {title}
+            </DialogTitle>
+          </DialogHeader>
+          {content}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
