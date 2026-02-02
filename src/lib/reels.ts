@@ -7,6 +7,19 @@
 
 import { supabase } from "@/integrations/supabase/client";
 
+// Re-export segment resolver as the single source of truth for moment → segment conversion
+export {
+  resolveSegmentFromMoment,
+  resolveAllSegments,
+  toMomentSegmentInputs,
+  formatTimestampSeconds,
+  getMomentType,
+  type ResolvedSegment,
+  type SegmentResolutionError,
+  type SegmentResolutionResult,
+  type MomentType as ResolverMomentType,
+} from "./segmentResolver";
+
 // NOTE: status is stored as text in the backend; we model the known states here.
 export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
 export type AspectRatio = "16:9" | "9:16" | "1:1";

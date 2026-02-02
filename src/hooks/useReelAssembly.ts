@@ -22,6 +22,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
+import { resolveAllSegments, toMomentSegmentInputs } from "@/lib/segmentResolver";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -730,49 +731,112 @@ export function useReelAssembly(
           return;
         }
         
-        // Get annotations to build moment inputs
-        const { data: annotations } = await supabase
-          .from("annotations")
-          .select("id, annotation_type, title, timestamp_seconds, end_timestamp_seconds")
-          .in("id", momentIds);
+        const sessionId = reel.session_id;
+        if (!sessionId) {
+          console.error("[ReelAssembly] No session ID for assembly");
+          setError("No session associated with this reel");
+          setState("needs_attention");
+          return;
+        }
         
-        // Build moment segment inputs with timing info
-        const moments: MomentSegmentInput[] = momentIds.map((momentId) => {
-          const annotation = annotations?.find(a => a.id === momentId);
-          const timestampSeconds = annotation?.timestamp_seconds ?? 0;
-          const endTimestampSeconds = annotation?.end_timestamp_seconds ?? timestampSeconds + 5;
-          const durationMs = (endTimestampSeconds - timestampSeconds) * 1000;
-          
-          return {
-            momentId,
-            durationMs: Math.max(durationMs, 1000),
-            startMs: Math.round(timestampSeconds * 1000),
-            endMs: Math.round(endTimestampSeconds * 1000),
-            label: annotation?.title || annotation?.annotation_type || "Clip",
-            timestampSeconds,
-          };
-        });
+        console.log("[ReelAssembly] Resolving segments using single source of truth resolver");
         
-        // Update segments state for UI tracking
-        const initialSegments: SegmentProgress[] = moments.map((m, idx) => ({
+        // Build initial pending state for UI
+        const initialSegments: SegmentProgress[] = momentIds.map((momentId, idx) => ({
           segmentIndex: idx,
-          momentId: m.momentId,
-          momentType: getMomentTypeFromLabel(m.label) as MomentType,
-          label: m.label || `Clip ${idx + 1}`,
-          momentTimestamp: formatMomentTimestamp(m.timestampSeconds ?? 0),
-          timestampSeconds: m.timestampSeconds ?? 0,
-          intendedRangeMs: {
-            startMs: m.startMs ?? 0,
-            endMs: m.endMs ?? (m.startMs ?? 0) + m.durationMs,
-          },
-          sourceRef: reel.session_id,
-          status: "pending",
+          momentId,
+          momentType: "Marker" as MomentType,
+          label: `Clip ${idx + 1}`,
+          momentTimestamp: "0:00",
+          timestampSeconds: 0,
+          intendedRangeMs: { startMs: 0, endMs: 5000 },
+          sourceRef: sessionId,
+          status: "pending" as const,
         }));
         setSegments(initialSegments);
         
-        console.log("[ReelAssembly] Starting assembly with", moments.length, "segments");
+        // Use the segment resolver as single source of truth
+        // This handles all moment → segment conversion with proper defaults and validation
+        const { segments: resolvedSegments, errors: resolutionErrors } = await resolveAllSegments(
+          sessionId,
+          momentIds,
+          5_000 // 5 second timeout per segment
+        );
         
-        // Execute assembly with proper timeouts
+        // Update segment state with results
+        const updatedSegments: SegmentProgress[] = momentIds.map((momentId, idx) => {
+          const resolved = resolvedSegments.find(s => s.momentId === momentId);
+          const error = resolutionErrors.find(e => e.momentId === momentId);
+          
+          if (resolved) {
+            return {
+              segmentIndex: idx,
+              momentId,
+              momentType: resolved.momentType as MomentType,
+              label: resolved.label,
+              momentTimestamp: resolved.momentTimestamp,
+              timestampSeconds: resolved.timestampSeconds,
+              intendedRangeMs: { startMs: resolved.startMs, endMs: resolved.endMs },
+              sourceRef: resolved.sourceVideoRef,
+              status: "resolved" as const,
+            };
+          } else if (error) {
+            return {
+              segmentIndex: idx,
+              momentId,
+              momentType: error.momentType as MomentType,
+              label: `${error.momentType} at ${error.momentTimestamp}`,
+              momentTimestamp: error.momentTimestamp,
+              timestampSeconds: error.timestampSeconds,
+              intendedRangeMs: { startMs: 0, endMs: 0 },
+              sourceRef: null,
+              status: "failed" as const,
+              errorReason: error.description,
+            };
+          }
+          return initialSegments[idx];
+        });
+        setSegments(updatedSegments);
+        
+        // Check for failures
+        if (resolutionErrors.length > 0) {
+          const firstError = resolutionErrors[0];
+          const errorMessage = `Can't access: ${firstError.momentType} at ${firstError.momentTimestamp}`;
+          console.warn("[ReelAssembly] Segment resolution failed:", errorMessage);
+          
+          setError(errorMessage);
+          setState("needs_attention");
+          if (renderJobIdRef.current) {
+            markJobNeedsAttention(errorMessage);
+          }
+          
+          // Update reel with error
+          await supabase
+            .from("reels")
+            .update({
+              status: "needs_attention",
+              render_error: JSON.stringify({
+                failingMomentId: firstError.momentId,
+                failingMomentLabel: firstError.momentType,
+                failingMomentTimestamp: firstError.timestampSeconds,
+                reason: firstError.reason,
+                description: firstError.description,
+              }),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", reelId);
+          
+          clearTimers();
+          queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+          return;
+        }
+        
+        // Convert resolved segments to MomentSegmentInput format
+        const moments = toMomentSegmentInputs(resolvedSegments);
+        
+        console.log("[ReelAssembly] Starting assembly with", moments.length, "resolved segments");
+        
+        // Execute assembly with the resolved segments
         const result = await executeAssembly(reelId, moments);
         
         if (!result.success) {
@@ -904,35 +968,104 @@ export function useReelAssembly(
       // This will run the actual assembly with per-segment and global timeouts
       const currentReelData = await getReel(reelId);
       const momentIds = currentReelData?.source_moment_ids || [];
+      const sessionId = currentReelData?.session_id;
       
       if (momentIds.length === 0) {
         throw new Error("No clips selected for assembly");
       }
       
-      // Get annotations to build moment inputs
-      const { data: annotations } = await supabase
-        .from("annotations")
-        .select("id, annotation_type, title, timestamp_seconds, end_timestamp_seconds")
-        .in("id", momentIds);
+      if (!sessionId) {
+        throw new Error("No session associated with this reel");
+      }
       
-      // Build moment segment inputs with timing info
-      const moments: MomentSegmentInput[] = momentIds.map((momentId, idx) => {
-        const annotation = annotations?.find(a => a.id === momentId);
-        const timestampSeconds = annotation?.timestamp_seconds ?? 0;
-        const endTimestampSeconds = annotation?.end_timestamp_seconds ?? timestampSeconds + 5;
-        const durationMs = (endTimestampSeconds - timestampSeconds) * 1000;
+      // Use segment resolver as single source of truth
+      console.log("[ReelAssembly] Resolving segments for retry using resolver");
+      const { segments: resolvedSegments, errors: resolutionErrors } = await resolveAllSegments(
+        sessionId,
+        momentIds,
+        5_000 // 5 second timeout per segment
+      );
+      
+      // Update segment state with results
+      const updatedSegments: SegmentProgress[] = momentIds.map((momentId, idx) => {
+        const resolved = resolvedSegments.find(s => s.momentId === momentId);
+        const error = resolutionErrors.find(e => e.momentId === momentId);
         
+        if (resolved) {
+          return {
+            segmentIndex: idx,
+            momentId,
+            momentType: resolved.momentType as MomentType,
+            label: resolved.label,
+            momentTimestamp: resolved.momentTimestamp,
+            timestampSeconds: resolved.timestampSeconds,
+            intendedRangeMs: { startMs: resolved.startMs, endMs: resolved.endMs },
+            sourceRef: resolved.sourceVideoRef,
+            status: "resolved" as const,
+          };
+        } else if (error) {
+          return {
+            segmentIndex: idx,
+            momentId,
+            momentType: error.momentType as MomentType,
+            label: `${error.momentType} at ${error.momentTimestamp}`,
+            momentTimestamp: error.momentTimestamp,
+            timestampSeconds: error.timestampSeconds,
+            intendedRangeMs: { startMs: 0, endMs: 0 },
+            sourceRef: null,
+            status: "failed" as const,
+            errorReason: error.description,
+          };
+        }
         return {
+          segmentIndex: idx,
           momentId,
-          durationMs: Math.max(durationMs, 1000), // Minimum 1 second
-          startMs: Math.round(timestampSeconds * 1000),
-          endMs: Math.round(endTimestampSeconds * 1000),
-          label: annotation?.title || annotation?.annotation_type || "Clip",
-          timestampSeconds,
+          momentType: "Marker" as MomentType,
+          label: `Clip ${idx + 1}`,
+          momentTimestamp: "0:00",
+          timestampSeconds: 0,
+          intendedRangeMs: { startMs: 0, endMs: 0 },
+          sourceRef: null,
+          status: "pending" as const,
         };
       });
+      setSegments(updatedSegments);
       
-      console.log("[ReelAssembly] Executing assembly with", moments.length, "moments");
+      // Check for failures in resolution
+      if (resolutionErrors.length > 0) {
+        const firstError = resolutionErrors[0];
+        const errorMessage = `Can't access: ${firstError.momentType} at ${firstError.momentTimestamp}`;
+        console.warn("[ReelAssembly] Segment resolution failed on retry:", errorMessage);
+        
+        setError(errorMessage);
+        setState("needs_attention");
+        markJobNeedsAttention(errorMessage);
+        
+        await supabase
+          .from("reels")
+          .update({
+            status: "needs_attention",
+            render_error: JSON.stringify({
+              failingMomentId: firstError.momentId,
+              failingMomentLabel: firstError.momentType,
+              failingMomentTimestamp: firstError.timestampSeconds,
+              reason: firstError.reason,
+              description: firstError.description,
+            }),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", reelId);
+        
+        clearTimers();
+        assemblyStartRef.current = null;
+        queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+        return;
+      }
+      
+      // Convert resolved segments to MomentSegmentInput format
+      const moments = toMomentSegmentInputs(resolvedSegments);
+      
+      console.log("[ReelAssembly] Executing assembly with", moments.length, "resolved moments");
       
       // Execute assembly with per-segment (5s) and global (20s) timeouts
       // This will properly validate each segment and fail fast on issues
