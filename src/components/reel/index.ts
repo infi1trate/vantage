@@ -20,6 +20,7 @@ export { EditorStateBadge } from "./EditorStateBadge";
 export { PreviewUnavailableBanner } from "./PreviewUnavailableBanner";
 export { ManifestPlayer } from "./ManifestPlayer";
 export { AssemblyDebugPanel } from "./AssemblyDebugPanel";
+export { CaptureTipsModal } from "./CaptureTipsModal";
 
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";

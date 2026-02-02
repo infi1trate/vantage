@@ -708,7 +708,7 @@ export interface GameplayVideoContent {
   primaryCta: { label: string; action: "leave_notify" | "retry_processing" | "check_session" };
   secondaryCta: { label: string; action: "check_session" | "start_recording" };
   tertiaryCta?: { label: string; action: "back_to_session" };
-  linkCta?: { label: string; action: "report_issue" };
+  linkCta?: { label: string; action: "report_issue" | "show_capture_tips" };
   /** Whether notification makes sense (video will eventually appear) */
   canNotify: boolean;
 }
@@ -760,14 +760,14 @@ export function getGameplayVideoContent(status: GameplayVideoStatus): GameplayVi
         canNotify: false,
       };
     
-    // === C) MISSING: No recording exists ===
+    // === C) MISSING: No recording exists - SUPPORTIVE, NOT ACCUSATORY ===
     case "missing":
       return {
         title: "Recording not available",
-        body: "This session doesn't have a gameplay recording. The capture may have been interrupted or the file wasn't saved.",
+        body: "Sometimes gameplay capture can be interrupted. A fresh recording will get you back on track.",
         primaryCta: { label: "Check session video", action: "check_session" },
         secondaryCta: { label: "Start a new recording", action: "start_recording" },
-        linkCta: { label: "Report issue", action: "report_issue" },
+        linkCta: { label: "How to avoid this", action: "show_capture_tips" },
         canNotify: false,
       };
     
