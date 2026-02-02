@@ -13,6 +13,7 @@ export { ReelEffectsPanel } from "./ReelEffectsPanel";
 export { ReelEditorModeBanner } from "./ReelEditorModeBanner";
 export { ReelCompilationStatus } from "./ReelCompilationStatus";
 export { ReelCompilingPlaceholder } from "./ReelCompilingPlaceholder";
+export { ReelEditorIntroModal } from "./ReelEditorIntroModal";
 
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";
