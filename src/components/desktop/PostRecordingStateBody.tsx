@@ -60,7 +60,7 @@ export function PostRecordingStateBody({
             <Upload className="w-7 h-7 text-vantage-green" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">
-            Uploading to Vantage
+            Uploading recording
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
             {uploadProgress}% complete
