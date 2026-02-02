@@ -23,7 +23,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
 import { resolveAllSegments, toMomentSegmentInputs } from "@/lib/segmentResolver";
-import { waitForAssetReadiness, checkAssetReadiness, getAssetStatusMessage, AssetReadinessStatus } from "@/lib/assetReadiness";
+import { waitForAssetReadiness, checkAssetReadiness, getAssetStatusMessage, AssetReadinessStatus, watchForAssetReadiness, isPermanentFailure } from "@/lib/assetReadiness";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -513,6 +513,32 @@ export function useReelAssembly(
     });
   }, []);
   
+  // Mark job as waiting for source video
+  const markJobWaiting = useCallback((reason?: string) => {
+    if (!renderJobIdRef.current) return;
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "waiting",
+      shortReason: reason || "Waiting for session video…",
+      updatedAt: new Date().toISOString(),
+    });
+  }, []);
+  
+  // Mark job as permanent failure (no_video)
+  const markJobPermanentFailure = useCallback((reason: string) => {
+    if (!renderJobIdRef.current) return;
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "needs_attention",
+      errorMessage: reason,
+      shortReason: "This session has no gameplay video.",
+      primaryCtaLabel: "View Session",
+      primaryCtaAction: "fix",
+      errorCategory: "missing_source",
+      updatedAt: new Date().toISOString(),
+    });
+  }, []);
+  
   // Handle status/step update from any source
   const handleReelUpdate = useCallback((
     newStatus: ReelStatus,
@@ -788,15 +814,16 @@ export function useReelAssembly(
         
         // ============ ASSET READINESS GATE ============
         // Check if source video is ready before collecting clips
+        // Distinguish between recoverable (processing) vs permanent (no_video) failures
         console.log("[ReelAssembly] Checking asset readiness for session:", sessionId);
         
         const initialReadiness = await checkAssetReadiness(sessionId);
         
         if (initialReadiness.status !== "ready") {
-          // Video not ready yet - transition to waiting_for_source
-          console.log("[ReelAssembly] Video not ready, status:", initialReadiness.status);
+          console.log("[ReelAssembly] Video not ready, status:", initialReadiness.status, "recoverable:", initialReadiness.isRecoverable);
           
-          if (initialReadiness.status === "processing") {
+          if (initialReadiness.isRecoverable) {
+            // ===== RECOVERABLE: Video is processing/uploading =====
             // Update reel status and transition to waiting state
             await supabase
               .from("reels")
@@ -808,16 +835,19 @@ export function useReelAssembly(
             
             setState("waiting_for_source");
             
+            // Update queue job to show waiting status
+            ensureRenderJob();
+            markJobWaiting("Waiting for session video…");
+            
             // Poll for readiness with bounded wait (30s max)
             const readinessResult = await waitForAssetReadiness(sessionId, (progress) => {
               console.log(`[ReelAssembly] Waiting for source: ${progress.elapsedMs}ms/${progress.maxMs}ms (attempt ${progress.attempt})`);
-              // Could update UI progress here if needed
             });
             
             if (readinessResult.status !== "ready") {
-              // Timeout or permanent failure
+              // Timeout - keep waiting in background, user can "Leave and notify me"
               const errorMessage = getAssetStatusMessage(readinessResult.status);
-              console.warn("[ReelAssembly] Asset readiness timeout or failure:", readinessResult);
+              console.warn("[ReelAssembly] Asset readiness timeout, transitioning to needs_attention:", readinessResult);
               
               setError(errorMessage);
               setState("needs_attention");
@@ -830,15 +860,13 @@ export function useReelAssembly(
                     reason: "asset_not_ready",
                     description: errorMessage,
                     assetStatus: readinessResult.status,
+                    isRecoverable: readinessResult.isRecoverable,
                   }),
                   updated_at: new Date().toISOString(),
                 })
                 .eq("id", reelId);
               
-              if (renderJobIdRef.current) {
-                markJobNeedsAttention(errorMessage);
-              }
-              
+              markJobNeedsAttention(errorMessage);
               clearTimers();
               queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
               return;
@@ -857,9 +885,13 @@ export function useReelAssembly(
               .eq("id", reelId);
             
             setState("assembling");
+            updateJobProgress(0, 0);
           } else {
-            // Permanent failure (not_found, no_video, error)
-            const errorMessage = getAssetStatusMessage(initialReadiness.status);
+            // ===== PERMANENT FAILURE: no_video, not_found, failed =====
+            // Do NOT keep waiting - immediately mark as needs_attention
+            const errorMessage = "This session has no gameplay video.";
+            console.warn("[ReelAssembly] Permanent failure - video missing:", initialReadiness.status);
+            
             setError(errorMessage);
             setState("needs_attention");
             
@@ -871,7 +903,20 @@ export function useReelAssembly(
                   reason: "asset_not_ready",
                   description: errorMessage,
                   assetStatus: initialReadiness.status,
+                  isRecoverable: false,
                 }),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", reelId);
+            
+            ensureRenderJob();
+            markJobPermanentFailure(errorMessage);
+            
+            clearTimers();
+            queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+            return;
+          }
+        }
                 updated_at: new Date().toISOString(),
               })
               .eq("id", reelId);

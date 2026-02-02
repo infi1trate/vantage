@@ -24,7 +24,10 @@ export {
 export {
   checkAssetReadiness,
   waitForAssetReadiness,
+  watchForAssetReadiness,
   getAssetStatusMessage,
+  isRecoverableStatus,
+  isPermanentFailure,
   type AssetReadinessStatus,
   type AssetReadinessResult,
 } from "./assetReadiness";

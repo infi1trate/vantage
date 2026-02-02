@@ -14,6 +14,7 @@ export type ProcessingStatus =
   | "queued"           // Waiting to start
   | "processing"       // Currently processing
   | "uploading"        // Uploading to storage
+  | "waiting"          // Waiting for external dependency (e.g., source video)
   | "completed"        // Successfully finished
   | "failed"           // Error occurred
   | "needs_attention"  // Stalled or requires user action (e.g., timeout)
