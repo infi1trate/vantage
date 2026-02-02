@@ -514,6 +514,33 @@ export async function cancelAssemblyJob(reelId: string): Promise<void> {
   }
 }
 /**
+ * Structured error payload for assembly failures
+ * Stored in render_error as JSON for the UI to display actionable info
+ */
+export interface LastError {
+  /** User-friendly error message */
+  message: string;
+  /** Which assembly step failed */
+  step: AssemblyStep | "unknown";
+  /** Which segment index was being processed (0-based) */
+  segmentIndex?: number;
+  /** Which moment ID failed */
+  momentId?: string;
+  /** When the error occurred */
+  timestamp: string;
+  /** Stack trace (dev-only, stripped in production) */
+  stack?: string;
+  /** Machine-readable error code */
+  code?: 
+    | "clip_validation_failed"
+    | "clip_timeout"
+    | "manifest_write_failed"
+    | "session_not_found"
+    | "max_retries_exceeded"
+    | "unknown_error";
+}
+
+/**
  * Structured error payload for clip validation failures
  * This provides actionable information for the UI
  */
@@ -617,6 +644,57 @@ export function parseClipValidationError(renderError: string | null): ClipValida
   }
   
   return null;
+}
+
+/**
+ * Parse a LastError from the stored render_error JSON
+ * Returns null if not a structured LastError
+ */
+export function parseLastError(renderError: string | null): LastError | null {
+  if (!renderError) return null;
+  
+  try {
+    const parsed = JSON.parse(renderError);
+    // Check if it's a LastError (has message and timestamp fields)
+    if (parsed.message && parsed.timestamp) {
+      return {
+        message: parsed.message,
+        step: parsed.step || "unknown",
+        code: parsed.code,
+        segmentIndex: parsed.segmentIndex,
+        momentId: parsed.momentId,
+        timestamp: parsed.timestamp,
+        stack: parsed.stack,
+      };
+    }
+  } catch {
+    // Not JSON - it's a plain string error message
+  }
+  
+  return null;
+}
+
+/**
+ * Get a user-friendly error message from render_error
+ * Handles both structured LastError and plain string errors
+ */
+export function getErrorMessage(renderError: string | null): string {
+  if (!renderError) return "An unknown error occurred.";
+  
+  // Try parsing as LastError
+  const lastError = parseLastError(renderError);
+  if (lastError) {
+    return lastError.message;
+  }
+  
+  // Try parsing as ClipValidationError
+  const clipError = parseClipValidationError(renderError);
+  if (clipError) {
+    return `We couldn't access 1 clip: ${clipError.momentLabel} at ${formatTimestamp(clipError.timestampSeconds)}`;
+  }
+  
+  // Plain string
+  return renderError;
 }
 
 /**
