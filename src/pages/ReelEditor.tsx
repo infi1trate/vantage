@@ -27,6 +27,7 @@ import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
+import { CaptureTipsModal } from "@/components/reel/CaptureTipsModal";
 import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
 import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
 import { PreviewRenderingPill } from "@/components/reel/PreviewRenderingPill";
@@ -120,6 +121,7 @@ export default function ReelEditor() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isReloadingPreview, setIsReloadingPreview] = useState(false);
+  const [showCaptureTipsModal, setShowCaptureTipsModal] = useState(false);
   
   // Derive video loaded state
   const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
@@ -628,6 +630,7 @@ export default function ReelEditor() {
                   }}
                   onRetryProcessing={handleRetryProcessing}
                   onSkipClip={handleSkipClip}
+                  onShowCaptureTips={() => setShowCaptureTipsModal(true)}
                   // Truthful progress from assembly hook
                   progress={assemblyState.progress}
                   debugData={{
@@ -755,6 +758,12 @@ export default function ReelEditor() {
           disabled={!editorState.fxEnabled}
         />
       </div>
+      
+      {/* Capture Tips Modal - shows when user clicks "How to avoid this" */}
+      <CaptureTipsModal 
+        open={showCaptureTipsModal} 
+        onOpenChange={setShowCaptureTipsModal} 
+      />
     </div>
   );
 }

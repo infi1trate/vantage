@@ -61,6 +61,8 @@ interface ReelCompilingPlaceholderProps {
   onStartRecording?: () => void;
   /** Report issue handler */
   onReportIssue?: () => void;
+  /** Show capture tips modal - displayed for "missing" state */
+  onShowCaptureTips?: () => void;
   /** Retry processing handler - triggers reprocessing of the session video */
   onRetryProcessing?: () => void;
   /** Skip failing clip handler - removes the failing moment and retries */
@@ -132,6 +134,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   onLeaveAndNotify,
   onStartRecording,
   onReportIssue,
+  onShowCaptureTips,
   onRetryProcessing,
   onSkipClip,
   onAutoFix,
@@ -903,14 +906,26 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                         </button>
                       )}
                       
-                      {/* Link CTA - Report issue */}
-                      {gameplayContent.linkCta && onReportIssue && (
-                        <button
-                          onClick={onReportIssue}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
-                        >
-                          {gameplayContent.linkCta.label}
-                        </button>
+                      {/* Link CTA - Report issue or Show capture tips */}
+                      {gameplayContent.linkCta && (
+                        <>
+                          {gameplayContent.linkCta.action === "report_issue" && onReportIssue && (
+                            <button
+                              onClick={onReportIssue}
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                            >
+                              {gameplayContent.linkCta.label}
+                            </button>
+                          )}
+                          {gameplayContent.linkCta.action === "show_capture_tips" && onShowCaptureTips && (
+                            <button
+                              onClick={onShowCaptureTips}
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                            >
+                              {gameplayContent.linkCta.label}
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </>
