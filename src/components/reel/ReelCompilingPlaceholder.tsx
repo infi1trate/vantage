@@ -143,26 +143,28 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-6">
             {isFailed ? (
               <>
-                {/* Failed State */}
+                {/* Failed State - Clear recovery path */}
                 <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
                   <AlertCircle className="h-8 w-8 text-destructive" />
                 </div>
                 
                 <div className="text-center max-w-sm">
-                  <p className="text-base font-medium text-foreground">
-                    Assembly failed
+                  <p className="text-lg font-semibold text-foreground">
+                    Couldn't assemble this reel
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {errorMessage || "Something went wrong during reel assembly."}
+                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                    {errorMessage || "Something interrupted the assembly process."}
                   </p>
                 </div>
                 
-                <div className="flex items-center gap-3 mt-2">
+                {/* Recovery CTAs */}
+                <div className="flex flex-col sm:flex-row items-center gap-3 mt-3">
                   {onRetry && (
                     <Button 
                       onClick={onRetry}
                       disabled={isRetrying}
-                      className="gap-2"
+                      className="gap-2 min-w-[160px]"
+                      size="lg"
                     >
                       {isRetrying ? (
                         <>
@@ -172,18 +174,28 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       ) : (
                         <>
                           <RefreshCw className="h-4 w-4" />
-                          Retry Assembly
+                          Retry assembly
                         </>
                       )}
                     </Button>
                   )}
                   {onCancel && (
-                    <Button variant="outline" onClick={onCancel} className="gap-2">
+                    <Button 
+                      variant="outline" 
+                      onClick={onCancel} 
+                      className="gap-2 min-w-[160px]"
+                      size="lg"
+                    >
                       <ArrowLeft className="h-4 w-4" />
-                      Back to Session
+                      Back to session
                     </Button>
                   )}
                 </div>
+                
+                {/* Reassurance text */}
+                <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
+                  Your format and selected clips are preserved — just hit retry.
+                </p>
               </>
             ) : (
               <>
