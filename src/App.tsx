@@ -23,6 +23,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Capture = lazy(() => import("./pages/Capture"));
 const SessionReview = lazy(() => import("./pages/SessionReview"));
 const SessionLibrary = lazy(() => import("./pages/SessionLibrary"));
+const ReelEditor = lazy(() => import("./pages/ReelEditor"));
 const Insights = lazy(() => import("./pages/Insights"));
 const Community = lazy(() => import("./pages/Community"));
 const CommunityPost = lazy(() => import("./pages/CommunityPost"));
@@ -62,8 +63,10 @@ const router = createBrowserRouter([
   { path: "/community/:postId", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
   { path: "/community/p/:token", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
   { path: "/capture/:sessionId", element: withSuspense(Capture), errorElement: <RouteErrorFallback /> },
-  // Canonical session route
+  // Canonical session route (read-only review)
   { path: "/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
+  // Reel Editor route (editing tools)
+  { path: "/reel/:reelId", element: withSuspense(ReelEditor), errorElement: <RouteErrorFallback /> },
   // Alias routes for extension compatibility - redirect to canonical
   { path: "/library/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
   { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },

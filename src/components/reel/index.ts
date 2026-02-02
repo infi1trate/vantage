@@ -7,6 +7,8 @@
 export { ReelPackageSection } from "./ReelPackageSection";
 export { StylePicker, StylePreview } from "./StylePicker";
 export { AudioModePicker, AudioModeIndicator } from "./AudioModePicker";
+export { ReelEditorToolbar } from "./ReelEditorToolbar";
+export { ReelEditorSidebar } from "./ReelEditorSidebar";
 
 // Re-export types
 export type {

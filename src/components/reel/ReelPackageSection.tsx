@@ -5,7 +5,7 @@
  * Designed for the Reel Builder.
  */
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +55,7 @@ export const ReelPackageSection = memo(function ReelPackageSection({
     canGenerate,
   } = useReelPackage(sessionId);
 
-  const [expanded, setExpanded] = React.useState(defaultExpanded);
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   const hasAnyEnabled = 
     config?.enabledIntro || 
