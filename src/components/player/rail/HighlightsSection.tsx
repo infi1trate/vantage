@@ -19,6 +19,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { 
+  type ReelEligibilityResult, 
+  getCreateReelDisabledTooltip,
+} from "@/lib/reelEligibility";
 
 interface MomentsSectionProps {
   annotations: Annotation[];
@@ -28,8 +32,8 @@ interface MomentsSectionProps {
   onAnnotationDelete?: (annotationId: string) => void;
   sessionId?: string;
   sessionTitle?: string;
-  /** Whether the session has a video available for reel creation */
-  videoAvailable?: boolean;
+  /** Centralized reel eligibility check result (single source of truth) */
+  reelEligibility?: ReelEligibilityResult;
 }
 
 // Unified Moment type configuration
@@ -147,12 +151,15 @@ export const HighlightsSection = memo(function HighlightsSection({
   onAnnotationDelete,
   sessionId = "",
   sessionTitle,
-  videoAvailable = true,
+  reelEligibility = { ok: true },
 }: MomentsSectionProps) {
   const [reelModalOpen, setReelModalOpen] = useState(false);
   
-  // Determine if reel creation is possible
-  const canCreateReel = videoAvailable;
+  // Determine if reel creation is possible using centralized eligibility
+  const canCreateReel = reelEligibility.ok;
+  const disabledTooltip = !canCreateReel && reelEligibility.reasonCode 
+    ? getCreateReelDisabledTooltip(reelEligibility.reasonCode) 
+    : "Session video not available yet";
   // Sort moments chronologically
   const moments = useMemo(() => {
     return [...annotations].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds);
@@ -220,7 +227,7 @@ export const HighlightsSection = memo(function HighlightsSection({
                 <span className="text-[11px] text-muted-foreground font-normal pl-6">
                   {canCreateReel 
                     ? "Edit clips, add effects, and export"
-                    : "Session video not available yet"
+                    : disabledTooltip
                   }
                 </span>
               </Button>
@@ -229,7 +236,7 @@ export const HighlightsSection = memo(function HighlightsSection({
           {!canCreateReel && (
             <TooltipContent side="bottom" className="max-w-[200px]">
               <p className="text-xs">
-                Session video is still processing. Reel creation will be available once the video is ready.
+                {disabledTooltip}. Reel creation will be available once the video is ready.
               </p>
             </TooltipContent>
           )}
@@ -260,7 +267,7 @@ export const HighlightsSection = memo(function HighlightsSection({
         moments={moments}
         sessionId={sessionId}
         sessionTitle={sessionTitle}
-        videoAvailable={videoAvailable}
+        reelEligibility={reelEligibility}
       />
     </div>
   );

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type { ReelEligibilityResult } from "@/lib/reelEligibility";
 
 export type PanelMode = "list" | "note" | "voice" | "drawer";
 
@@ -46,7 +47,8 @@ interface AnnotationsPanelProps {
   commentsEnabled?: boolean;
   // Session/video availability
   sessionTitle?: string;
-  videoAvailable?: boolean;
+  /** Centralized reel eligibility check result (single source of truth) */
+  reelEligibility?: ReelEligibilityResult;
 }
 
 const MARKER_TYPES = [
@@ -79,7 +81,7 @@ export function AnnotationsPanel({
   coachError,
   commentsEnabled = false,
   sessionTitle,
-  videoAvailable = true,
+  reelEligibility = { ok: true },
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
@@ -143,7 +145,7 @@ export function AnnotationsPanel({
         commentsEnabled={commentsEnabled}
         onSeekTo={onMarkerClick}
         sessionTitle={sessionTitle}
-        videoAvailable={videoAvailable}
+        reelEligibility={reelEligibility}
       />
     );
   }

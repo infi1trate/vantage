@@ -341,11 +341,18 @@ export async function updateSessionReelSourceStatus(
  * 
  * This is the primary check used by the reel pipeline.
  * Falls back to legacy video_url check for sessions without ReelSource.
+ * 
+ * IMPORTANT: Videos may be stored in either:
+ * - session.video_url (legacy)
+ * - video_assets table (new)
+ * 
+ * This function checks BOTH locations.
  */
 export async function checkReelSourceReadiness(
   sessionId: string
 ): Promise<ReelSourceReadinessResult> {
   try {
+    // Fetch session data
     const { data: session, error } = await supabase
       .from("capture_sessions")
       .select("id, metadata, video_url, duration_seconds, status")
@@ -363,6 +370,22 @@ export async function checkReelSourceReadiness(
       };
     }
     
+    // Also check video_assets table for gameplay video
+    // This is the PREFERRED location for new recordings
+    const { data: gameplayAsset } = await supabase
+      .from("video_assets")
+      .select("id, storage_url, status, duration_ms")
+      .eq("session_id", sessionId)
+      .eq("asset_type", "gameplay")
+      .maybeSingle();
+    
+    // Determine the effective video URL (prefer video_assets, fallback to session.video_url)
+    const hasGameplayAssetReady = gameplayAsset?.status === "ready" && gameplayAsset?.storage_url;
+    const effectiveVideoUrl = hasGameplayAssetReady ? gameplayAsset.storage_url : session.video_url;
+    const effectiveDurationMs = hasGameplayAssetReady && gameplayAsset?.duration_ms 
+      ? gameplayAsset.duration_ms 
+      : (session.duration_seconds ? session.duration_seconds * 1000 : null);
+    
     const reelSource = getReelSourceFromMetadata(
       session.metadata as Record<string, unknown>
     );
@@ -377,7 +400,7 @@ export async function checkReelSourceReadiness(
             message: "Source video ready",
             isRecoverable: false,
             isLegacy: false,
-            videoUrl: session.video_url,
+            videoUrl: effectiveVideoUrl,
           };
         
         case "preparing":
@@ -387,7 +410,7 @@ export async function checkReelSourceReadiness(
             message: "Source video is still processing",
             isRecoverable: true,
             isLegacy: false,
-            videoUrl: session.video_url,
+            videoUrl: effectiveVideoUrl,
           };
         
         case "failed":
@@ -397,22 +420,22 @@ export async function checkReelSourceReadiness(
             message: reelSource.lastError || "Source video processing failed",
             isRecoverable: true, // Can retry
             isLegacy: false,
-            videoUrl: session.video_url,
+            videoUrl: effectiveVideoUrl,
           };
         
         case "missing":
-          // FIX: If ReelSource is "missing" BUT video_url exists,
+          // FIX: If ReelSource is "missing" BUT video exists (either location),
           // this is a legacy session with playable video - NOT truly missing
           // The video works for playback but just lacks ReelSource metadata
-          if (session.video_url) {
-            console.log(`[ReelSource] ReelSource marked missing but video_url exists - treating as legacy with video`);
+          if (effectiveVideoUrl) {
+            console.log(`[ReelSource] ReelSource marked missing but video exists - treating as legacy with video`);
             return {
               isReady: true,
               reelSource,
               message: "Legacy session with video (ReelSource needs upgrade)",
               isRecoverable: false,
               isLegacy: true, // Treat as legacy to trigger backfill on reel creation
-              videoUrl: session.video_url,
+              videoUrl: effectiveVideoUrl,
             };
           }
           
@@ -429,18 +452,31 @@ export async function checkReelSourceReadiness(
     }
     
     // === LEGACY SESSION (no ReelSource) ===
-    // Fall back to raw video_url check for backwards compatibility
+    // Fall back to video existence check for backwards compatibility
     // Playback can still work, but reels have limited functionality
     
-    if (session.video_url) {
+    if (effectiveVideoUrl) {
       // Legacy session with video - can be used for basic reels
+      console.log(`[ReelSource] No ReelSource but video exists at: ${effectiveVideoUrl.substring(0, 50)}...`);
       return {
         isReady: true,
         reelSource: null,
         message: "Legacy session with video",
         isRecoverable: false,
         isLegacy: true,
-        videoUrl: session.video_url,
+        videoUrl: effectiveVideoUrl,
+      };
+    }
+    
+    // Check if video_assets is still processing
+    if (gameplayAsset && gameplayAsset.status !== "ready") {
+      return {
+        isReady: false,
+        reelSource: null,
+        message: `Video is ${gameplayAsset.status}`,
+        isRecoverable: true,
+        isLegacy: true,
+        videoUrl: null,
       };
     }
     
@@ -605,9 +641,21 @@ export async function startLegacyBackfill(
       };
     }
     
-    // 3) Validate video exists
-    if (!session.video_url) {
-      console.warn(`[ReelSource] Legacy session ${sessionId} has no video_url`);
+    // 2.5) Check for existing video_asset (new recording location)
+    const { data: existingVideoAsset } = await supabase
+      .from("video_assets")
+      .select("id, storage_url, status, duration_ms")
+      .eq("session_id", sessionId)
+      .eq("asset_type", "gameplay")
+      .maybeSingle();
+    
+    // Determine effective video source
+    const hasVideoAssetReady = existingVideoAsset?.status === "ready" && existingVideoAsset?.storage_url;
+    const effectiveVideoUrl = hasVideoAssetReady ? existingVideoAsset.storage_url : session.video_url;
+    
+    // 3) Validate video exists (check BOTH locations)
+    if (!effectiveVideoUrl) {
+      console.warn(`[ReelSource] Session ${sessionId} has no video in either location`);
       
       // Create a "missing" ReelSource to prevent repeated backfill attempts
       const missingReelSource = createMissingReelSource();
@@ -619,6 +667,8 @@ export async function startLegacyBackfill(
         message: "No video available for this session",
       };
     }
+    
+    console.log(`[ReelSource] Video found at: ${effectiveVideoUrl.substring(0, 50)}...`);
     
     // ============ RE-CHECK GUARDRAILS BEFORE HEAVY WORK ============
     // Double-check in case capture started while we were fetching
@@ -638,25 +688,17 @@ export async function startLegacyBackfill(
     
     console.log(`[ReelSource] Set session ${sessionId} to preparing, starting backfill job`);
     
-    // 5) Find or create video_asset reference
-    const { data: existingAsset } = await supabase
-      .from("video_assets")
-      .select("id, duration_ms, status")
-      .eq("session_id", sessionId)
-      .eq("asset_type", "gameplay")
-      .maybeSingle();
-    
+    // 5) Use existing video_asset or create one
     let videoAssetId: string | null = null;
     let durationMs: number | null = null;
     
-    if (existingAsset) {
-      // Use existing asset
-      videoAssetId = existingAsset.id;
-      durationMs = existingAsset.duration_ms;
-      console.log(`[ReelSource] Found existing video_asset ${videoAssetId} for session ${sessionId}`);
-    } else {
-      // Create a new video_asset reference for the legacy session
-      // Duration comes from session.duration_seconds (converted to ms)
+    if (existingVideoAsset) {
+      // Use already-fetched existing asset
+      videoAssetId = existingVideoAsset.id;
+      durationMs = existingVideoAsset.duration_ms;
+      console.log(`[ReelSource] Using existing video_asset ${videoAssetId} for session ${sessionId}`);
+    } else if (session.video_url) {
+      // Create a new video_asset reference for legacy session with video_url
       durationMs = session.duration_seconds ? session.duration_seconds * 1000 : null;
       
       const { data: newAsset, error: assetError } = await supabase
@@ -692,6 +734,16 @@ export async function startLegacyBackfill(
       
       videoAssetId = newAsset.id;
       console.log(`[ReelSource] Created new video_asset ${videoAssetId} for legacy session ${sessionId}`);
+    } else {
+      // This shouldn't happen since we checked effectiveVideoUrl above
+      console.error(`[ReelSource] Unexpected state: no video found during backfill`);
+      const failedReelSource = createFailedReelSource(null, null, "Video source not found");
+      await saveReelSource(sessionId, failedReelSource);
+      return {
+        success: false,
+        reelSource: failedReelSource,
+        message: "Video source not found",
+      };
     }
     
     // 6) Validate duration (attempt to extract from video if missing)

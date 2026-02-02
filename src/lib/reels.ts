@@ -42,6 +42,17 @@ export {
   type BackfillResult,
 } from "./reelSource";
 
+// Re-export reel eligibility (single source of truth)
+export {
+  canCreateReel,
+  extractEligibilityInput,
+  getReelIneligibilityMessage,
+  getCreateReelDisabledTooltip,
+  type ReelEligibilityResult,
+  type ReelIneligibilityReason,
+  type SessionEligibilityInput,
+} from "./reelEligibility";
+
 // NOTE: status is stored as text in the backend; we model the known states here.
 export type ReelStatus = "compiling" | "waiting_for_source" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
 export type AspectRatio = "16:9" | "9:16" | "1:1";

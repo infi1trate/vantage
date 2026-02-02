@@ -43,6 +43,10 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { AspectRatio as AspectRatioContainer } from "@/components/ui/aspect-ratio";
 import { PageTransitionOverlay } from "@/components/reel/PageTransitionOverlay";
+import { 
+  type ReelEligibilityResult, 
+  getReelIneligibilityMessage,
+} from "@/lib/reelEligibility";
 
 interface CreateReelModalProps {
   open: boolean;
@@ -50,8 +54,8 @@ interface CreateReelModalProps {
   moments: Annotation[];
   sessionId: string;
   sessionTitle?: string;
-  /** Whether the session has a video available. If false, shows a fallback modal. */
-  videoAvailable?: boolean;
+  /** Centralized reel eligibility check result (single source of truth) */
+  reelEligibility?: ReelEligibilityResult;
   /** Navigate to session processing page when video is not ready */
   onViewSessionProcessing?: () => void;
 }
@@ -872,11 +876,17 @@ export function CreateReelModal({
   moments,
   sessionId,
   sessionTitle,
-  videoAvailable = true,
+  reelEligibility = { ok: true },
   onViewSessionProcessing,
 }: CreateReelModalProps) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+
+  // Use centralized eligibility check
+  const videoAvailable = reelEligibility.ok;
+  const ineligibilityMessage = !reelEligibility.ok && reelEligibility.reasonCode
+    ? getReelIneligibilityMessage(reelEligibility.reasonCode)
+    : "Session video isn't ready";
 
   // Only show moments that are reel-worthy (kill, death, highlight)
   const reelMoments = useMemo(() => {
@@ -921,7 +931,7 @@ export function CreateReelModal({
 
   const title = videoAvailable ? "Create Reel" : "Session video isn't ready";
 
-  // Video not available - show fallback modal
+  // Video not available - show fallback modal with specific reason
   const fallbackContent = (
     <div className="flex flex-col items-center justify-center p-6 gap-4 text-center">
       <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
@@ -929,7 +939,7 @@ export function CreateReelModal({
       </div>
       <div className="space-y-2 max-w-xs">
         <p className="text-sm text-muted-foreground leading-relaxed">
-          We can create reels once gameplay video is available. The session is still processing.
+          {ineligibilityMessage}. We can create reels once gameplay video is available.
         </p>
       </div>
       <div className="flex flex-col gap-2 w-full max-w-[200px] pt-2">
