@@ -23,6 +23,7 @@ import {
   createRenderJob,
   updateRenderJob,
   getReelAssemblyJob,
+  resetRenderJobForRetry,
   loadRenderJobs,
   RenderJob,
 } from "@/lib/renderQueue";
@@ -31,6 +32,7 @@ export type AssemblyState = "idle" | "assembling" | "ready" | "failed";
 
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
+const MAX_RETRY_ATTEMPTS = 3;
 
 // Assembly step progress ranges (matches ReelCompilingPlaceholder)
 const ASSEMBLY_STEP_PROGRESS: Record<string, { stage: number; progress: number }> = {
@@ -57,6 +59,9 @@ export interface ReelAssemblyState {
   
   /** Number of retry attempts */
   retryCount: number;
+  
+  /** Maximum retry attempts allowed */
+  maxRetries: number;
   
   /** Retry assembly function */
   retry: () => Promise<void>;
@@ -441,19 +446,42 @@ export function useReelAssembly(
     }
   }, [initialStatus, reelId, state, getStateFromStatus, clearTimers]);
   
-  // Retry assembly
+  // Retry assembly - resets the existing job instead of creating duplicates
   const retry = useCallback(async () => {
     if (!reelId) return;
     
     const newRetryCount = retryCount + 1;
-    setRetryCount(newRetryCount);
     
+    // Check max retries
+    if (newRetryCount > MAX_RETRY_ATTEMPTS) {
+      console.warn("[ReelAssembly] Max retries exceeded");
+      setError("Still having trouble — try again later.");
+      return;
+    }
+    
+    setRetryCount(newRetryCount);
     logAssemblyTelemetry("retry", reelId, { retryCount: newRetryCount });
     
     console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount);
     setState("assembling");
     setError(null);
     assemblyStartRef.current = Date.now();
+    
+    // Reset the existing render job instead of creating a new one
+    if (renderJobIdRef.current) {
+      const resetJob = resetRenderJobForRetry(renderJobIdRef.current);
+      if (!resetJob) {
+        // Job not found or max retries - try to create new
+        console.log("[ReelAssembly] Creating new job for retry");
+        ensureRenderJob();
+      }
+    } else {
+      // No existing job - create one
+      ensureRenderJob();
+    }
+    
+    // Start progress simulation
+    startProgressSimulation();
     
     try {
       // Reset status to compiling - preserves format + selected moments
@@ -497,20 +525,27 @@ export function useReelAssembly(
         retryCount: newRetryCount,
       });
       
+      // Fail the render job
+      failJob("Something interrupted the assembly process. Please try again.");
+      
       setState("failed");
       setError("Something interrupted the assembly process. Please try again.");
       clearTimers();
       assemblyStartRef.current = null;
     }
-  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount]);
+  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, failJob]);
+  
+  // Whether retry is available (not exceeded max)
+  const canRetry = state === "failed" && retryCount < MAX_RETRY_ATTEMPTS;
   
   return {
     state,
     error,
     isAssembling: state === "assembling",
     isReady: state === "ready",
-    canRetry: state === "failed",
+    canRetry,
     retryCount,
+    maxRetries: MAX_RETRY_ATTEMPTS,
     retry,
   };
 }
