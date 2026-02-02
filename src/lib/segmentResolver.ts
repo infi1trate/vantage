@@ -4,11 +4,24 @@
  * Resolves moments from timeline_events/annotations into valid video segments.
  * Every moment must deterministically produce a valid segment OR return a clear error.
  * 
+ * TIME BASIS DEFINITIONS:
+ * - sessionTimeMs: Time since recording session start (used in annotations/moments)
+ * - videoTimeMs: Time within the screen recording file (used for playback)
+ * 
+ * These may differ if:
+ * - Recording started before video capture began
+ * - Video was trimmed at the start
+ * - Multiple video assets with offsets
+ * 
+ * NORMALIZATION:
+ * videoTimeMs = sessionTimeMs - videoStartOffsetMs
+ * If no offset exists in metadata, assume sessionTimeMs === videoTimeMs
+ * 
  * Resolution rules:
- * 1. If moment has explicit startMs/endMs, use them.
+ * 1. If moment has explicit startMs/endMs, use them (already in video time).
  * 2. Else derive a safe default range centered on the moment timestamp:
  *    - Default clip length = 10 seconds
- *    - Start = max(0, momentTimestampMs - 3000)  [3 seconds before]
+ *    - Start = max(0, momentVideoTimeMs - 3000)  [3 seconds before]
  *    - End = min(videoDurationMs, start + 10000) [10 seconds total]
  * 
  * Validation requirements:
@@ -92,12 +105,18 @@ interface RawMomentData {
 }
 
 /**
- * Session data for validation
+ * Session data for validation and time normalization
  */
 interface SessionData {
   id: string;
   video_url: string | null;
   duration_seconds: number | null;
+  /** 
+   * Offset in milliseconds from session start to video start.
+   * videoTimeMs = sessionTimeMs - videoStartOffsetMs
+   * Default: 0 (session time equals video time)
+   */
+  videoStartOffsetMs: number;
 }
 
 /**
@@ -151,13 +170,28 @@ function createError(
 }
 
 /**
- * Calculate clip range from moment timestamp
+ * Convert session time to video time
+ * 
+ * @param sessionTimeMs - Time in session basis (since recording start)
+ * @param videoStartOffsetMs - Offset from session start to video start
+ * @returns Time in video basis (within the video file)
+ */
+function sessionTimeToVideoTime(sessionTimeMs: number, videoStartOffsetMs: number): number {
+  // videoTimeMs = sessionTimeMs - videoStartOffsetMs
+  // Clamp to 0 if the result would be negative (moment before video started)
+  return Math.max(0, sessionTimeMs - videoStartOffsetMs);
+}
+
+/**
+ * Calculate clip range from moment timestamp (in VIDEO time basis)
  * 
  * Uses centered approach: 3 seconds before, 7 seconds after
  * Clamped to video bounds and minimum duration enforced
+ * 
+ * IMPORTANT: All input timestamps must be in VIDEO time (not session time)
  */
 function calculateClipRange(
-  momentTimestampMs: number,
+  momentVideoTimeMs: number,
   explicitStartMs: number | null | undefined,
   explicitEndMs: number | null | undefined,
   videoDurationMs: number | null
@@ -175,9 +209,9 @@ function calculateClipRange(
     };
   }
 
-  // Derive from moment timestamp with lead-in
+  // Derive from moment video timestamp with lead-in
   // Start 3 seconds before the moment (or 0 if that's before the start)
-  let startMs = Math.max(0, momentTimestampMs - LEAD_IN_MS);
+  let startMs = Math.max(0, momentVideoTimeMs - LEAD_IN_MS);
   
   // End 10 seconds after start
   let endMs = startMs + DEFAULT_CLIP_LENGTH_MS;
@@ -278,12 +312,16 @@ export async function resolveSegmentFromMoment(
       const session = sessionResult.session;
       const videoDurationMs = (session.duration_seconds ?? 0) * 1000;
 
-      // Calculate range
-      const momentTimestampMs = timelineEvent.timestamp_ms ?? 0;
+      // Normalize: Convert session time to video time
+      // timeline_events.timestamp_ms is in session time basis
+      const sessionTimestampMs = timelineEvent.timestamp_ms ?? 0;
+      const videoTimestampMs = sessionTimeToVideoTime(sessionTimestampMs, session.videoStartOffsetMs);
+      
+      // Calculate range using video-time basis
       const { startMs, endMs } = calculateClipRange(
-        momentTimestampMs,
+        videoTimestampMs,
         null,
-        durationMs ? momentTimestampMs + durationMs : null,
+        durationMs ? videoTimestampMs + durationMs : null,
         videoDurationMs > 0 ? videoDurationMs : null
       );
 
@@ -340,20 +378,28 @@ export async function resolveSegmentFromMoment(
     const session = sessionResult.session;
     const videoDurationMs = (session.duration_seconds ?? 0) * 1000;
 
-    // 3. Calculate clip range
-    const momentTimestampMs = timestampSeconds * 1000;
-    const explicitEndMs = moment.end_timestamp_seconds
+    // 3. Normalize timestamps: Convert session time to video time
+    // annotations.timestamp_seconds is in session time basis
+    const sessionTimestampMs = timestampSeconds * 1000;
+    const videoTimestampMs = sessionTimeToVideoTime(sessionTimestampMs, session.videoStartOffsetMs);
+    
+    // Handle explicit end timestamp if present (also needs normalization)
+    const explicitEndSessionMs = moment.end_timestamp_seconds
       ? moment.end_timestamp_seconds * 1000
       : null;
+    const explicitEndVideoMs = explicitEndSessionMs !== null
+      ? sessionTimeToVideoTime(explicitEndSessionMs, session.videoStartOffsetMs)
+      : null;
 
+    // 4. Calculate clip range using video-time basis
     const { startMs, endMs } = calculateClipRange(
-      momentTimestampMs,
+      videoTimestampMs,
       null, // No explicit start in annotations schema
-      explicitEndMs,
+      explicitEndVideoMs,
       videoDurationMs > 0 ? videoDurationMs : null
     );
 
-    // 4. Validate range
+    // 5. Validate range
     const validationResult = validateRange(startMs, endMs, videoDurationMs || null);
     if (validationResult.valid === false) {
       return {
@@ -400,6 +446,7 @@ export async function resolveSegmentFromMoment(
 
 /**
  * Get session data with caching potential
+ * Extracts video start offset from metadata for time normalization
  */
 async function getSessionData(
   sessionId: string
@@ -409,7 +456,7 @@ async function getSessionData(
 > {
   const { data: session, error } = await supabase
     .from("capture_sessions")
-    .select("id, video_url, duration_seconds")
+    .select("id, video_url, duration_seconds, metadata")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -438,7 +485,63 @@ async function getSessionData(
     };
   }
 
-  return { success: true, session };
+  // Extract video start offset from metadata if present
+  // This handles cases where recording started before video capture
+  const metadata = session.metadata as Record<string, unknown> | null;
+  const videoStartOffsetMs = extractVideoStartOffset(metadata);
+
+  return { 
+    success: true, 
+    session: {
+      id: session.id,
+      video_url: session.video_url,
+      duration_seconds: session.duration_seconds,
+      videoStartOffsetMs,
+    }
+  };
+}
+
+/**
+ * Extract video start offset from session metadata
+ * 
+ * Looks for common offset fields that might be stored:
+ * - videoStartOffsetMs (direct milliseconds)
+ * - videoStartOffset (seconds, converted to ms)
+ * - recordingStartDelta (legacy field)
+ * 
+ * Returns 0 if no offset is found (session time === video time)
+ */
+function extractVideoStartOffset(metadata: Record<string, unknown> | null): number {
+  if (!metadata) return 0;
+
+  // Check for direct millisecond offset
+  if (typeof metadata.videoStartOffsetMs === "number") {
+    return metadata.videoStartOffsetMs;
+  }
+
+  // Check for seconds offset (convert to ms)
+  if (typeof metadata.videoStartOffset === "number") {
+    return metadata.videoStartOffset * 1000;
+  }
+
+  // Check for legacy delta field
+  if (typeof metadata.recordingStartDelta === "number") {
+    return metadata.recordingStartDelta;
+  }
+
+  // Check nested in video metadata
+  const videoMeta = metadata.video as Record<string, unknown> | undefined;
+  if (videoMeta) {
+    if (typeof videoMeta.startOffsetMs === "number") {
+      return videoMeta.startOffsetMs;
+    }
+    if (typeof videoMeta.startOffset === "number") {
+      return videoMeta.startOffset * 1000;
+    }
+  }
+
+  // No offset found - assume session time equals video time
+  return 0;
 }
 
 /**
