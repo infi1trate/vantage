@@ -20,14 +20,15 @@ import {
   MOCK_CAMERAS,
   formatRecordingLimit,
 } from "./types";
-import { cn } from "@/lib/utils";
-import { Shield, Sparkles } from "lucide-react";
+import { Shield } from "lucide-react";
 
 interface DesktopCapturePopoverProps {
   className?: string;
+  onClose?: () => void;
+  onHome?: () => void;
 }
 
-export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps) {
+export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCapturePopoverProps) {
   const popover = usePopoverState();
 
   // ============= RECORDING STATE - Show HUD =============
@@ -53,7 +54,7 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   if (popover.state === "countdown" && popover.countdown !== null) {
     return (
       <div className={className}>
-        <PopoverShell>
+        <PopoverShell onClose={onClose} onHome={onHome}>
           <div className="py-8 text-center">
             <div className="text-6xl font-bold text-vantage-green mb-2 animate-pulse">
               {popover.countdown}
@@ -71,7 +72,7 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   if (popover.state === "processing") {
     return (
       <div className={className}>
-        <PopoverShell>
+        <PopoverShell onClose={onClose} onHome={onHome}>
           <div className="space-y-4">
             <PopoverToast
               variant="loading"
@@ -92,7 +93,7 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   if (popover.state === "error" && popover.error) {
     return (
       <div className={className}>
-        <PopoverShell>
+        <PopoverShell onClose={onClose} onHome={onHome}>
           <div className="space-y-4">
             <PopoverToast
               variant="error"
@@ -116,7 +117,7 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   if (popover.state === "unauthorized") {
     return (
       <div className={className}>
-        <PopoverShell>
+        <PopoverShell onClose={onClose} onHome={onHome}>
           <div className="space-y-4">
             {/* Header */}
             <div className="text-center space-y-2">
@@ -162,7 +163,7 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   if (popover.state === "selecting_source") {
     return (
       <div className={className}>
-        <PopoverShell>
+        <PopoverShell onClose={onClose} onHome={onHome}>
           <WindowPickerGrid
             windows={MOCK_WINDOWS}
             selectedWindowId={popover.selectedWindow?.id || null}
@@ -177,16 +178,10 @@ export function DesktopCapturePopover({ className }: DesktopCapturePopoverProps)
   // ============= IDLE STATE - Main Configuration =============
   return (
     <div className={className}>
-      <PopoverShell>
+      <PopoverShell onClose={onClose} onHome={onHome}>
         <div className="space-y-4">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-vantage-green" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider">
-                New Recording
-              </h3>
-            </div>
+          {/* Recording limit label */}
+          <div className="flex items-center justify-end">
             <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
               {formatRecordingLimit()}
             </span>
