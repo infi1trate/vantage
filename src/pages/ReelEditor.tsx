@@ -43,7 +43,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
-import { ReelStatus, PreviewStatus, retryPreviewGeneration } from "@/lib/reels";
+import { ReelStatus, PreviewStatus, retryPreviewGeneration, getEffectivePlaybackMode, hasPlaybackAvailable } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ReelEditor() {
@@ -170,19 +170,29 @@ export default function ReelEditor() {
   // Clear effects mutation
   const clearEffectsMutation = useClearSessionEffects();
 
-  // Determine the best video source for preview
-  // Priority: reel.preview_url > session.video_url (fallback)
+  // Compute effective playback mode
+  const effectivePlaybackMode = useMemo(() => {
+    return getEffectivePlaybackMode(reel || null);
+  }, [reel?.preview_url, reel?.preview_status, reel?.preview_ref]);
+  
+  // Check if we have playback available (no "No video" state)
+  const canPlayback = useMemo(() => {
+    return hasPlaybackAvailable(reel || null, sessionData?.videoUrl);
+  }, [reel, sessionData?.videoUrl]);
+
+  // Determine the best video source for stitched preview mode
+  // Only used when effectivePlaybackMode === "stitched_preview"
   const getPreviewSource = useCallback(() => {
-    // Prefer reel's assembled preview URL when available
-    if (reel?.preview_url) {
+    // Use stitched preview when available
+    if (effectivePlaybackMode === "stitched_preview" && reel?.preview_url) {
       return { url: reel.preview_url, isFallback: false };
     }
-    // Fallback to session's source video
+    // Fallback to session's source video (for PlayerWithEffects when no manifest)
     if (sessionData?.videoUrl) {
       return { url: sessionData.videoUrl, isFallback: true };
     }
     return { url: null, isFallback: false };
-  }, [reel?.preview_url, sessionData?.videoUrl]);
+  }, [effectivePlaybackMode, reel?.preview_url, sessionData?.videoUrl]);
 
   const previewSource = getPreviewSource();
 
@@ -510,8 +520,11 @@ export default function ReelEditor() {
                   )}
                   
                   <div className="flex-1 min-h-0">
-                    {/* Use ManifestPlayer when in manifest mode with no preview */}
-                    {reel.playback_mode === "manifest" && !reel.preview_url && reel.manifest && sessionData?.videoUrl ? (
+                    {/* Playback mode selection:
+                        - "manifest" mode: Use ManifestPlayer to sequence clips
+                        - "stitched_preview" mode: Use PlayerWithEffects with preview video
+                    */}
+                    {effectivePlaybackMode === "manifest" && reel.manifest && sessionData?.videoUrl ? (
                       <ManifestPlayer
                         manifest={reel.manifest}
                         sessionVideoUrl={sessionData.videoUrl}
@@ -522,7 +535,7 @@ export default function ReelEditor() {
                         onVideoLoaded={handleVideoLoaded}
                         className="h-full"
                       />
-                    ) : (
+                    ) : effectivePlaybackMode === "stitched_preview" && previewSource.url ? (
                       <PlayerWithEffects
                         sessionId={reel.session_id || ""}
                         videoUrl={previewSource.url}
@@ -543,7 +556,20 @@ export default function ReelEditor() {
                           handleEffectDuplicate,
                         }}
                       />
-                    )}
+                    ) : !canPlayback ? (
+                      // No playback available - show placeholder
+                      <div className="flex-1 flex items-center justify-center bg-muted/20 rounded-lg">
+                        <div className="text-center p-8">
+                          <Film className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                          <p className="text-muted-foreground">
+                            Waiting for video...
+                          </p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">
+                            Preview will appear when ready
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}

@@ -113,6 +113,47 @@ function toReelArray(rows: unknown[]): Reel[] {
 }
 
 /**
+ * Determine effective playback mode for a reel
+ * 
+ * Returns "stitched_preview" if a valid preview is available,
+ * "manifest" otherwise (falls back to sequencing clips)
+ */
+export function getEffectivePlaybackMode(reel: Reel | null): "stitched_preview" | "manifest" {
+  if (!reel) return "manifest";
+  
+  // Use stitched preview if:
+  // 1. Preview URL exists
+  // 2. Preview status is ready
+  // 3. Preview ref exists
+  if (reel.preview_url && reel.preview_status === "ready" && reel.preview_ref) {
+    return "stitched_preview";
+  }
+  
+  // Otherwise fall back to manifest playback
+  return "manifest";
+}
+
+/**
+ * Check if reel has valid video playback available
+ * (either stitched preview or manifest with session video)
+ */
+export function hasPlaybackAvailable(reel: Reel | null, sessionVideoUrl?: string | null): boolean {
+  if (!reel) return false;
+  
+  // Has stitched preview
+  if (reel.preview_url && reel.preview_status === "ready") {
+    return true;
+  }
+  
+  // Has manifest + session video for fallback
+  if (reel.manifest && reel.manifest.clips.length > 0 && sessionVideoUrl) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
  * Create a new reel from selected moments
  * 
  * Reels are first-class persistent objects that exist independently
