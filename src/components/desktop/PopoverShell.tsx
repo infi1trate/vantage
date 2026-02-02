@@ -3,15 +3,13 @@
  * 
  * Main container for the desktop capture popover.
  * Provides the cinematic Vantage styling with glass effect.
- * Includes header row with close, mode selector, and home.
+ * Includes header row with close, title, and home.
  */
 
 import { cn } from "@/lib/utils";
-import { ReactNode, useState } from "react";
-import { X, Home, Circle, Camera } from "lucide-react";
+import { ReactNode } from "react";
+import { X, Home, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-type PopoverMode = "record" | "screenshot";
 
 interface PopoverShellProps {
   children: ReactNode;
@@ -31,8 +29,6 @@ export function PopoverShell({
   onClose,
   onHome,
 }: PopoverShellProps) {
-  const [mode, setMode] = useState<PopoverMode>("record");
-
   return (
     <div
       className={cn(
@@ -54,12 +50,12 @@ export function PopoverShell({
       {/* Subtle top gradient accent */}
       <div 
         className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-vantage-green/30 to-transparent" 
-        aria-hidden 
+        aria-hidden="true"
       />
       
       {/* Header row - hidden for HUD mode */}
       {!isHUD && (
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
           {/* Close button */}
           <Button
             variant="ghost"
@@ -70,43 +66,19 @@ export function PopoverShell({
               "h-8 w-8 p-0 rounded-lg",
               "hover:bg-white/[0.08] active:bg-white/[0.12]",
               "text-muted-foreground hover:text-foreground",
+              "transition-all duration-150",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             )}
           >
             <X className="w-4 h-4" />
           </Button>
 
-          {/* Segmented control - Record / Screenshot */}
-          <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5" role="tablist">
-            <button
-              onClick={() => setMode("record")}
-              role="tab"
-              aria-selected={mode === "record"}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium uppercase tracking-wider",
-                "transition-all duration-150",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-inset",
-                mode === "record"
-                  ? "bg-vantage-green text-background shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Circle className="w-3 h-3 fill-current" />
+          {/* Center title with record indicator */}
+          <div className="flex items-center gap-2">
+            <Circle className="w-2.5 h-2.5 fill-vantage-green text-vantage-green" aria-hidden="true" />
+            <span className="text-sm font-semibold text-foreground tracking-wide">
               Record
-            </button>
-            <button
-              disabled
-              role="tab"
-              aria-selected={false}
-              aria-disabled="true"
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium uppercase tracking-wider",
-                "text-muted-foreground/50 cursor-not-allowed"
-              )}
-            >
-              <Camera className="w-3 h-3" />
-              Screenshot
-            </button>
+            </span>
           </div>
 
           {/* Home button */}
@@ -119,6 +91,7 @@ export function PopoverShell({
               "h-8 w-8 p-0 rounded-lg",
               "hover:bg-white/[0.08] active:bg-white/[0.12]",
               "text-muted-foreground hover:text-foreground",
+              "transition-all duration-150",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             )}
           >
@@ -138,7 +111,7 @@ export function PopoverShell({
       {/* Bottom subtle reflection */}
       <div 
         className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" 
-        aria-hidden 
+        aria-hidden="true"
       />
     </div>
   );
