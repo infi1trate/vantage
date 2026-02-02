@@ -560,6 +560,178 @@ export async function updateVideoAssetStatus(
   return asset as VideoAsset;
 }
 
+/**
+ * Retry session video processing
+ * 
+ * Called when a session's gameplay video failed to process.
+ * Resets the session to processing state and updates video asset status.
+ * 
+ * @returns The updated session or null if retry not possible
+ */
+export async function retrySessionVideoProcessing(sessionId: string): Promise<{
+  success: boolean;
+  session?: CaptureSession;
+  error?: string;
+}> {
+  console.log("[captures] Retrying session video processing:", sessionId);
+  
+  try {
+    // 1) Check if the session exists and has a failed gameplay video
+    const { data: session, error: sessionError } = await supabase
+      .from("capture_sessions")
+      .select("*")
+      .eq("id", sessionId)
+      .single();
+    
+    if (sessionError) {
+      return { success: false, error: "Session not found" };
+    }
+    
+    // 2) Check for existing video asset - reset it to processing if failed
+    const { data: videoAssets, error: assetError } = await supabase
+      .from("video_assets")
+      .select("*")
+      .eq("session_id", sessionId)
+      .eq("asset_type", "gameplay")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    
+    if (assetError) {
+      console.error("[captures] Error fetching video assets:", assetError);
+    }
+    
+    const existingAsset = videoAssets?.[0];
+    
+    // 3) Reset video asset to processing if it exists and failed
+    if (existingAsset && existingAsset.status === "failed") {
+      const { error: updateError } = await supabase
+        .from("video_assets")
+        .update({
+          status: "processing",
+          processing_progress: 0,
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingAsset.id);
+      
+      if (updateError) {
+        console.error("[captures] Error resetting video asset:", updateError);
+      }
+    }
+    
+    // 4) Update session to processing state with gameplay_video_status
+    const existingMetadata = (typeof session.metadata === 'object' && session.metadata !== null) 
+      ? session.metadata as Record<string, any>
+      : {};
+    
+    const { data: updatedSession, error: updateSessionError } = await supabase
+      .from("capture_sessions")
+      .update({
+        status: "processing",
+        metadata: {
+          ...existingMetadata,
+          gameplay_video_status: "processing",
+          last_error: null,
+          retry_count: ((existingMetadata.retry_count as number) || 0) + 1,
+          retry_triggered_at: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", sessionId)
+      .select()
+      .single();
+    
+    if (updateSessionError) {
+      return { success: false, error: updateSessionError.message };
+    }
+    
+    console.log("[captures] Session reset to processing:", sessionId);
+    
+    return { success: true, session: updatedSession as CaptureSession };
+  } catch (err) {
+    console.error("[captures] Retry processing error:", err);
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
+}
+
+/**
+ * Find and resume reels that are waiting for a specific session's video
+ * 
+ * Called when session video processing completes successfully.
+ * Transitions waiting reels back to "compiling" so assembly can resume.
+ * 
+ * @returns The number of reels that were resumed
+ */
+export async function resumeWaitingReels(sessionId: string): Promise<{
+  resumedCount: number;
+  reelIds: string[];
+}> {
+  console.log("[captures] Checking for waiting reels to resume for session:", sessionId);
+  
+  try {
+    // Find reels in "waiting_for_source" or "needs_attention" (with asset_not_ready reason) status
+    const { data: waitingReels, error: reelsError } = await supabase
+      .from("reels")
+      .select("id, status, render_error")
+      .eq("session_id", sessionId)
+      .in("status", ["waiting_for_source", "needs_attention"]);
+    
+    if (reelsError) {
+      console.error("[captures] Error finding waiting reels:", reelsError);
+      return { resumedCount: 0, reelIds: [] };
+    }
+    
+    if (!waitingReels || waitingReels.length === 0) {
+      console.log("[captures] No waiting reels found for session:", sessionId);
+      return { resumedCount: 0, reelIds: [] };
+    }
+    
+    // Filter reels that are waiting for asset (check render_error for asset_not_ready reason)
+    const reelsToResume = waitingReels.filter(reel => {
+      if (reel.status === "waiting_for_source") return true;
+      
+      // For needs_attention, only resume if reason was asset-related
+      if (reel.status === "needs_attention" && reel.render_error) {
+        try {
+          const errorData = JSON.parse(reel.render_error);
+          return errorData.reason === "asset_not_ready" && errorData.isRecoverable !== false;
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    });
+    
+    if (reelsToResume.length === 0) {
+      return { resumedCount: 0, reelIds: [] };
+    }
+    
+    // Resume each reel by setting status to "compiling"
+    const reelIds = reelsToResume.map(r => r.id);
+    
+    const { error: updateError } = await supabase
+      .from("reels")
+      .update({
+        status: "compiling",
+        render_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", reelIds);
+    
+    if (updateError) {
+      console.error("[captures] Error resuming reels:", updateError);
+      return { resumedCount: 0, reelIds: [] };
+    }
+    
+    console.log(`[captures] Resumed ${reelIds.length} waiting reels:`, reelIds);
+    
+    return { resumedCount: reelIds.length, reelIds };
+  } catch (err) {
+    console.error("[captures] Resume waiting reels error:", err);
+    return { resumedCount: 0, reelIds: [] };
+  }
+}
+
 export async function getVideoAssets(sessionId: string) {
   const { data, error } = await supabase
     .from("video_assets")

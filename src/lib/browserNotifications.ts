@@ -108,3 +108,32 @@ export function showVideoReadyNotification(
   
   return notification;
 }
+
+/**
+ * Show a "Reel ready" notification when assembly completes
+ */
+export function showReelReadyNotification(
+  reelTitle: string,
+  reelId: string,
+  onClick?: () => void
+): Notification | null {
+  const notification = showSystemNotification(
+    "Vantage: Reel is ready",
+    {
+      body: `${reelTitle} is ready — open the editor to continue`,
+      tag: `reel-ready-${reelId}`, // Unique per reel
+      requireInteraction: true, // Keep visible until user interacts
+    }
+  );
+  
+  if (notification && onClick) {
+    notification.onclick = () => {
+      onClick();
+      notification.close();
+      // Focus the window when clicking notification
+      window.focus();
+    };
+  }
+  
+  return notification;
+}

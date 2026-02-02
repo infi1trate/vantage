@@ -759,6 +759,62 @@ class ProcessingManager {
     if (import.meta.env.DEV) {
       console.log("[ProcessingManager] Job completed:", job.id);
     }
+    
+    // === RESUME WAITING REELS ===
+    // When session video processing completes, automatically resume any reels
+    // that were waiting for this session's video
+    try {
+      const { resumeWaitingReels } = await import("./captures");
+      const { resumedCount, reelIds } = await resumeWaitingReels(job.sessionId);
+      
+      if (resumedCount > 0) {
+        console.log(`[ProcessingManager] Resumed ${resumedCount} waiting reels:`, reelIds);
+        
+        // Update render jobs to show they're now processing
+        const { loadRenderJobs, updateRenderJob: updateRenderJobFn } = await import("./renderQueue");
+        const renderJobs = loadRenderJobs();
+        
+        for (const reelId of reelIds) {
+          const renderJob = renderJobs.find(j => j.reelId === reelId && j.status === "waiting");
+          if (renderJob) {
+            // Transition from waiting to processing
+            updateRenderJobFn(renderJob.id, {
+              status: "processing",
+              shortReason: "Session video ready — assembling...",
+              currentStageIndex: 0,
+              overallProgress: 0,
+              startedAt: new Date().toISOString(),
+            });
+          }
+        }
+        
+        // Show browser notification for resumed reels
+        try {
+          const { showReelReadyNotification } = await import("./browserNotifications");
+          
+          // For each resumed reel, show a notification
+          // (In practice, the reel assembly will run and complete, then show a "ready" notification)
+          // Here we just notify that processing has resumed
+          for (const reelId of reelIds) {
+            const renderJob = renderJobs.find(j => j.reelId === reelId);
+            if (renderJob?.reelTitle) {
+              showReelReadyNotification(
+                renderJob.reelTitle,
+                reelId,
+                () => {
+                  // Navigate to reel editor when clicked
+                  window.location.href = `/reel/${reelId}`;
+                }
+              );
+            }
+          }
+        } catch (notifyErr) {
+          console.warn("[ProcessingManager] Failed to show reel notification:", notifyErr);
+        }
+      }
+    } catch (err) {
+      console.warn("[ProcessingManager] Failed to resume waiting reels:", err);
+    }
   }
   
   /**
