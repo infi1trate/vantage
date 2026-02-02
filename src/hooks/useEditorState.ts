@@ -32,7 +32,7 @@ import { AssemblyState } from "@/hooks/useReelAssembly";
  * Editor-specific lifecycle states
  * Maps reel database status to UI behavior
  */
-export type EditorState = "compiling" | "ready" | "exporting" | "failed";
+export type EditorState = "compiling" | "ready" | "exporting" | "failed" | "needs_attention";
 
 export interface EditorStateConfig {
   /** Current editor state */
@@ -88,6 +88,22 @@ export function deriveEditorState(
       statusLabel: "Exporting...",
       showProgress: true,
       progressPercent: exportProgress,
+    };
+  }
+  
+  // NEEDS_ATTENTION: Assembly stalled, user action needed (recoverable)
+  if (assemblyState === "needs_attention") {
+    return {
+      state: "needs_attention",
+      previewAvailable: false,
+      fxEnabled: false,
+      framesEnabled: false,
+      packageEnabled: false,
+      exportEnabled: false,
+      timelineInteractive: false,
+      statusLabel: "Needs attention",
+      showProgress: false,
+      progressPercent: 0,
     };
   }
   
@@ -184,5 +200,10 @@ export const STATE_BADGE_STYLES: Record<EditorState, { bg: string; text: string;
     bg: "bg-destructive/10",
     text: "text-destructive",
     border: "border-destructive/30",
+  },
+  needs_attention: {
+    bg: "bg-vantage-warning/10",
+    text: "text-vantage-warning",
+    border: "border-vantage-warning/30",
   },
 };

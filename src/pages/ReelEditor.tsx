@@ -453,15 +453,24 @@ export default function ReelEditor() {
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
               {!editorState.previewAvailable ? (
-                // Compiling/failed/exporting state - show friendly placeholder
+                // Compiling/failed/needs_attention/exporting state - show friendly placeholder
                 <ReelCompilingPlaceholder
                   clipCount={reel.source_moment_ids?.length || 0}
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
                   isFailed={editorState.state === "failed"}
+                  isNeedsAttention={editorState.state === "needs_attention"}
                   errorMessage={assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
                   onCancel={goBack}
+                  onLeaveAndNotify={() => {
+                    // Show reassurance toast and navigate away
+                    toast.info("We'll notify you when it's ready.", {
+                      description: "Your reel is still assembling in the background.",
+                      duration: 5000,
+                    });
+                    goBack();
+                  }}
                 />
               ) : (
                 // Ready state - show player with effects

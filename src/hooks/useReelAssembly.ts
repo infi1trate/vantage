@@ -28,7 +28,7 @@ import {
   RenderJob,
 } from "@/lib/renderQueue";
 
-export type AssemblyState = "idle" | "assembling" | "ready" | "failed";
+export type AssemblyState = "idle" | "assembling" | "ready" | "failed" | "needs_attention";
 
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
@@ -332,21 +332,19 @@ export function useReelAssembly(
     markJobNeedsAttention("This is taking longer than expected.");
     
     try {
-      // Update reel to failed status
-      await updateReel(reelId, { status: "failed" });
-      
-      // Also update render_error via direct update
+      // Update reel - we keep it as "compiling" in DB but mark UI as needs_attention
+      // This allows background completion to still work
       await supabase
         .from("reels")
         .update({ 
-          status: "failed",
           render_error: "This is taking longer than expected.",
           updated_at: new Date().toISOString(),
         })
         .eq("id", reelId);
       
       if (mountedRef.current) {
-        setState("failed");
+        // Set to needs_attention - allows "Leave and notify me" to work
+        setState("needs_attention");
         setError("This is taking longer than expected.");
         clearTimers();
         assemblyStartRef.current = null;
