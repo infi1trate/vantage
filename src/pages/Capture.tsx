@@ -3,7 +3,7 @@ import { useParams, useNavigate, useBlocker, useSearchParams } from "react-route
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
-import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset } from "@/lib/captures";
+import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createPlaceholderVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { usePreflightChecks } from "@/hooks/usePreflightChecks";
@@ -264,18 +264,59 @@ export default function CapturePage() {
         // Update session to failed - recording never produced data
         await updateCaptureSession(session.id, { 
           status: "failed",
-          metadata: { last_error: "Recording produced no data" },
+          metadata: { last_error: "Recording produced no data", gameplay_video_status: "missing" },
         });
-        throw new Error("No recorded data");
+        // Show toast with link to session media panel
+        toast.error("Gameplay recording failed to save.", {
+          description: "No data was captured. Try recording again.",
+          action: {
+            label: "View details",
+            onClick: () => navigate(`/session/${session.id}?panel=media`),
+          },
+          duration: 8000,
+        });
+        return;
       }
 
       if (!recordedData.compositeBlob) {
         // Update session to failed - composite blob missing
         await updateCaptureSession(session.id, { 
           status: "failed",
-          metadata: { last_error: "No composite recording data" },
+          metadata: { last_error: "No composite recording data", gameplay_video_status: "failed" },
         });
-        throw new Error("No composite recording data");
+        // Show toast with link to session media panel
+        toast.error("Gameplay recording failed to save.", {
+          description: "Recording data was incomplete.",
+          action: {
+            label: "View details",
+            onClick: () => navigate(`/session/${session.id}?panel=media`),
+          },
+          duration: 8000,
+        });
+        return;
+      }
+
+      // Create placeholder video asset immediately - establishes durable reference
+      // Status: "processing" until upload completes
+      let placeholderAssetId: string | undefined;
+      if (user?.id) {
+        try {
+          const placeholderAsset = await createPlaceholderVideoAsset({
+            sessionId: session.id,
+            userId: user.id,
+            durationMs: recordedData.duration * 1000,
+            fileSize: recordedData.compositeBlob.size,
+            mimeType: recordedData.compositeMimeType || recordedData.compositeBlob.type || "video/webm",
+          });
+          placeholderAssetId = placeholderAsset.id;
+          
+          if (import.meta.env.DEV) {
+            console.log("[Capture] Created placeholder video asset:", placeholderAssetId);
+          }
+        } catch (assetError) {
+          // Non-fatal - processing manager will create asset on upload
+          console.warn("[Capture] Failed to create placeholder asset:", assetError);
+        }
       }
 
       // Queue background processing - returns immediately (non-blocking)
@@ -305,12 +346,28 @@ export default function CapturePage() {
     } catch (error: any) {
       console.error("Error ending capture:", error);
       
-      // Check if it's a data validation error that needs recovery screen
-      if (error.code === "NO_DATA_CAPTURED") {
-        toast.error(error.message || "Recording failed - not enough data captured");
-      } else {
-        toast.error(error.message || "Failed to end capture");
+      // Update session to failed with error details
+      try {
+        await updateCaptureSession(session.id, { 
+          status: "failed",
+          metadata: { 
+            last_error: error.message || "Unknown error during finalization",
+            gameplay_video_status: "failed",
+          },
+        });
+      } catch (updateError) {
+        console.error("Failed to update session status:", updateError);
       }
+      
+      // Show toast with link to session media panel
+      toast.error("Gameplay recording failed to save.", {
+        description: error.message || "An error occurred while saving the recording.",
+        action: {
+          label: "View details",
+          onClick: () => navigate(`/session/${session.id}?panel=media`),
+        },
+        duration: 8000,
+      });
     }
   };
 

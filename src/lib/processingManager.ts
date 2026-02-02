@@ -438,22 +438,44 @@ class ProcessingManager {
       });
       if (updated) this.notifyUpdate(updated);
       
-      // CRITICAL: Also update the session in the database to "failed" status
+      // CRITICAL: Update session and video asset to "failed" status
       // This ensures assetReadiness knows this session permanently failed
       try {
+        // Update video asset if it exists
+        const { data: existingAsset } = await supabase
+          .from("video_assets")
+          .select("id")
+          .eq("session_id", job.sessionId)
+          .eq("asset_type", "gameplay")
+          .maybeSingle();
+        
+        if (existingAsset) {
+          await supabase
+            .from("video_assets")
+            .update({
+              status: "failed",
+              error_message: error.message || "Processing failed",
+            })
+            .eq("id", existingAsset.id);
+        }
+        
+        // Update session with gameplay_video_status
         await supabase
           .from("capture_sessions")
           .update({
             status: "failed",
-            metadata: { last_error: error.message || "Processing failed" },
+            metadata: { 
+              last_error: error.message || "Processing failed",
+              gameplay_video_status: "failed",
+            },
           })
           .eq("id", job.sessionId);
         
         if (import.meta.env.DEV) {
-          console.log("[ProcessingManager] Session status set to failed:", job.sessionId);
+          console.log("[ProcessingManager] Session and asset status set to failed:", job.sessionId);
         }
       } catch (dbError) {
-        console.error("[ProcessingManager] Failed to update session status:", dbError);
+        console.error("[ProcessingManager] Failed to update session/asset status:", dbError);
       }
       
       trackJobCompleted(job.id, false);
@@ -599,30 +621,60 @@ class ProcessingManager {
             .createSignedUrl(compositePath, 86400);
           
           if (urlData) {
-            const { data: assetData } = await supabase
+            // Check if a placeholder video_asset already exists (created by Capture page)
+            const { data: existingAsset } = await supabase
               .from("video_assets")
-              .insert({
-                session_id: job.sessionId,
-                user_id: job.userId,
-                asset_type: "gameplay",
-                storage_url: urlData.signedUrl,
-                storage_path: compositePath,
-                duration_ms: job.duration * 1000,
-                status: "ready",
-                processing_progress: 100,
-                mime_type: job.mimeType,
-                file_size_bytes: blob.size,
-              })
-              .select()
-              .single();
+              .select("id")
+              .eq("session_id", job.sessionId)
+              .eq("asset_type", "gameplay")
+              .maybeSingle();
             
-            if (assetData) {
-              cloudUploadSuccess = true;
-              videoAssetId = assetData.id;
+            if (existingAsset) {
+              // Update existing placeholder asset to "ready"
+              const { data: assetData } = await supabase
+                .from("video_assets")
+                .update({
+                  storage_url: urlData.signedUrl,
+                  status: "ready",
+                  processing_progress: 100,
+                })
+                .eq("id", existingAsset.id)
+                .select()
+                .single();
+              
+              if (assetData) {
+                cloudUploadSuccess = true;
+                videoAssetId = assetData.id;
+              }
+            } else {
+              // Create new asset (fallback if placeholder wasn't created)
+              const { data: assetData } = await supabase
+                .from("video_assets")
+                .insert({
+                  session_id: job.sessionId,
+                  user_id: job.userId,
+                  asset_type: "gameplay",
+                  storage_url: urlData.signedUrl,
+                  storage_path: compositePath,
+                  duration_ms: job.duration * 1000,
+                  status: "ready",
+                  processing_progress: 100,
+                  mime_type: job.mimeType,
+                  file_size_bytes: blob.size,
+                })
+                .select()
+                .single();
+              
+              if (assetData) {
+                cloudUploadSuccess = true;
+                videoAssetId = assetData.id;
+              }
             }
             
             // Update session status with video_url and audio mix metadata
-            const metadata: Record<string, any> = {};
+            const metadata: Record<string, any> = {
+              gameplay_video_status: "ready",
+            };
             if (job.audioMixSettings) {
               metadata.audio_mix = job.audioMixSettings;
             }
@@ -638,10 +690,30 @@ class ProcessingManager {
                 video_url: urlData.signedUrl,
                 duration_seconds: job.duration,
                 thumbnail_url: thumbnailDataUrl || null,
-                metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+                metadata,
               })
               .eq("id", job.sessionId);
           }
+        } else {
+          // Upload failed - mark video asset as failed if it exists
+          const { data: existingAsset } = await supabase
+            .from("video_assets")
+            .select("id")
+            .eq("session_id", job.sessionId)
+            .eq("asset_type", "gameplay")
+            .maybeSingle();
+          
+          if (existingAsset) {
+            await supabase
+              .from("video_assets")
+              .update({
+                status: "failed",
+                error_message: uploadError.message || "Upload failed",
+              })
+              .eq("id", existingAsset.id);
+          }
+          
+          throw new Error(`Cloud upload failed: ${uploadError.message}`);
         }
       } catch (uploadError) {
         // Log but don't fail - local save succeeded

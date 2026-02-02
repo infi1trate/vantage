@@ -487,6 +487,79 @@ export async function createVideoAsset(data: Omit<VideoAsset, "id" | "created_at
   return asset as VideoAsset;
 }
 
+/**
+ * Create a placeholder video asset record immediately when recording stops.
+ * This establishes a durable reference that transitions: processing → ready/failed
+ * 
+ * Called before blob upload begins so the session always has an asset reference.
+ */
+export async function createPlaceholderVideoAsset(params: {
+  sessionId: string;
+  userId: string;
+  durationMs: number;
+  fileSize: number;
+  mimeType: string;
+}): Promise<VideoAsset> {
+  const { sessionId, userId, durationMs, fileSize, mimeType } = params;
+  
+  const storagePath = `${userId}/${sessionId}/gameplay.webm`;
+  
+  const { data: asset, error } = await supabase
+    .from("video_assets")
+    .insert({
+      session_id: sessionId,
+      user_id: userId,
+      asset_type: "gameplay",
+      storage_url: "", // Will be set after upload
+      storage_path: storagePath,
+      duration_ms: durationMs,
+      file_size_bytes: fileSize,
+      mime_type: mimeType,
+      status: "processing",
+      processing_progress: 0,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return asset as VideoAsset;
+}
+
+/**
+ * Update a video asset status after upload completes or fails
+ */
+export async function updateVideoAssetStatus(
+  assetId: string,
+  status: "ready" | "failed",
+  updates?: {
+    storageUrl?: string;
+    errorMessage?: string;
+    processingProgress?: number;
+  }
+): Promise<VideoAsset> {
+  const updateData: Record<string, any> = { status };
+  
+  if (updates?.storageUrl) {
+    updateData.storage_url = updates.storageUrl;
+  }
+  if (updates?.errorMessage) {
+    updateData.error_message = updates.errorMessage;
+  }
+  if (updates?.processingProgress !== undefined) {
+    updateData.processing_progress = updates.processingProgress;
+  }
+  
+  const { data: asset, error } = await supabase
+    .from("video_assets")
+    .update(updateData)
+    .eq("id", assetId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return asset as VideoAsset;
+}
+
 export async function getVideoAssets(sessionId: string) {
   const { data, error } = await supabase
     .from("video_assets")
