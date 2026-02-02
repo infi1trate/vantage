@@ -24,6 +24,7 @@ import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelEditorModeBanner, ReelStatus } from "@/components/reel/ReelEditorModeBanner";
 import { ReelCompilationStatus, CompilationPhase } from "@/components/reel/ReelCompilationStatus";
+import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,12 +81,17 @@ export default function ReelEditor() {
   // Derive compilation phase (for new reels still being assembled)
   const compilationPhase: CompilationPhase = useMemo(() => {
     if (!reel) return "idle";
+    // Check explicit compiling status first
+    if (reel.status === "compiling") return "assembling";
     // If video URL exists and session data loaded, reel is ready
     if (sessionData?.videoUrl && duration > 0) return "ready";
     // Still loading session data
     if (loading) return "assembling";
     return "ready";
-  }, [reel, sessionData?.videoUrl, duration, loading]);
+  }, [reel, reel?.status, sessionData?.videoUrl, duration, loading]);
+  
+  // Check if reel is ready for editing (not compiling)
+  const isReelReady = compilationPhase === "ready";
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Filter annotations to only those included in the reel
@@ -317,39 +323,42 @@ export default function ReelEditor() {
       </div>
 
       {/* Compilation Status - shown when reel is still being assembled */}
-      {compilationPhase !== "ready" && (
-        <div className="px-4 py-3 max-w-screen-2xl mx-auto w-full">
-          <ReelCompilationStatus phase={compilationPhase} progress={loading ? 50 : 100} />
-        </div>
-      )}
-
       {/* Main Editor Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Preview + Timeline (Main Area) */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Player with Effects */}
+          {/* Player Area - Show placeholder when compiling */}
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
-              <PlayerWithEffects
-                sessionId={reel.session_id || ""}
-                videoUrl={sessionData?.videoUrl}
-                duration={duration}
-                currentTime={currentTime}
-                onTimeUpdate={handleTimeUpdate}
-                onSeek={handleSeek}
-                annotations={reelMoments}
-                voiceNotes={[]}
-                onVideoLoaded={handleVideoLoaded}
-                showEffects={showEffects}
-                externalEffectsState={{
-                  effects,
-                  isDragging,
-                  handleDrop,
-                  handleEffectUpdate,
-                  handleEffectDelete,
-                  handleEffectDuplicate,
-                }}
-              />
+              {!isReelReady ? (
+                // Compiling state - show friendly placeholder
+                <ReelCompilingPlaceholder
+                  clipCount={reel.source_moment_ids?.length || 0}
+                  aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
+                />
+              ) : (
+                // Ready state - show player with effects
+                <PlayerWithEffects
+                  sessionId={reel.session_id || ""}
+                  videoUrl={sessionData?.videoUrl}
+                  duration={duration}
+                  currentTime={currentTime}
+                  onTimeUpdate={handleTimeUpdate}
+                  onSeek={handleSeek}
+                  annotations={reelMoments}
+                  voiceNotes={[]}
+                  onVideoLoaded={handleVideoLoaded}
+                  showEffects={showEffects}
+                  externalEffectsState={{
+                    effects,
+                    isDragging,
+                    handleDrop,
+                    handleEffectUpdate,
+                    handleEffectDelete,
+                    handleEffectDuplicate,
+                  }}
+                />
+              )}
             </div>
           </div>
 
@@ -359,10 +368,11 @@ export default function ReelEditor() {
             onTabChange={setActiveTab}
             showEffects={showEffects}
             onShowEffectsChange={setShowEffects}
+            disabled={!isReelReady}
           />
         </div>
 
-        {/* Right Sidebar: Tools */}
+        {/* Right Sidebar: Tools - disabled when compiling */}
         <ReelEditorSidebar
           reelId={reel.id}
           sessionId={reel.session_id || ""}
@@ -371,13 +381,14 @@ export default function ReelEditor() {
           annotations={reelMoments}
           duration={duration}
           onChangesMade={() => setHasUnsavedChanges(true)}
-          onDragStart={handleDragStart}
+          onDragStart={isReelReady ? handleDragStart : undefined}
           snapSettings={snapSettings}
           onSnapSettingsChange={setSnapSettings}
           effectCount={effects.length}
           onAutoEnhance={handleAutoEnhance}
           isAutoEnhancing={isAutoEnhancing}
           onClearAllEffects={effects.length > 0 ? handleClearAllEffects : undefined}
+          disabled={!isReelReady}
         />
       </div>
     </div>

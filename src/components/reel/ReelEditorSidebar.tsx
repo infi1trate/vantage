@@ -28,13 +28,14 @@ interface ReelEditorSidebarProps {
   annotations: Annotation[];
   duration: number;
   onChangesMade: () => void;
-  onDragStart: (e: React.DragEvent, effectKey: string, type: "vfx" | "sfx") => void;
+  onDragStart?: (e: React.DragEvent, effectKey: string, type: "vfx" | "sfx") => void;
   snapSettings: SnapSettings;
   onSnapSettingsChange: (settings: SnapSettings) => void;
   effectCount: number;
   onAutoEnhance: () => void;
   isAutoEnhancing: boolean;
   onClearAllEffects?: () => void;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -53,6 +54,7 @@ export const ReelEditorSidebar = memo(function ReelEditorSidebar({
   onAutoEnhance,
   isAutoEnhancing,
   onClearAllEffects,
+  disabled = false,
   className,
 }: ReelEditorSidebarProps) {
   // Frame configuration state
@@ -67,6 +69,7 @@ export const ReelEditorSidebar = memo(function ReelEditorSidebar({
   return (
     <div className={cn(
       "w-80 border-l border-border/40 bg-card/30 flex flex-col",
+      disabled && "opacity-50 pointer-events-none",
       className
     )}>
       <ScrollArea className="flex-1">
