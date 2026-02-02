@@ -1069,6 +1069,86 @@ export type Database = {
         }
         Relationships: []
       }
+      reel_package_configs: {
+        Row: {
+          audio_mode: string
+          beat_source: string
+          created_at: string
+          enabled_intro: boolean | null
+          enabled_outro: boolean | null
+          enabled_transitions: boolean | null
+          energy_profile: Json | null
+          generation_error: string | null
+          generation_metadata: Json | null
+          generation_progress: number | null
+          generation_status: string | null
+          id: string
+          intro_asset_id: string | null
+          outro_asset_id: string | null
+          reel_id: string | null
+          session_id: string | null
+          stat_overlay_enabled: boolean | null
+          style_key: string
+          transition_asset_ids: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audio_mode?: string
+          beat_source?: string
+          created_at?: string
+          enabled_intro?: boolean | null
+          enabled_outro?: boolean | null
+          enabled_transitions?: boolean | null
+          energy_profile?: Json | null
+          generation_error?: string | null
+          generation_metadata?: Json | null
+          generation_progress?: number | null
+          generation_status?: string | null
+          id?: string
+          intro_asset_id?: string | null
+          outro_asset_id?: string | null
+          reel_id?: string | null
+          session_id?: string | null
+          stat_overlay_enabled?: boolean | null
+          style_key?: string
+          transition_asset_ids?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audio_mode?: string
+          beat_source?: string
+          created_at?: string
+          enabled_intro?: boolean | null
+          enabled_outro?: boolean | null
+          enabled_transitions?: boolean | null
+          energy_profile?: Json | null
+          generation_error?: string | null
+          generation_metadata?: Json | null
+          generation_progress?: number | null
+          generation_status?: string | null
+          id?: string
+          intro_asset_id?: string | null
+          outro_asset_id?: string | null
+          reel_id?: string | null
+          session_id?: string | null
+          stat_overlay_enabled?: boolean | null
+          style_key?: string
+          transition_asset_ids?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reel_package_configs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       session_shares: {
         Row: {
           created_at: string
