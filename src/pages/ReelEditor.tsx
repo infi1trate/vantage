@@ -353,13 +353,18 @@ export default function ReelEditor() {
       // Remove the failing moment from source_moment_ids
       const updatedMomentIds = (reel.source_moment_ids || []).filter(id => id !== momentId);
       
+      // Validate minimum clip count (need at least 1 to make a reel, but warn if only 1 left)
       if (updatedMomentIds.length === 0) {
-        toast.error("Cannot skip — this is the only clip in the reel.");
+        toast.error("Not enough clips to make a reel — select more moments.", {
+          description: "This was the only clip in your reel.",
+          duration: 5000,
+        });
+        setIsRetrying(false);
         return;
       }
       
       // Update the reel with filtered moments and reset to compiling
-      await supabase
+      const { error } = await supabase
         .from("reels")
         .update({
           source_moment_ids: updatedMomentIds,
@@ -370,7 +375,9 @@ export default function ReelEditor() {
         })
         .eq("id", reelId);
       
-      toast.success("Skipped clip — retrying assembly...");
+      if (error) throw error;
+      
+      toast.success(`Skipped clip — continuing with ${updatedMomentIds.length} remaining clip${updatedMomentIds.length > 1 ? 's' : ''}...`);
       
       // Trigger a retry to restart assembly
       await assemblyState.retry();
@@ -379,7 +386,7 @@ export default function ReelEditor() {
       queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     } catch (err) {
       console.error("Failed to skip clip:", err);
-      toast.error("Failed to skip clip");
+      toast.error("Failed to skip clip — please try again.");
     } finally {
       setIsRetrying(false);
     }
