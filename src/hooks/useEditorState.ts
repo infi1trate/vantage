@@ -32,7 +32,7 @@ import { AssemblyState, AssemblyProgress } from "@/hooks/useReelAssembly";
  * Editor-specific lifecycle states
  * Maps reel database status to UI behavior
  */
-export type EditorState = "waiting_for_source" | "compiling" | "ready" | "exporting" | "failed" | "needs_attention";
+export type EditorState = "preparing_legacy" | "waiting_for_source" | "compiling" | "ready" | "exporting" | "failed" | "needs_attention";
 
 export interface EditorStateConfig {
   /** Current editor state */
@@ -124,6 +124,22 @@ export function deriveEditorState(
     };
   }
   
+  // PREPARING_LEGACY: Backfilling metadata for older recordings
+  if (assemblyState === "preparing_legacy") {
+    return {
+      state: "preparing_legacy",
+      previewAvailable: false,
+      fxEnabled: false,
+      framesEnabled: false,
+      packageEnabled: false,
+      exportEnabled: false,
+      timelineInteractive: false,
+      statusLabel: "Preparing legacy recording...",
+      showProgress: true,
+      progressPercent: 0,
+    };
+  }
+  
   // FAILED: Assembly failed, show error state
   if (assemblyState === "failed") {
     return {
@@ -204,6 +220,11 @@ export function useEditorState(
  * State badge colors for UI
  */
 export const STATE_BADGE_STYLES: Record<EditorState, { bg: string; text: string; border: string }> = {
+  preparing_legacy: {
+    bg: "bg-primary/10",
+    text: "text-primary",
+    border: "border-primary/30",
+  },
   waiting_for_source: {
     bg: "bg-muted/50",
     text: "text-muted-foreground",
