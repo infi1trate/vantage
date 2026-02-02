@@ -14,9 +14,10 @@ import { WindowPickerGrid } from "./WindowPickerGrid";
 import { SourceTypeSheet } from "./SourceTypeSheet";
 import { IdleStateBody } from "./IdleStateBody";
 import { RecordingStateBody } from "./RecordingStateBody";
+import { UnauthorizedStateBody } from "./UnauthorizedStateBody";
+import { MoreMenu } from "./MoreMenu";
 import { usePopoverState, type UsePopoverStateReturn } from "./usePopoverState";
 import { MOCK_WINDOWS } from "./types";
-import { Shield } from "lucide-react";
 
 interface DesktopCapturePopoverProps {
   className?: string;
@@ -118,47 +119,16 @@ export function DesktopCapturePopover({
     );
   }
 
-  // ============= UNAUTHORIZED STATE =============
-  if (popover.state === "unauthorized") {
+  // ============= UNAUTHORIZED / AUTHORIZING STATE =============
+  if (popover.state === "unauthorized" || popover.state === "authorizing") {
     return (
       <div className={className}>
         <PopoverShell onClose={onClose} onHome={onHome}>
-          <div className="space-y-4">
-            {/* Header */}
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 mx-auto rounded-full bg-vantage-green/20 flex items-center justify-center">
-                <Shield className="w-6 h-6 text-vantage-green" />
-              </div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider">
-                Permissions Required
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Vantage needs access to your screen and microphone to record gameplay.
-              </p>
-            </div>
-
-            {/* Permission list */}
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <div className="w-1.5 h-1.5 rounded-full bg-vantage-green" />
-                Screen recording access
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <div className="w-1.5 h-1.5 rounded-full bg-vantage-green" />
-                Microphone access
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <div className="w-1.5 h-1.5 rounded-full bg-vantage-green" />
-                Camera access (optional)
-              </div>
-            </div>
-
-            <PrimaryCTA
-              variant="authorize"
-              onClick={popover.authorize}
-              helperText="You can change this anytime in System Preferences"
-            />
-          </div>
+          <UnauthorizedStateBody
+            isAuthorizing={popover.state === "authorizing"}
+            onAuthorize={popover.authorize}
+            onLearnMore={() => console.log("Learn more clicked - stub")}
+          />
         </PopoverShell>
       </div>
     );
@@ -214,7 +184,8 @@ export function DesktopCapturePopover({
           canStartRecording={popover.canStartRecording}
           onEffectsClick={() => console.log("Effects clicked - stub")}
           onNotesClick={() => console.log("Notes clicked - stub")}
-          onMoreClick={() => console.log("More clicked - stub")}
+          username={popover.username}
+          onSignOut={popover.signOut}
         />
       </PopoverShell>
     </div>
