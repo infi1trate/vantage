@@ -52,6 +52,9 @@ export const EditorStateBadge = memo(function EditorStateBadge({
         {state === "failed" && (
           <AlertCircle className="h-3 w-3" />
         )}
+        {state === "needs_attention" && (
+          <AlertCircle className="h-3 w-3" />
+        )}
         {statusLabel}
       </Badge>
       

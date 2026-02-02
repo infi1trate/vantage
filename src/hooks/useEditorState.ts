@@ -125,7 +125,8 @@ export function deriveEditorState(
   }
   
   // COMPILING: No interactions, placeholders shown
-  if (assemblyState === "assembling" || !isVideoLoaded) {
+  // Note: We check assemblyState first - if ready, we enable editing even without video
+  if (assemblyState === "assembling") {
     return {
       state: "compiling",
       previewAvailable: false,
@@ -140,16 +141,19 @@ export function deriveEditorState(
     };
   }
   
-  // READY: Full editing enabled
+  // READY: Full editing enabled (manifest-first - enable even without preview video)
+  // The preview may still be loading/rendering, but editing is unblocked
+  const previewReady = isVideoLoaded;
+  
   return {
     state: "ready",
-    previewAvailable: true,
+    previewAvailable: previewReady,
     fxEnabled: true,
     framesEnabled: true,
     packageEnabled: true,
     exportEnabled: true,
     timelineInteractive: true,
-    statusLabel: "Ready",
+    statusLabel: previewReady ? "Ready" : "Ready (preview loading...)",
     showProgress: false,
     progressPercent: 100,
   };
