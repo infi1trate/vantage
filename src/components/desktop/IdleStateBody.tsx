@@ -5,6 +5,7 @@
  * Loom-style tappable rows for source, camera, mic.
  */
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Monitor, AppWindow, Video, VideoOff, Mic, MicOff, ChevronDown, ChevronRight, Sparkles, StickyNote, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatRecordingLimit, MOCK_MICS, CaptureSourceType } from "./types";
 import { MoreMenu } from "./MoreMenu";
+import { EffectsModal } from "./EffectsModal";
 
 interface IdleStateBodyProps {
   // Source
@@ -34,7 +36,6 @@ interface IdleStateBodyProps {
   onStartRecording: () => void;
   canStartRecording: boolean;
   // Footer
-  onEffectsClick?: () => void;
   onNotesClick?: () => void;
   // Account
   username: string;
@@ -77,11 +78,12 @@ export function IdleStateBody({
   onMicDeviceChange,
   onStartRecording,
   canStartRecording,
-  onEffectsClick,
   onNotesClick,
   username,
   onSignOut,
 }: IdleStateBodyProps) {
+  const [effectsOpen, setEffectsOpen] = useState(false);
+  
   const selectedMic = MOCK_MICS.find(m => m.id === selectedMicId) || MOCK_MICS[0];
   const sourceDisplay = getSourceDisplay(sourceType, selectedWindowName);
   const SourceIcon = sourceDisplay.icon;
@@ -93,7 +95,13 @@ export function IdleStateBody({
   };
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col relative">
+      {/* Effects Modal */}
+      <EffectsModal
+        isOpen={effectsOpen}
+        onClose={() => setEffectsOpen(false)}
+        cameraEnabled={cameraEnabled}
+      />
       {/* Body rows */}
       <div className="space-y-1">
         {/* Source Row */}
@@ -285,7 +293,7 @@ export function IdleStateBody({
       
       <div className="flex items-center justify-around">
         <button
-          onClick={onEffectsClick}
+          onClick={() => setEffectsOpen(true)}
           className={cn(
             "flex flex-col items-center gap-1 px-4 py-2 rounded-lg",
             "text-muted-foreground hover:text-foreground hover:bg-white/5",
