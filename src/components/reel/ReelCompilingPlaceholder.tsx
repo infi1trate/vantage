@@ -771,8 +771,21 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   You can leave this page — we'll keep working in the background.
                 </p>
                 
-                {/* Leave and notify / Cancel options */}
+                {/* CTAs: Check session video (primary diagnostic) + Leave and notify */}
                 <div className="flex flex-col items-center gap-3 mt-3">
+                  {/* Primary: Check session video - always available as diagnostic path */}
+                  {onCheckSession && (
+                    <Button
+                      onClick={onCheckSession}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      <Search className="h-4 w-4" />
+                      Check session video
+                    </Button>
+                  )}
+                  
+                  {/* Secondary: Leave and notify - background processing will continue */}
                   {onLeaveAndNotify && (
                     <Button
                       variant="outline"
@@ -785,6 +798,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     </Button>
                   )}
                   
+                  {/* Tertiary: Back to session */}
                   {onCancel && (
                     <button
                       onClick={onCancel}
@@ -921,15 +935,29 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   />
                 )}
                 
-                {/* Cancel option */}
-                {onCancel && (
-                  <button
-                    onClick={onCancel}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors mt-1 underline-offset-2 hover:underline"
-                  >
-                    Cancel
-                  </button>
-                )}
+                {/* Diagnostic + Cancel options */}
+                <div className="flex items-center gap-4 mt-2">
+                  {/* Check session video - diagnostic path (always available if sessionId exists) */}
+                  {onCheckSession && (
+                    <button
+                      onClick={onCheckSession}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline flex items-center gap-1"
+                    >
+                      <Search className="h-3 w-3" />
+                      Check session video
+                    </button>
+                  )}
+                  
+                  {/* Cancel option */}
+                  {onCancel && (
+                    <button
+                      onClick={onCancel}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </>
             )}
           </div>
