@@ -24,6 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
 import { resolveAllSegments, toMomentSegmentInputs } from "@/lib/segmentResolver";
 import { waitForAssetReadiness, checkAssetReadiness, getAssetStatusMessage, AssetReadinessStatus, watchForAssetReadiness, isPermanentFailure } from "@/lib/assetReadiness";
+import { checkReelSourceReadiness, getReelSourceStatusMessage } from "@/lib/reelSource";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -812,17 +813,26 @@ export function useReelAssembly(
           return;
         }
         
-        // ============ ASSET READINESS GATE ============
-        // Check if source video is ready before collecting clips
-        // Distinguish between recoverable (processing) vs permanent (no_video) failures
-        console.log("[ReelAssembly] Checking asset readiness for session:", sessionId);
+        // ============ REEL SOURCE READINESS GATE ============
+        // Check if ReelSource is ready before collecting clips
+        // ReelSource is the versioned compatibility layer for session video
+        // Distinguish between recoverable (preparing) vs permanent (missing) failures
+        console.log("[ReelAssembly] Checking ReelSource readiness for session:", sessionId);
         
-        const initialReadiness = await checkAssetReadiness(sessionId);
+        // First check ReelSource (preferred) - provides version-aware guarantees
+        const reelSourceResult = await checkReelSourceReadiness(sessionId);
         
-        if (initialReadiness.status !== "ready") {
-          console.log("[ReelAssembly] Video not ready, status:", initialReadiness.status, "recoverable:", initialReadiness.isRecoverable);
+        // Log legacy vs new session detection
+        if (reelSourceResult.isLegacy) {
+          console.log("[ReelAssembly] Legacy session detected (no ReelSource), using fallback check");
+        } else if (reelSourceResult.reelSource) {
+          console.log(`[ReelAssembly] ReelSource v${reelSourceResult.reelSource.version}, status: ${reelSourceResult.reelSource.status}`);
+        }
+        
+        if (!reelSourceResult.isReady) {
+          console.log("[ReelAssembly] Source not ready:", reelSourceResult.message, "recoverable:", reelSourceResult.isRecoverable);
           
-          if (initialReadiness.isRecoverable) {
+          if (reelSourceResult.isRecoverable) {
             // ===== RECOVERABLE: Video is processing/uploading =====
             // Update reel status and transition to waiting state
             await supabase
@@ -889,8 +899,9 @@ export function useReelAssembly(
           } else {
             // ===== PERMANENT FAILURE: no_video, not_found, failed =====
             // Do NOT keep waiting - immediately mark as needs_attention
-            const errorMessage = "This session has no gameplay video.";
-            console.warn("[ReelAssembly] Permanent failure - video missing:", initialReadiness.status);
+            const reelSourceStatus = reelSourceResult.reelSource?.status || "missing";
+            const errorMessage = reelSourceResult.message || "This session has no gameplay video.";
+            console.warn("[ReelAssembly] Permanent failure - video missing:", reelSourceStatus);
             
             setError(errorMessage);
             setState("needs_attention");
@@ -902,8 +913,9 @@ export function useReelAssembly(
                 render_error: JSON.stringify({
                   reason: "asset_not_ready",
                   description: errorMessage,
-                  assetStatus: initialReadiness.status,
+                  assetStatus: reelSourceStatus,
                   isRecoverable: false,
+                  isLegacy: reelSourceResult.isLegacy,
                 }),
                 updated_at: new Date().toISOString(),
               })
