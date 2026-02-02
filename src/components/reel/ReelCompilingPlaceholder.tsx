@@ -187,16 +187,40 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   )}
                 </div>
 
-                {/* Recovery CTAs */}
-                <div className="flex flex-col sm:flex-row items-center gap-3 mt-3">
-                  {onRetry && (
+                {/* Recovery CTAs - order: Skip (primary when clip error), Retry, Back */}
+                <div className="flex flex-col items-center gap-3 mt-3">
+                  {/* Primary: Skip this clip & continue (when we know which clip failed) */}
+                  {clipError && onSkipClip && (
                     <Button
-                      onClick={onRetry}
+                      onClick={() => onSkipClip(clipError.momentId)}
                       disabled={isRetrying}
-                      className="gap-2 min-w-[160px]"
+                      className="gap-2 min-w-[200px]"
                       size="lg"
                     >
                       {isRetrying ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Skipping...
+                        </>
+                      ) : (
+                        <>
+                          <SkipForward className="h-4 w-4" />
+                          Skip this clip & continue
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  
+                  {/* Secondary: Retry */}
+                  {onRetry && (
+                    <Button
+                      variant={clipError ? "outline" : "default"}
+                      onClick={onRetry}
+                      disabled={isRetrying}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      {isRetrying && !clipError ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Retrying...
@@ -209,46 +233,22 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       )}
                     </Button>
                   )}
-                  {/* Skip clip option when we have a specific failing clip */}
-                  {clipError && onSkipClip && (
-                    <Button
-                      variant="outline"
-                      onClick={() => onSkipClip(clipError.momentId)}
-                      disabled={isRetrying}
-                      className="gap-2 min-w-[160px]"
-                      size="lg"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                      Skip this clip
-                    </Button>
-                  )}
-                  {onCancel && !clipError && (
-                    <Button
-                      variant="outline"
+                  
+                  {/* Tertiary: Back to session */}
+                  {onCancel && (
+                    <button
                       onClick={onCancel}
-                      className="gap-2 min-w-[160px]"
-                      size="lg"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
                     >
-                      <ArrowLeft className="h-4 w-4" />
                       Back to session
-                    </Button>
+                    </button>
                   )}
                 </div>
-
-                {/* Back link when skip is shown */}
-                {clipError && onCancel && (
-                  <button
-                    onClick={onCancel}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline mt-2"
-                  >
-                    Back to session
-                  </button>
-                )}
 
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
                   {clipError
-                    ? "Skip this clip to continue, or retry to try again."
+                    ? "Skip this clip to continue with remaining clips, or retry to try again."
                     : "Your format and selected clips are preserved — just hit retry."}
                 </p>
               </>
@@ -279,17 +279,40 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   )}
                 </div>
 
-                {/* Recovery CTAs */}
+                {/* Recovery CTAs - order: Skip (primary when clip error), Retry, Leave, Back */}
                 <div className="flex flex-col items-center gap-3 mt-3">
-                  {/* Primary: Retry assembly */}
-                  {onRetry && (
+                  {/* Primary: Skip this clip & continue (when we know which clip failed) */}
+                  {clipError && onSkipClip && (
                     <Button
-                      onClick={onRetry}
+                      onClick={() => onSkipClip(clipError.momentId)}
                       disabled={isRetrying}
                       className="gap-2 min-w-[200px]"
                       size="lg"
                     >
                       {isRetrying ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Skipping...
+                        </>
+                      ) : (
+                        <>
+                          <SkipForward className="h-4 w-4" />
+                          Skip this clip & continue
+                        </>
+                      )}
+                    </Button>
+                  )}
+
+                  {/* Secondary: Retry */}
+                  {onRetry && (
+                    <Button
+                      variant={clipError ? "outline" : "default"}
+                      onClick={onRetry}
+                      disabled={isRetrying}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      {isRetrying && !clipError ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Retrying...
@@ -303,21 +326,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     </Button>
                   )}
 
-                  {/* Skip clip option when we have a specific failing clip */}
-                  {clipError && onSkipClip && (
-                    <Button
-                      variant="outline"
-                      onClick={() => onSkipClip(clipError.momentId)}
-                      disabled={isRetrying}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                      Skip this clip
-                    </Button>
-                  )}
-
-                  {/* Leave and notify me (only show if no specific clip error) */}
+                  {/* Leave and notify me (only show if no specific clip error - timeout scenario) */}
                   {!clipError && onLeaveAndNotify && (
                     <Button
                       variant="outline"
@@ -344,7 +353,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
                   {clipError
-                    ? "Skip this clip to continue with the remaining clips."
+                    ? "Skip this clip to continue with remaining clips, or retry."
                     : "Your format and clips are saved. You'll get a notification when it's ready."}
                 </p>
               </>
