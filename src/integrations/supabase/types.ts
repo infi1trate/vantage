@@ -1177,9 +1177,11 @@ export type Database = {
         Row: {
           aspect_ratio: string
           assembly_step: string | null
+          attempt_count: number | null
           created_at: string
           duration_seconds: number | null
           id: string
+          job_id: string | null
           manifest: Json | null
           output_file_size_bytes: number | null
           output_url: string | null
@@ -1203,9 +1205,11 @@ export type Database = {
         Insert: {
           aspect_ratio?: string
           assembly_step?: string | null
+          attempt_count?: number | null
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          job_id?: string | null
           manifest?: Json | null
           output_file_size_bytes?: number | null
           output_url?: string | null
@@ -1229,9 +1233,11 @@ export type Database = {
         Update: {
           aspect_ratio?: string
           assembly_step?: string | null
+          attempt_count?: number | null
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          job_id?: string | null
           manifest?: Json | null
           output_file_size_bytes?: number | null
           output_url?: string | null

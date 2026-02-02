@@ -64,6 +64,9 @@ export interface Reel {
   preview_ref: string | null;
   playback_mode: PlaybackMode;
   total_duration_ms: number | null;
+  // Retry tracking
+  attempt_count: number;
+  job_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -324,6 +327,97 @@ export async function failReelRender(reelId: string, errorMessage: string): Prom
 
   if (error) throw error;
   return toReel(data);
+}
+
+/**
+ * Generate a unique job ID for assembly tracking
+ */
+function generateJobId(): string {
+  return `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Retry reel assembly with clean state reset
+ * 
+ * This function:
+ * 1. Clears any partial preview data
+ * 2. Resets all in-progress flags
+ * 3. Sets status back to "compiling" with "collecting_clips" step
+ * 4. Increments attempt count
+ * 5. Generates a new job_id to prevent duplicate concurrent jobs
+ * 
+ * @returns The new job_id that should be used to track this assembly attempt
+ */
+export async function retryAssembly(reelId: string): Promise<{ reel: Reel; jobId: string }> {
+  const now = new Date().toISOString();
+  const newJobId = generateJobId();
+  
+  console.log(`[Reels] Retrying assembly for ${reelId} with job ${newJobId}`);
+  
+  // Get current attempt count
+  const currentReel = await getReel(reelId);
+  const newAttemptCount = (currentReel?.attempt_count || 0) + 1;
+  
+  const { data, error } = await supabase
+    .from("reels")
+    .update({
+      // Reset status
+      status: "compiling",
+      // Reset assembly step to beginning
+      assembly_step: "collecting_clips",
+      step_started_at: now,
+      step_completed_at: null,
+      // Clear partial preview data
+      preview_ref: null,
+      preview_url: null,
+      playback_mode: "preview", // Reset to default, will be set appropriately during assembly
+      // Clear error state
+      render_error: null,
+      render_started_at: null,
+      render_completed_at: null,
+      // Increment attempt count and set new job ID
+      attempt_count: newAttemptCount,
+      job_id: newJobId,
+      updated_at: now,
+    })
+    .eq("id", reelId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  
+  console.log(`[Reels] Assembly retry initiated, attempt ${newAttemptCount}, job ${newJobId}`);
+  
+  return { reel: toReel(data), jobId: newJobId };
+}
+
+/**
+ * Check if a job ID is still the active one for a reel
+ * Used to prevent duplicate/stale jobs from completing
+ */
+export async function isJobActive(reelId: string, jobId: string): Promise<boolean> {
+  const reel = await getReel(reelId);
+  return reel?.job_id === jobId;
+}
+
+/**
+ * Cancel any in-progress assembly by clearing the job_id
+ * The assembly process should check isJobActive before completing
+ */
+export async function cancelAssemblyJob(reelId: string): Promise<void> {
+  const { error } = await supabase
+    .from("reels")
+    .update({
+      job_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", reelId);
+
+  if (error) {
+    console.error("[Reels] Failed to cancel assembly job:", error);
+  } else {
+    console.log(`[Reels] Cancelled assembly job for ${reelId}`);
+  }
 }
 
 /**
