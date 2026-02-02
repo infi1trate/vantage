@@ -29,6 +29,7 @@ import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceho
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
 import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
 import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
+import { PreviewRenderingPill } from "@/components/reel/PreviewRenderingPill";
 import { ManifestPlayer } from "@/components/reel/ManifestPlayer";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
@@ -503,11 +504,11 @@ export default function ReelEditor() {
                 // Ready state - show player with effects
                 // Uses manifest player when no preview available, otherwise PlayerWithEffects
                 <div className="h-full flex flex-col">
-                  {/* Show banner based on preview_status */}
-                  {reel.preview_status !== "ready" && (
+                  {/* Show banner ONLY for failed preview - failed is actionable */}
+                  {reel.preview_status === "failed" && (
                     <PreviewUnavailableBanner
                       className="mx-4 mt-4"
-                      previewStatus={reel.preview_status as PreviewStatus}
+                      previewStatus="failed"
                       onGeneratePreview={async () => {
                         toast.info("Generating preview...", {
                           description: "This may take a moment.",
@@ -519,10 +520,19 @@ export default function ReelEditor() {
                     />
                   )}
                   
-                  <div className="flex-1 min-h-0">
+                  <div className="flex-1 min-h-0 relative">
+                    {/* Subtle pill for rendering/pending preview - overlaid on player */}
+                    {(reel.preview_status === "rendering" || reel.preview_status === "pending") && (
+                      <PreviewRenderingPill 
+                        previewStatus={reel.preview_status as PreviewStatus}
+                      />
+                    )}
+                    
                     {/* Playback mode selection:
                         - "manifest" mode: Use ManifestPlayer to sequence clips
                         - "stitched_preview" mode: Use PlayerWithEffects with preview video
+                        
+                        Seamless switch: effectivePlaybackMode auto-updates when preview becomes ready
                     */}
                     {effectivePlaybackMode === "manifest" && reel.manifest && sessionData?.videoUrl ? (
                       <ManifestPlayer
