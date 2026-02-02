@@ -5,6 +5,7 @@
  * - Real-time subscription to reel status changes
  * - 45-second timeout fail-safe
  * - Retry mechanism for failed assembly
+ * - Telemetry logging for duration, failures, and retries
  * 
  * States:
  * - idle: No assembly running
@@ -39,8 +40,38 @@ export interface ReelAssemblyState {
   /** Whether we can retry */
   canRetry: boolean;
   
+  /** Number of retry attempts */
+  retryCount: number;
+  
   /** Retry assembly function */
   retry: () => Promise<void>;
+}
+
+/**
+ * Lightweight telemetry logger for assembly events
+ */
+function logAssemblyTelemetry(
+  event: "start" | "success" | "failure" | "retry" | "timeout",
+  reelId: string,
+  data?: {
+    durationMs?: number;
+    reason?: string;
+    retryCount?: number;
+  }
+) {
+  const timestamp = new Date().toISOString();
+  const logData = {
+    event: `reel_assembly_${event}`,
+    reelId,
+    timestamp,
+    ...data,
+  };
+  
+  // Log to console in structured format
+  console.log(`[ReelAssembly:Telemetry]`, JSON.stringify(logData));
+  
+  // In production, this would send to an analytics service
+  // e.g., analytics.track('reel_assembly', logData);
 }
 
 /**
@@ -62,10 +93,12 @@ export function useReelAssembly(
   
   const [state, setState] = useState<AssemblyState>(() => getStateFromStatus(initialStatus));
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   const timeoutRef = useRef<number | null>(null);
   const pollRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const assemblyStartRef = useRef<number | null>(null);
   
   // Clear all timers
   const clearTimers = useCallback(() => {
@@ -81,30 +114,63 @@ export function useReelAssembly(
   
   // Handle status update from any source
   const handleStatusChange = useCallback((newStatus: ReelStatus) => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || !reelId) return;
     
     console.log("[ReelAssembly] Status changed:", newStatus);
     
     if (newStatus === "compiling") {
       setState("assembling");
       setError(null);
+      // Track assembly start
+      if (!assemblyStartRef.current) {
+        assemblyStartRef.current = Date.now();
+        logAssemblyTelemetry("start", reelId);
+      }
     } else if (newStatus === "failed") {
       setState("failed");
       clearTimers();
+      // Log failure with duration
+      const durationMs = assemblyStartRef.current 
+        ? Date.now() - assemblyStartRef.current 
+        : undefined;
+      logAssemblyTelemetry("failure", reelId, { 
+        durationMs,
+        reason: "status_changed_to_failed",
+        retryCount,
+      });
+      assemblyStartRef.current = null;
     } else {
       // draft, ready, rendering = assembly complete
       setState("ready");
       setError(null);
       clearTimers();
+      // Log success with duration
+      const durationMs = assemblyStartRef.current 
+        ? Date.now() - assemblyStartRef.current 
+        : undefined;
+      if (durationMs) {
+        logAssemblyTelemetry("success", reelId, { durationMs, retryCount });
+      }
+      assemblyStartRef.current = null;
     }
     
     // Update React Query cache
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-  }, [reelId, queryClient, clearTimers]);
+  }, [reelId, queryClient, clearTimers, retryCount]);
   
   // Fail the assembly with timeout
   const failWithTimeout = useCallback(async () => {
     if (!reelId || !mountedRef.current) return;
+    
+    const durationMs = assemblyStartRef.current 
+      ? Date.now() - assemblyStartRef.current 
+      : ASSEMBLY_TIMEOUT_MS;
+    
+    logAssemblyTelemetry("timeout", reelId, { 
+      durationMs, 
+      reason: "timeout_45s",
+      retryCount,
+    });
     
     console.warn("[ReelAssembly] Assembly timed out after 45s");
     
@@ -117,21 +183,22 @@ export function useReelAssembly(
         .from("reels")
         .update({ 
           status: "failed",
-          render_error: "Reel assembly is taking longer than expected.",
+          render_error: "Reel assembly is taking longer than expected. Please try again.",
           updated_at: new Date().toISOString(),
         })
         .eq("id", reelId);
       
       if (mountedRef.current) {
         setState("failed");
-        setError("Reel assembly is taking longer than expected.");
+        setError("Reel assembly is taking longer than expected. Please try again.");
         clearTimers();
+        assemblyStartRef.current = null;
         queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
       }
     } catch (err) {
       console.error("[ReelAssembly] Failed to update timeout status:", err);
     }
-  }, [reelId, queryClient, clearTimers]);
+  }, [reelId, queryClient, clearTimers, retryCount]);
   
   // Poll for status as a backup mechanism
   const pollStatus = useCallback(async () => {
@@ -179,6 +246,9 @@ export function useReelAssembly(
     // Setup timeout if currently assembling
     if (state === "assembling") {
       console.log("[ReelAssembly] Starting 45s timeout");
+      if (!assemblyStartRef.current) {
+        assemblyStartRef.current = Date.now();
+      }
       timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
       
       // Also setup polling as backup (realtime might not always work)
@@ -218,12 +288,18 @@ export function useReelAssembly(
   const retry = useCallback(async () => {
     if (!reelId) return;
     
-    console.log("[ReelAssembly] Retrying assembly");
+    const newRetryCount = retryCount + 1;
+    setRetryCount(newRetryCount);
+    
+    logAssemblyTelemetry("retry", reelId, { retryCount: newRetryCount });
+    
+    console.log("[ReelAssembly] Retrying assembly, attempt:", newRetryCount);
     setState("assembling");
     setError(null);
+    assemblyStartRef.current = Date.now();
     
     try {
-      // Reset status to compiling
+      // Reset status to compiling - preserves format + selected moments
       await supabase
         .from("reels")
         .update({ 
@@ -253,11 +329,23 @@ export function useReelAssembly(
       queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     } catch (err) {
       console.error("[ReelAssembly] Retry failed:", err);
+      
+      const durationMs = assemblyStartRef.current 
+        ? Date.now() - assemblyStartRef.current 
+        : undefined;
+      
+      logAssemblyTelemetry("failure", reelId, { 
+        durationMs, 
+        reason: err instanceof Error ? err.message : "retry_exception",
+        retryCount: newRetryCount,
+      });
+      
       setState("failed");
-      setError("Failed to retry assembly. Please try again.");
+      setError("Something interrupted the assembly process. Please try again.");
       clearTimers();
+      assemblyStartRef.current = null;
     }
-  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers]);
+  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount]);
   
   return {
     state,
@@ -265,6 +353,7 @@ export function useReelAssembly(
     isAssembling: state === "assembling",
     isReady: state === "ready",
     canRetry: state === "failed",
+    retryCount,
     retry,
   };
 }
