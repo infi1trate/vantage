@@ -40,6 +40,8 @@ interface ExportButtonProps {
   disabled?: boolean;
   size?: "sm" | "default" | "lg";
   className?: string;
+  /** Reel status to reflect in button label */
+  reelStatus?: "draft" | "compiling" | "ready" | "rendering" | "exporting";
 }
 
 export const ExportButton = memo(function ExportButton({
@@ -52,20 +54,35 @@ export const ExportButton = memo(function ExportButton({
   disabled = false,
   size = "default",
   className,
+  reelStatus,
 }: ExportButtonProps) {
   const exportState = useExportState(sessionId);
+  
+  // Derive button label based on reel status
+  const getButtonLabel = () => {
+    if (reelStatus === "compiling") return "Assembling...";
+    if (reelStatus === "draft") return "Export Draft";
+    if (reelStatus === "rendering" || reelStatus === "exporting") return "Exporting...";
+    return "Export";
+  };
+  
+  const isReelBlocked = reelStatus === "compiling";
   
   // Idle state
   if (exportState.state === "idle") {
     return (
       <Button
         onClick={onExport}
-        disabled={disabled}
+        disabled={disabled || isReelBlocked}
         size={size}
         className={cn("gap-2", className)}
       >
-        <Download className="h-4 w-4" />
-        Export
+        {isReelBlocked ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
+        {getButtonLabel()}
       </Button>
     );
   }
