@@ -38,6 +38,8 @@ import {
   Upload,
   FolderOpen,
   ExternalLink,
+  Search,
+  Clock,
 } from "lucide-react";
 import { useRenderQueue } from "@/hooks/useRenderQueue";
 import { RenderJob, RenderJobType } from "@/lib/renderQueue";
@@ -81,6 +83,9 @@ const RenderJobItem = memo(function RenderJobItem({
   const typeConfig = JOB_TYPE_CONFIG[job.type];
   const TypeIcon = typeConfig.icon;
   
+  // For waiting jobs, show "Waiting for session video" instead of the job type label
+  const displayLabel = isWaiting ? "Waiting for session video" : typeConfig.label;
+  
   const currentStage = job.stages[job.currentStageIndex];
   const stageLabel = currentStage?.label || (job.status === "queued" ? "Queued" : "Processing");
   
@@ -93,7 +98,7 @@ const RenderJobItem = memo(function RenderJobItem({
       case "needs_attention":
         return <AlertCircle className="h-4 w-4 text-vantage-warning shrink-0" />;
       case "waiting":
-        return <Loader2 className="h-4 w-4 text-muted-foreground animate-spin shrink-0" />;
+        return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
       case "uploading":
         return <Upload className="h-4 w-4 text-primary animate-pulse shrink-0" />;
       case "processing":
@@ -129,8 +134,14 @@ const RenderJobItem = memo(function RenderJobItem({
                 ? job.reelTitle 
                 : job.sessionTitle}
             </span>
-            <Badge variant="secondary" className="text-[9px] px-1.5 shrink-0">
-              {typeConfig.label}
+            <Badge 
+              variant={isWaiting ? "outline" : "secondary"} 
+              className={cn(
+                "text-[9px] px-1.5 shrink-0",
+                isWaiting && "text-muted-foreground border-muted-foreground/30"
+              )}
+            >
+              {displayLabel}
             </Badge>
             {/* Show aspect ratio + clip count for reel assembly */}
             {job.type === "reel_assembly" && (job.aspectRatio || job.clipCount) && !compact && (
@@ -246,6 +257,21 @@ const RenderJobItem = memo(function RenderJobItem({
             </>
           )}
           
+          {/* Waiting job actions - "Check session" CTA */}
+          {isWaiting && job.sessionId && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5"
+              asChild
+            >
+              <Link to={`/session/${job.sessionId}?panel=media`}>
+                <Search className="h-3.5 w-3.5" />
+                {!compact && <span>Check session</span>}
+              </Link>
+            </Button>
+          )}
+          
           {/* Active job actions */}
           {isActive && job.canCancel && (
             <Tooltip>
@@ -322,11 +348,16 @@ const RenderJobItem = memo(function RenderJobItem({
       {/* Waiting for source video - no progress bar, just message */}
       {isWaiting && (
         <div className="mt-1 pl-6.5">
-          <div className="flex items-start gap-2 p-2 rounded bg-muted/50 border border-border/30">
-            <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin shrink-0 mt-0.5" />
-            <p className="text-xs text-muted-foreground">
-              {job.shortReason || "Waiting for session video…"}
-            </p>
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-foreground">
+                Waiting for session video…
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {job.shortReason || "Gameplay recording not ready"}
+              </p>
+            </div>
           </div>
         </div>
       )}
