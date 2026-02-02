@@ -16,6 +16,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { useReel } from "@/hooks/useReel";
+import { useReelAssembly } from "@/hooks/useReelAssembly";
 import { useReelPackage } from "@/hooks/useReelPackageConfig";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
@@ -50,6 +51,9 @@ export default function ReelEditor() {
   // Reel data
   const { data: reel, isLoading: reelLoading, error: reelError } = useReel(reelId);
   
+  // Reel assembly state with real-time subscription + timeout
+  const assemblyState = useReelAssembly(reelId, reel?.status as ReelStatus | undefined);
+  
   // Reel package configuration
   const { config: reelPackage, isLoading: packageLoading } = useReelPackage(
     reel?.session_id || undefined
@@ -72,13 +76,14 @@ export default function ReelEditor() {
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
   const [showEffects, setShowEffects] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   
   // Derive video loaded state
   const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
   
-  // Use the editor state machine
+  // Use the editor state machine with assembly state
   const editorState = useEditorState(
-    reel?.status as ReelStatus | undefined,
+    assemblyState.state,
     reel?.session_id || undefined,
     isVideoLoaded
   );
@@ -214,6 +219,19 @@ export default function ReelEditor() {
     generateSuggestions();
   }, [generateSuggestions]);
 
+  // Retry assembly handler
+  const handleRetryAssembly = useCallback(async () => {
+    setIsRetrying(true);
+    try {
+      await assemblyState.retry();
+      toast.success("Retrying assembly...");
+    } catch (err) {
+      toast.error("Failed to retry assembly");
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [assemblyState]);
+
   const handleClearAllEffects = useCallback(() => {
     if (!reel?.session_id) return;
     clearEffectsMutation.mutate(reel.session_id, {
@@ -343,10 +361,14 @@ export default function ReelEditor() {
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
               {!editorState.previewAvailable ? (
-                // Compiling/exporting state - show friendly placeholder
+                // Compiling/failed/exporting state - show friendly placeholder
                 <ReelCompilingPlaceholder
                   clipCount={reel.source_moment_ids?.length || 0}
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
+                  isFailed={editorState.state === "failed"}
+                  errorMessage={assemblyState.error}
+                  onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
+                  isRetrying={isRetrying}
                 />
               ) : (
                 // Ready state - show player with effects

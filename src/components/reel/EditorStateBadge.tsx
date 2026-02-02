@@ -2,13 +2,13 @@
  * Reel Editor State Badge
  * 
  * Visual indicator for the current editor state.
- * Shows: Assembling | Draft | Ready | Exporting
+ * Shows: Assembling | Draft | Ready | Exporting | Failed
  */
 
 import { memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Check, Download } from "lucide-react";
+import { Loader2, Check, Download, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditorState, STATE_BADGE_STYLES } from "@/hooks/useEditorState";
 
@@ -48,6 +48,9 @@ export const EditorStateBadge = memo(function EditorStateBadge({
         )}
         {state === "exporting" && (
           <Download className="h-3 w-3 animate-pulse" />
+        )}
+        {state === "failed" && (
+          <AlertCircle className="h-3 w-3" />
         )}
         {statusLabel}
       </Badge>
