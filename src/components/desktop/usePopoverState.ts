@@ -19,8 +19,11 @@ import {
   RECORDING_LIMIT_SECONDS,
 } from "./types";
 
-// Extended state to include source picker and authorizing
-type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing";
+// Extended state to include source picker, authorizing, and post-recording states
+type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing" | "uploading" | "success";
+
+// Post-recording sub-state for more granular control
+export type PostRecordingPhase = "processing" | "uploading" | "success" | "error";
 
 // Mock user for account display
 export const MOCK_USER = {
@@ -39,11 +42,19 @@ export interface UsePopoverStateReturn {
   isPaused: boolean;
   countdown: number | null;
   
+  // Post-recording state
+  postRecordingPhase: PostRecordingPhase | null;
+  uploadProgress: number;
+  
   // Selected window (for window capture)
   selectedWindow: MockWindow | null;
   
   // Auth
   username: string;
+  
+  // Settings
+  forceUploadError: boolean;
+  setForceUploadError: (value: boolean) => void;
   
   // State transitions
   authorize: () => void;
@@ -61,6 +72,12 @@ export interface UsePopoverStateReturn {
   stopRecording: () => void;
   retry: () => void;
   reset: () => void;
+  
+  // Post-recording actions
+  openEditor: () => void;
+  copyLink: () => void;
+  retryUpload: () => void;
+  openRecordingsFolder: () => void;
   
   // Config changes
   setMicEnabled: (enabled: boolean) => void;
@@ -92,15 +109,24 @@ export function usePopoverState(): UsePopoverStateReturn {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [selectedWindow, setSelectedWindow] = useState<MockWindow | null>(null);
   
+  // Post-recording state
+  const [postRecordingPhase, setPostRecordingPhase] = useState<PostRecordingPhase | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
+  // Settings
+  const [forceUploadError, setForceUploadError] = useState(false);
+  
   // Refs for intervals
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (uploadIntervalRef.current) clearInterval(uploadIntervalRef.current);
     };
   }, []);
 
@@ -237,7 +263,7 @@ export function usePopoverState(): UsePopoverStateReturn {
     }, 1000);
   }, []);
 
-  // Stop recording
+  // Stop recording - starts post-recording flow
   const stopRecording = useCallback(() => {
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
@@ -248,32 +274,115 @@ export function usePopoverState(): UsePopoverStateReturn {
       countdownIntervalRef.current = null;
     }
     
+    // Start processing phase
     setState("processing");
+    setPostRecordingPhase("processing");
+    setUploadProgress(0);
     
-    // Simulate processing
+    // Simulate processing (1.5s) -> uploading (2s with progress) -> success/error
     setTimeout(() => {
-      // 80% chance success, 20% chance error (for demo)
-      if (Math.random() > 0.2) {
-        setState("idle");
-        setDuration(0);
-        setIsPaused(false);
-      } else {
-        setError({
-          code: "upload_failed",
-          message: "Upload failed. Please check your connection and try again.",
-          recoverable: true,
-        });
-        setState("error");
-      }
-    }, 2000);
-  }, []);
+      setPostRecordingPhase("uploading");
+      setState("uploading");
+      
+      // Simulate upload progress
+      let progress = 0;
+      uploadIntervalRef.current = setInterval(() => {
+        progress += Math.random() * 15 + 5;
+        if (progress >= 100) {
+          progress = 100;
+          if (uploadIntervalRef.current) {
+            clearInterval(uploadIntervalRef.current);
+            uploadIntervalRef.current = null;
+          }
+          setUploadProgress(100);
+          
+          // Determine success or error based on forceUploadError setting
+          setTimeout(() => {
+            if (forceUploadError) {
+              setError({
+                code: "upload_failed",
+                message: "Upload failed. Please check your connection and try again.",
+                recoverable: true,
+              });
+              setPostRecordingPhase("error");
+              setState("error");
+            } else {
+              setPostRecordingPhase("success");
+              setState("success");
+            }
+          }, 300);
+        } else {
+          setUploadProgress(Math.round(progress));
+        }
+      }, 200);
+    }, 1500);
+  }, [forceUploadError]);
 
   // Retry after error
   const retry = useCallback(() => {
     setError(null);
+    setPostRecordingPhase(null);
     setState("idle");
     setDuration(0);
     setIsPaused(false);
+    setUploadProgress(0);
+  }, []);
+
+  // Post-recording actions
+  const openEditor = useCallback(() => {
+    console.log("Opening editor...");
+    // Reset state after opening
+    setPostRecordingPhase(null);
+    setState("idle");
+    setDuration(0);
+    setIsPaused(false);
+    setUploadProgress(0);
+  }, []);
+
+  const copyLink = useCallback(() => {
+    console.log("Link copied to clipboard");
+  }, []);
+
+  const retryUpload = useCallback(() => {
+    // Start upload process again
+    setError(null);
+    setPostRecordingPhase("uploading");
+    setState("uploading");
+    setUploadProgress(0);
+    
+    let progress = 0;
+    uploadIntervalRef.current = setInterval(() => {
+      progress += Math.random() * 15 + 5;
+      if (progress >= 100) {
+        progress = 100;
+        if (uploadIntervalRef.current) {
+          clearInterval(uploadIntervalRef.current);
+          uploadIntervalRef.current = null;
+        }
+        setUploadProgress(100);
+        
+        setTimeout(() => {
+          if (forceUploadError) {
+            setError({
+              code: "upload_failed",
+              message: "Upload failed. Please check your connection and try again.",
+              recoverable: true,
+            });
+            setPostRecordingPhase("error");
+            setState("error");
+          } else {
+            setPostRecordingPhase("success");
+            setState("success");
+          }
+        }, 300);
+      } else {
+        setUploadProgress(Math.round(progress));
+      }
+    }, 200);
+  }, [forceUploadError]);
+
+  const openRecordingsFolder = useCallback(() => {
+    console.log("Opening recordings folder...");
   }, []);
 
   // Full reset
@@ -325,8 +434,12 @@ export function usePopoverState(): UsePopoverStateReturn {
     duration,
     isPaused,
     countdown,
+    postRecordingPhase,
+    uploadProgress,
     selectedWindow,
     username: MOCK_USER.username,
+    forceUploadError,
+    setForceUploadError,
     authorize,
     signOut,
     selectSource,
@@ -342,6 +455,10 @@ export function usePopoverState(): UsePopoverStateReturn {
     stopRecording,
     retry,
     reset,
+    openEditor,
+    copyLink,
+    retryUpload,
+    openRecordingsFolder,
     setMicEnabled,
     setCameraEnabled,
     setMicDevice,

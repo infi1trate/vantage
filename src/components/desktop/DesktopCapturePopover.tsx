@@ -15,9 +15,10 @@ import { SourceTypeSheet } from "./SourceTypeSheet";
 import { IdleStateBody } from "./IdleStateBody";
 import { RecordingStateBody } from "./RecordingStateBody";
 import { UnauthorizedStateBody } from "./UnauthorizedStateBody";
-import { MoreMenu } from "./MoreMenu";
+import { PostRecordingStateBody } from "./PostRecordingStateBody";
 import { usePopoverState, type UsePopoverStateReturn } from "./usePopoverState";
 import { MOCK_WINDOWS } from "./types";
+import { toast } from "sonner";
 
 interface DesktopCapturePopoverProps {
   className?: string;
@@ -74,28 +75,44 @@ export function DesktopCapturePopover({
     );
   }
 
-  // ============= PROCESSING STATE =============
-  if (popover.state === "processing") {
+  // ============= POST-RECORDING STATES (processing, uploading, success, error) =============
+  if (popover.state === "processing" || popover.state === "uploading" || popover.state === "success" || (popover.state === "error" && popover.postRecordingPhase !== null)) {
+    const phase = popover.postRecordingPhase || "processing";
+    
     return (
       <div className={className}>
         <PopoverShell onClose={onClose} onHome={onHome}>
-          <div className="space-y-4">
-            <PopoverToast
-              variant="loading"
-              title="Processing your recording..."
-              message="This usually takes a few seconds"
-            />
-            
-            <div className="text-center text-xs text-muted-foreground">
-              Your video will be available in the library
-            </div>
-          </div>
+          <PostRecordingStateBody
+            state={phase}
+            uploadProgress={popover.uploadProgress}
+            onOpenEditor={() => {
+              toast("Opening editor...", {
+                description: "Your session is ready to view",
+                duration: 2000,
+              });
+              popover.openEditor();
+            }}
+            onCopyLink={() => {
+              toast.success("Link copied!", {
+                description: "Share link copied to clipboard",
+                duration: 2000,
+              });
+              popover.copyLink();
+            }}
+            onRetryUpload={popover.retryUpload}
+            onOpenRecordingsFolder={() => {
+              toast("Opening recordings folder...", {
+                duration: 2000,
+              });
+              popover.openRecordingsFolder();
+            }}
+          />
         </PopoverShell>
       </div>
     );
   }
 
-  // ============= ERROR STATE =============
+  // ============= ERROR STATE (non-post-recording) =============
   if (popover.state === "error" && popover.error) {
     return (
       <div className={className}>
@@ -185,6 +202,8 @@ export function DesktopCapturePopover({
           onNotesClick={() => console.log("Notes clicked - stub")}
           username={popover.username}
           onSignOut={popover.signOut}
+          forceUploadError={popover.forceUploadError}
+          onForceUploadErrorChange={popover.setForceUploadError}
         />
       </PopoverShell>
     </div>

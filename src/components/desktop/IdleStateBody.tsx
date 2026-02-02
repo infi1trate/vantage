@@ -40,6 +40,9 @@ interface IdleStateBodyProps {
   // Account
   username: string;
   onSignOut: () => void;
+  // Settings
+  forceUploadError: boolean;
+  onForceUploadErrorChange: (value: boolean) => void;
 }
 
 // Get source display info
@@ -81,6 +84,8 @@ export function IdleStateBody({
   onNotesClick,
   username,
   onSignOut,
+  forceUploadError,
+  onForceUploadErrorChange,
 }: IdleStateBodyProps) {
   const [effectsOpen, setEffectsOpen] = useState(false);
   
@@ -331,6 +336,8 @@ export function IdleStateBody({
           }
           username={username}
           onSignOut={onSignOut}
+          forceUploadError={forceUploadError}
+          onForceUploadErrorChange={onForceUploadErrorChange}
         />
       </div>
     </div>

@@ -33,12 +33,16 @@ interface MoreMenuProps {
   trigger: React.ReactNode;
   username: string;
   onSignOut: () => void;
+  forceUploadError: boolean;
+  onForceUploadErrorChange: (value: boolean) => void;
 }
 
 export function MoreMenu({
   trigger,
   username,
   onSignOut,
+  forceUploadError,
+  onForceUploadErrorChange,
 }: MoreMenuProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quitOpen, setQuitOpen] = useState(false);
@@ -169,7 +173,9 @@ export function MoreMenu({
       {/* Settings Modal */}
       <SettingsModal 
         isOpen={settingsOpen} 
-        onClose={() => setSettingsOpen(false)} 
+        onClose={() => setSettingsOpen(false)}
+        forceUploadError={forceUploadError}
+        onForceUploadErrorChange={onForceUploadErrorChange}
       />
 
       {/* Quit Confirmation Dialog */}
