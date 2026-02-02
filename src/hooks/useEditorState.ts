@@ -32,7 +32,7 @@ import { AssemblyState, AssemblyProgress } from "@/hooks/useReelAssembly";
  * Editor-specific lifecycle states
  * Maps reel database status to UI behavior
  */
-export type EditorState = "compiling" | "ready" | "exporting" | "failed" | "needs_attention";
+export type EditorState = "waiting_for_source" | "compiling" | "ready" | "exporting" | "failed" | "needs_attention";
 
 export interface EditorStateConfig {
   /** Current editor state */
@@ -104,6 +104,22 @@ export function deriveEditorState(
       timelineInteractive: false,
       statusLabel: "Needs attention",
       showProgress: false,
+      progressPercent: 0,
+    };
+  }
+  
+  // WAITING_FOR_SOURCE: Session video not ready yet
+  if (assemblyState === "waiting_for_source") {
+    return {
+      state: "waiting_for_source",
+      previewAvailable: false,
+      fxEnabled: false,
+      framesEnabled: false,
+      packageEnabled: false,
+      exportEnabled: false,
+      timelineInteractive: false,
+      statusLabel: "Waiting for source...",
+      showProgress: true,
       progressPercent: 0,
     };
   }
@@ -188,6 +204,11 @@ export function useEditorState(
  * State badge colors for UI
  */
 export const STATE_BADGE_STYLES: Record<EditorState, { bg: string; text: string; border: string }> = {
+  waiting_for_source: {
+    bg: "bg-muted/50",
+    text: "text-muted-foreground",
+    border: "border-border/50",
+  },
   compiling: {
     bg: "bg-muted/50",
     text: "text-muted-foreground",

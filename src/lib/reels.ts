@@ -20,8 +20,17 @@ export {
   type MomentType as ResolverMomentType,
 } from "./segmentResolver";
 
+// Re-export asset readiness gate
+export {
+  checkAssetReadiness,
+  waitForAssetReadiness,
+  getAssetStatusMessage,
+  type AssetReadinessStatus,
+  type AssetReadinessResult,
+} from "./assetReadiness";
+
 // NOTE: status is stored as text in the backend; we model the known states here.
-export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
+export type ReelStatus = "compiling" | "waiting_for_source" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 
 /**
