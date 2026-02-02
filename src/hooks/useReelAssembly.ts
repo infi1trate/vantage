@@ -31,7 +31,9 @@ import {
   getReelAssemblyJob,
   resetRenderJobForRetry,
   RenderJob,
+  RenderJobCtaAction,
 } from "@/lib/renderQueue";
+import { getErrorCategory, getReasonLabel, ClipValidationError, parseClipValidationError } from "@/lib/reels";
 
 export type AssemblyState = "idle" | "waiting_for_source" | "assembling" | "ready" | "failed" | "needs_attention";
 
@@ -140,6 +142,15 @@ export interface ReelAssemblyState {
   
   /** Current attempt ID for this assembly run */
   attemptId: string | null;
+}
+
+/**
+ * Format timestamp for queue display (compact: "0:39")
+ */
+function formatTimestampForQueue(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -435,7 +446,7 @@ export function useReelAssembly(
     });
   }, []);
   
-  // Complete render job
+  // Complete render job with success info
   const completeJob = useCallback(() => {
     if (!renderJobIdRef.current) return;
     
@@ -443,27 +454,62 @@ export function useReelAssembly(
       status: "completed",
       overallProgress: 100,
       currentStageIndex: 2,
+      shortReason: "Ready to export",
+      primaryCtaLabel: "Open",
+      primaryCtaAction: "open",
+      errorCategory: undefined,
+      updatedAt: new Date().toISOString(),
     });
     renderJobIdRef.current = null;
   }, []);
   
-  // Fail render job
-  const failJob = useCallback((errorMessage: string) => {
+  // Fail render job with structured error info
+  const failJob = useCallback((errorMessage: string, clipError?: ClipValidationError | null) => {
     if (!renderJobIdRef.current) return;
+    
+    // Derive short reason from clip error if available
+    let shortReason = "Assembly failed";
+    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other" = "other";
+    
+    if (clipError) {
+      errorCat = getErrorCategory(clipError.reason);
+      shortReason = `Can't access ${clipError.momentLabel} (${formatTimestampForQueue(clipError.timestampSeconds)})`;
+    }
     
     updateRenderJob(renderJobIdRef.current, {
       status: "failed",
       errorMessage,
+      shortReason,
+      primaryCtaLabel: "Retry",
+      primaryCtaAction: "retry",
+      errorCategory: errorCat,
+      updatedAt: new Date().toISOString(),
     });
   }, []);
   
-  // Mark job as needing attention
-  const markJobNeedsAttention = useCallback((errorMessage: string) => {
+  // Mark job as needing attention with structured error info
+  const markJobNeedsAttention = useCallback((errorMessage: string, clipError?: ClipValidationError | null) => {
     if (!renderJobIdRef.current) return;
+    
+    // Derive short reason from clip error or use generic timeout message
+    let shortReason = "Taking longer than expected";
+    let primaryCtaAction: RenderJobCtaAction = "fix";
+    let errorCat: "video_not_ready" | "invalid_range" | "missing_source" | "timeout" | "other" = "timeout";
+    
+    if (clipError) {
+      errorCat = getErrorCategory(clipError.reason);
+      const reasonLabel = getReasonLabel(clipError.reason);
+      shortReason = `${clipError.momentLabel} (${formatTimestampForQueue(clipError.timestampSeconds)}): ${reasonLabel}`;
+    }
     
     updateRenderJob(renderJobIdRef.current, {
       status: "needs_attention",
       errorMessage,
+      shortReason,
+      primaryCtaLabel: "Fix",
+      primaryCtaAction,
+      errorCategory: errorCat,
+      updatedAt: new Date().toISOString(),
     });
   }, []);
   
@@ -1138,9 +1184,21 @@ export function useReelAssembly(
         const errorMessage = `Can't access: ${firstError.momentType} at ${firstError.momentTimestamp}`;
         console.warn("[ReelAssembly] Segment resolution failed on retry:", errorMessage);
         
+        // Convert SegmentResolutionError to ClipValidationError-like shape
+        const clipErrorLike: ClipValidationError = {
+          index: 0,
+          momentId: firstError.momentId,
+          momentLabel: firstError.momentType,
+          timestampSeconds: firstError.timestampSeconds,
+          reason: firstError.reason === "no_video_available" ? "missing_source_video" 
+                : firstError.reason === "exceeds_video_duration" ? "invalid_range"
+                : firstError.reason as ClipValidationError["reason"],
+          description: firstError.description,
+        };
+        
         setError(errorMessage);
         setState("needs_attention");
-        markJobNeedsAttention(errorMessage);
+        markJobNeedsAttention(errorMessage, clipErrorLike);
         
         await supabase
           .from("reels")
@@ -1186,10 +1244,10 @@ export function useReelAssembly(
         setError(errorMessage);
         if (result.clipError?.reason === "timeout_resolving_source") {
           setState("needs_attention");
-          markJobNeedsAttention(errorMessage);
+          markJobNeedsAttention(errorMessage, result.clipError);
         } else {
           setState("needs_attention");
-          markJobNeedsAttention(errorMessage);
+          markJobNeedsAttention(errorMessage, result.clipError);
         }
         clearTimers();
         assemblyStartRef.current = null;
