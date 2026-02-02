@@ -9,6 +9,13 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
+export type AssemblyStep = 
+  | "collecting_clips"
+  | "stitching_sequence"
+  | "rendering_preview"
+  | "finalizing_manifest"
+  | "ready"
+  | "failed";
 
 export interface Reel {
   id: string;
@@ -26,6 +33,10 @@ export interface Reel {
   render_started_at: string | null;
   render_completed_at: string | null;
   render_error: string | null;
+  // Assembly instrumentation
+  assembly_step: AssemblyStep | null;
+  step_started_at: string | null;
+  step_completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,7 +58,8 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  // Create with "compiling" status initially
+  // Create with "compiling" status and initial assembly step
+  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("reels")
     .insert({
@@ -57,6 +69,8 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
       aspect_ratio: input.aspectRatio,
       source_moment_ids: input.momentIds,
       status: "compiling",
+      assembly_step: "collecting_clips",
+      step_started_at: now,
     })
     .select()
     .single();
@@ -193,6 +207,59 @@ export async function completeReelRender(
 
   if (error) throw error;
   return data as Reel;
+}
+
+/**
+ * Update assembly step with timestamp instrumentation
+ * Used for debugging to identify exactly where stalls occur
+ */
+export async function updateAssemblyStep(
+  reelId: string,
+  step: AssemblyStep,
+  options?: { completesPrevious?: boolean }
+): Promise<void> {
+  const now = new Date().toISOString();
+  
+  const updates: Record<string, unknown> = {
+    assembly_step: step,
+    step_started_at: now,
+    updated_at: now,
+  };
+  
+  // If this step completes the previous one, also record completion time
+  if (options?.completesPrevious) {
+    updates.step_completed_at = now;
+  } else {
+    updates.step_completed_at = null;
+  }
+  
+  const { error } = await supabase
+    .from("reels")
+    .update(updates)
+    .eq("id", reelId);
+
+  if (error) {
+    console.error("[Reels] Failed to update assembly step:", error);
+  } else {
+    console.log(`[Reels] Assembly step updated: ${step}`);
+  }
+}
+
+/**
+ * Mark assembly step as completed
+ */
+export async function completeAssemblyStep(reelId: string): Promise<void> {
+  const { error } = await supabase
+    .from("reels")
+    .update({
+      step_completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", reelId);
+
+  if (error) {
+    console.error("[Reels] Failed to complete assembly step:", error);
+  }
 }
 
 /**
