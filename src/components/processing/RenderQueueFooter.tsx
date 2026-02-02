@@ -205,31 +205,40 @@ const RenderJobItem = memo(function RenderJobItem({
             </>
           )}
           
-          {/* Needs attention actions - Retry + Back to session */}
+          {/* Needs attention actions - "Fix & continue" CTA + Retry */}
           {isNeedsAttention && (
             <>
-              <Button
-                variant="default"
-                size="sm"
-                className="h-7 gap-1.5"
-                onClick={() => onRetry(job.id)}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {!compact && <span>Retry</span>}
-              </Button>
-              {/* Back to session link */}
-              {job.sessionId && (
+              {/* Primary: Open editor to fix the issue */}
+              {job.type === "reel_assembly" && job.reelId && (
                 <Button
-                  variant="outline"
+                  variant="default"
                   size="sm"
                   className="h-7 gap-1.5"
                   asChild
                 >
-                  <Link to={`/session/${job.sessionId}`}>
-                    {!compact && <span>Back to session</span>}
-                    {compact && <Eye className="h-3.5 w-3.5" />}
+                  <Link to={`/reel/${job.reelId}`}>
+                    <Film className="h-3.5 w-3.5" />
+                    {!compact && <span>Fix & continue</span>}
                   </Link>
                 </Button>
+              )}
+              
+              {/* Secondary: Retry */}
+              {job.retryCount < job.maxRetries && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => onRetry(job.id)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {!compact && <span className="ml-1">Retry</span>}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Retry assembly</TooltipContent>
+                </Tooltip>
               )}
             </>
           )}
