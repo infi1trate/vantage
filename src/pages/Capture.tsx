@@ -240,6 +240,13 @@ export default function CapturePage() {
     markCaptureStop();
 
     try {
+      // IMMEDIATELY set session status to "processing" so assetReadiness knows recording happened
+      // This is the contract: "processing" means video will become ready
+      await updateCaptureSession(session.id, { 
+        status: "processing",
+        duration_seconds: capture.duration,
+      });
+
       // Capture thumbnail BEFORE stopping (while canvas is still active)
       const [thumbnailDataUrl, thumbnailBlob] = await Promise.all([
         Promise.resolve(capture.captureThumbnail()),
@@ -254,10 +261,20 @@ export default function CapturePage() {
       const recordedData = await capture.stopRecording();
       
       if (!recordedData) {
+        // Update session to failed - recording never produced data
+        await updateCaptureSession(session.id, { 
+          status: "failed",
+          metadata: { last_error: "Recording produced no data" },
+        });
         throw new Error("No recorded data");
       }
 
       if (!recordedData.compositeBlob) {
+        // Update session to failed - composite blob missing
+        await updateCaptureSession(session.id, { 
+          status: "failed",
+          metadata: { last_error: "No composite recording data" },
+        });
         throw new Error("No composite recording data");
       }
 
