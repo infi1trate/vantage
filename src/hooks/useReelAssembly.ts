@@ -187,6 +187,7 @@ export function useReelAssembly(
     if (!status) return "idle";
     if (status === "compiling") return "assembling";
     if (status === "failed") return "failed";
+    if (status === "needs_attention") return "needs_attention";
     return "ready"; // draft, ready, rendering all mean assembly is done
   }, []);
   

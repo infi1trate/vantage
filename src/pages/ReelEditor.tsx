@@ -344,6 +344,47 @@ export default function ReelEditor() {
     }
   }, [assemblyState]);
 
+  // Skip failing clip and retry assembly
+  const handleSkipClip = useCallback(async (momentId: string) => {
+    if (!reel || !reelId) return;
+    
+    setIsRetrying(true);
+    try {
+      // Remove the failing moment from source_moment_ids
+      const updatedMomentIds = (reel.source_moment_ids || []).filter(id => id !== momentId);
+      
+      if (updatedMomentIds.length === 0) {
+        toast.error("Cannot skip — this is the only clip in the reel.");
+        return;
+      }
+      
+      // Update the reel with filtered moments and reset to compiling
+      await supabase
+        .from("reels")
+        .update({
+          source_moment_ids: updatedMomentIds,
+          status: "compiling",
+          assembly_step: "collecting_clips",
+          render_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", reelId);
+      
+      toast.success("Skipped clip — retrying assembly...");
+      
+      // Trigger a retry to restart assembly
+      await assemblyState.retry();
+      
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+    } catch (err) {
+      console.error("Failed to skip clip:", err);
+      toast.error("Failed to skip clip");
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [reel, reelId, assemblyState, queryClient]);
+
   const handleClearAllEffects = useCallback(() => {
     if (!reel?.session_id) return;
     clearEffectsMutation.mutate(reel.session_id, {
@@ -479,7 +520,7 @@ export default function ReelEditor() {
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
                   isFailed={editorState.state === "failed"}
                   isNeedsAttention={editorState.state === "needs_attention"}
-                  errorMessage={assemblyState.error}
+                  errorMessage={reel.render_error || assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
                   onCancel={goBack}
@@ -491,6 +532,7 @@ export default function ReelEditor() {
                     });
                     goBack();
                   }}
+                  onSkipClip={handleSkipClip}
                   // Truthful progress from assembly hook
                   progress={assemblyState.progress}
                   debugData={{
