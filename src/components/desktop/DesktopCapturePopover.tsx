@@ -10,6 +10,7 @@ import { PrimaryCTA } from "./PrimaryCTA";
 import { HUDMini } from "./HUDMini";
 import { PopoverToast } from "./PopoverToast";
 import { WindowPickerGrid } from "./WindowPickerGrid";
+import { SourceTypeSheet } from "./SourceTypeSheet";
 import { IdleStateBody } from "./IdleStateBody";
 import { usePopoverState } from "./usePopoverState";
 import { MOCK_WINDOWS } from "./types";
@@ -152,6 +153,22 @@ export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCap
     );
   }
 
+  // ============= SOURCE TYPE PICKER STATE =============
+  if (popover.state === "selecting_source_type") {
+    return (
+      <div className={className}>
+        <PopoverShell onClose={onClose} onHome={onHome}>
+          <SourceTypeSheet
+            selectedType={popover.config.selectedSource?.type || "screen"}
+            onSelect={popover.selectSourceType}
+            onBack={popover.closeSourceTypePicker}
+            onSelectWindow={popover.openWindowPicker}
+          />
+        </PopoverShell>
+      </div>
+    );
+  }
+
   // ============= WINDOW PICKER STATE =============
   if (popover.state === "selecting_source") {
     return (
@@ -173,8 +190,9 @@ export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCap
     <div className={className}>
       <PopoverShell onClose={onClose} onHome={onHome}>
         <IdleStateBody
+          sourceType={popover.config.selectedSource?.type || "screen"}
           selectedWindowName={popover.selectedWindow?.name}
-          onSelectWindow={popover.openWindowPicker}
+          onSourceRowClick={popover.openSourceTypePicker}
           cameraEnabled={popover.config.cameraEnabled}
           onToggleCamera={() => popover.setCameraEnabled(!popover.config.cameraEnabled)}
           micEnabled={popover.config.micEnabled}
@@ -182,6 +200,7 @@ export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCap
           selectedMicId={popover.config.selectedMicId}
           onMicDeviceChange={popover.setMicDevice}
           onStartRecording={popover.startRecording}
+          canStartRecording={popover.canStartRecording}
           onEffectsClick={() => console.log("Effects clicked - stub")}
           onNotesClick={() => console.log("Notes clicked - stub")}
           onMoreClick={() => console.log("More clicked - stub")}
