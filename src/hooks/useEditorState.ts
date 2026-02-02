@@ -3,7 +3,7 @@
  * 
  * Enforces a strict state machine for the Reel Editor lifecycle:
  * 
- * 1) COMPILING
+ * 1) COMPILING (assembling)
  *    - No FX interaction
  *    - Loading preview + placeholders
  *    - Editor controls disabled
@@ -17,17 +17,22 @@
  *    - Editor locked
  *    - Progress shown in UI
  *    - Cannot modify effects/frames
+ * 
+ * 4) FAILED
+ *    - Assembly failed
+ *    - Show error + retry option
  */
 
 import { useMemo } from "react";
 import { ReelStatus } from "@/lib/reels";
 import { useExportState } from "@/hooks/useRenderQueue";
+import { AssemblyState } from "@/hooks/useReelAssembly";
 
 /**
  * Editor-specific lifecycle states
  * Maps reel database status to UI behavior
  */
-export type EditorState = "compiling" | "ready" | "exporting";
+export type EditorState = "compiling" | "ready" | "exporting" | "failed";
 
 export interface EditorStateConfig {
   /** Current editor state */
@@ -62,10 +67,10 @@ export interface EditorStateConfig {
 }
 
 /**
- * Derive editor state from reel status and export state
+ * Derive editor state from assembly state and export state
  */
 export function deriveEditorState(
-  reelStatus: ReelStatus | undefined,
+  assemblyState: AssemblyState,
   isVideoLoaded: boolean,
   isExporting: boolean,
   exportProgress: number
@@ -86,8 +91,24 @@ export function deriveEditorState(
     };
   }
   
+  // FAILED: Assembly failed, show error state
+  if (assemblyState === "failed") {
+    return {
+      state: "failed",
+      previewAvailable: false,
+      fxEnabled: false,
+      framesEnabled: false,
+      packageEnabled: false,
+      exportEnabled: false,
+      timelineInteractive: false,
+      statusLabel: "Failed",
+      showProgress: false,
+      progressPercent: 0,
+    };
+  }
+  
   // COMPILING: No interactions, placeholders shown
-  if (reelStatus === "compiling" || !isVideoLoaded) {
+  if (assemblyState === "assembling" || !isVideoLoaded) {
     return {
       state: "compiling",
       previewAvailable: false,
@@ -111,7 +132,7 @@ export function deriveEditorState(
     packageEnabled: true,
     exportEnabled: true,
     timelineInteractive: true,
-    statusLabel: reelStatus === "draft" ? "Draft" : "Ready",
+    statusLabel: "Ready",
     showProgress: false,
     progressPercent: 100,
   };
@@ -119,9 +140,13 @@ export function deriveEditorState(
 
 /**
  * Hook to get current editor state with all capabilities
+ * 
+ * @param assemblyState - Current assembly state from useReelAssembly
+ * @param sessionId - Session ID for export state tracking
+ * @param isVideoLoaded - Whether the video is loaded
  */
 export function useEditorState(
-  reelStatus: ReelStatus | undefined,
+  assemblyState: AssemblyState,
   sessionId: string | undefined,
   isVideoLoaded: boolean
 ): EditorStateConfig {
@@ -131,8 +156,8 @@ export function useEditorState(
   const exportProgress = exportState.progress || 0;
   
   return useMemo(
-    () => deriveEditorState(reelStatus, isVideoLoaded, isExporting, exportProgress),
-    [reelStatus, isVideoLoaded, isExporting, exportProgress]
+    () => deriveEditorState(assemblyState, isVideoLoaded, isExporting, exportProgress),
+    [assemblyState, isVideoLoaded, isExporting, exportProgress]
   );
 }
 
@@ -154,5 +179,10 @@ export const STATE_BADGE_STYLES: Record<EditorState, { bg: string; text: string;
     bg: "bg-primary/10",
     text: "text-primary",
     border: "border-primary/30",
+  },
+  failed: {
+    bg: "bg-destructive/10",
+    text: "text-destructive",
+    border: "border-destructive/30",
   },
 };
