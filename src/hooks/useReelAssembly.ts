@@ -21,7 +21,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType } from "@/lib/reels";
+import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -193,6 +193,28 @@ function createLastError(
   }
   
   return lastError;
+}
+
+/**
+ * Map label/annotation_type to MomentType for display
+ */
+function getMomentTypeFromLabel(label: string | undefined): MomentType {
+  const lowerLabel = (label || "").toLowerCase();
+  if (lowerLabel.includes("kill")) return "Kill";
+  if (lowerLabel.includes("death")) return "Death";
+  if (lowerLabel.includes("highlight")) return "Highlight";
+  if (lowerLabel.includes("objective")) return "Objective";
+  if (lowerLabel.includes("note")) return "Note";
+  return "Marker";
+}
+
+/**
+ * Format seconds as MM:SS for display
+ */
+function formatMomentTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -675,6 +697,104 @@ export function useReelAssembly(
     }
   }, [reelMetadata?.assemblyAttemptId, reelMetadata?.assemblyStep, reelMetadata?.stepStartedAt, currentAttemptId]);
   
+  // Auto-trigger assembly for new reels in "compiling" status
+  // This runs assembly with proper per-segment (5s) and global (20s) timeouts
+  const hasTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (
+      !reelId || 
+      hasTriggeredRef.current ||
+      initialStatus !== "compiling" ||
+      state !== "assembling"
+    ) {
+      return;
+    }
+    
+    // Mark as triggered to prevent re-runs
+    hasTriggeredRef.current = true;
+    
+    console.log("[ReelAssembly] Auto-triggering assembly for new reel:", reelId);
+    
+    // Execute assembly in background
+    (async () => {
+      try {
+        const reel = await getReel(reelId);
+        if (!reel || reel.status !== "compiling") {
+          console.log("[ReelAssembly] Reel no longer in compiling status, skipping");
+          return;
+        }
+        
+        const momentIds = reel.source_moment_ids || [];
+        if (momentIds.length === 0) {
+          console.error("[ReelAssembly] No moment IDs for assembly");
+          return;
+        }
+        
+        // Get annotations to build moment inputs
+        const { data: annotations } = await supabase
+          .from("annotations")
+          .select("id, annotation_type, title, timestamp_seconds, end_timestamp_seconds")
+          .in("id", momentIds);
+        
+        // Build moment segment inputs with timing info
+        const moments: MomentSegmentInput[] = momentIds.map((momentId) => {
+          const annotation = annotations?.find(a => a.id === momentId);
+          const timestampSeconds = annotation?.timestamp_seconds ?? 0;
+          const endTimestampSeconds = annotation?.end_timestamp_seconds ?? timestampSeconds + 5;
+          const durationMs = (endTimestampSeconds - timestampSeconds) * 1000;
+          
+          return {
+            momentId,
+            durationMs: Math.max(durationMs, 1000),
+            startMs: Math.round(timestampSeconds * 1000),
+            endMs: Math.round(endTimestampSeconds * 1000),
+            label: annotation?.title || annotation?.annotation_type || "Clip",
+            timestampSeconds,
+          };
+        });
+        
+        // Update segments state for UI tracking
+        const initialSegments: SegmentProgress[] = moments.map((m, idx) => ({
+          segmentIndex: idx,
+          momentId: m.momentId,
+          momentType: getMomentTypeFromLabel(m.label) as MomentType,
+          label: m.label || `Clip ${idx + 1}`,
+          momentTimestamp: formatMomentTimestamp(m.timestampSeconds ?? 0),
+          timestampSeconds: m.timestampSeconds ?? 0,
+          intendedRangeMs: {
+            startMs: m.startMs ?? 0,
+            endMs: m.endMs ?? (m.startMs ?? 0) + m.durationMs,
+          },
+          sourceRef: reel.session_id,
+          status: "pending",
+        }));
+        setSegments(initialSegments);
+        
+        console.log("[ReelAssembly] Starting assembly with", moments.length, "segments");
+        
+        // Execute assembly with proper timeouts
+        const result = await executeAssembly(reelId, moments);
+        
+        if (!result.success) {
+          const errorMessage = result.userMessage || result.error || "Assembly failed";
+          setError(errorMessage);
+          setState("needs_attention");
+          if (renderJobIdRef.current) {
+            markJobNeedsAttention(errorMessage);
+          }
+          clearTimers();
+        }
+        
+        queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+      } catch (err) {
+        console.error("[ReelAssembly] Auto-trigger assembly failed:", err);
+        const errorMessage = err instanceof Error ? err.message : "Assembly failed";
+        setError(errorMessage);
+        setState("needs_attention");
+      }
+    })();
+  }, [reelId, initialStatus, state, queryClient, clearTimers, markJobNeedsAttention]);
+  
   // Retry assembly - with strict auto-retry limits
   // isAutoRetry flag distinguishes user-initiated retries from automatic ones
   const retry = useCallback(async (isAutoRetry = false) => {
@@ -780,12 +900,43 @@ export function useReelAssembly(
         ensureRenderJob();
       }
       
-      // Start timeout
-      timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
-      pollRef.current = window.setInterval(pollStatus, POLL_INTERVAL_MS);
+      // Build moment inputs from source_moment_ids for executeAssembly
+      // This will run the actual assembly with per-segment and global timeouts
+      const currentReelData = await getReel(reelId);
+      const momentIds = currentReelData?.source_moment_ids || [];
       
-      // Simulate assembly completing (in production, this would be a backend job)
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (momentIds.length === 0) {
+        throw new Error("No clips selected for assembly");
+      }
+      
+      // Get annotations to build moment inputs
+      const { data: annotations } = await supabase
+        .from("annotations")
+        .select("id, annotation_type, title, timestamp_seconds, end_timestamp_seconds")
+        .in("id", momentIds);
+      
+      // Build moment segment inputs with timing info
+      const moments: MomentSegmentInput[] = momentIds.map((momentId, idx) => {
+        const annotation = annotations?.find(a => a.id === momentId);
+        const timestampSeconds = annotation?.timestamp_seconds ?? 0;
+        const endTimestampSeconds = annotation?.end_timestamp_seconds ?? timestampSeconds + 5;
+        const durationMs = (endTimestampSeconds - timestampSeconds) * 1000;
+        
+        return {
+          momentId,
+          durationMs: Math.max(durationMs, 1000), // Minimum 1 second
+          startMs: Math.round(timestampSeconds * 1000),
+          endMs: Math.round(endTimestampSeconds * 1000),
+          label: annotation?.title || annotation?.annotation_type || "Clip",
+          timestampSeconds,
+        };
+      });
+      
+      console.log("[ReelAssembly] Executing assembly with", moments.length, "moments");
+      
+      // Execute assembly with per-segment (5s) and global (20s) timeouts
+      // This will properly validate each segment and fail fast on issues
+      const result = await executeAssembly(reelId, moments);
       
       // Before completing, verify this attempt is still active
       const stillActive = await isAttemptActive(reelId, attemptId);
@@ -794,16 +945,23 @@ export function useReelAssembly(
         return;
       }
       
-      await supabase
-        .from("reels")
-        .update({ 
-          status: "draft",
-          assembly_step: "ready",
-          render_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", reelId)
-        .eq("assembly_attempt_id", attemptId); // Only update if attempt matches
+      if (!result.success) {
+        // Assembly failed - executeAssembly already updated the database
+        // Just sync our local state
+        const errorMessage = result.userMessage || result.error || "Assembly failed";
+        setError(errorMessage);
+        if (result.clipError?.reason === "timeout_resolving_source") {
+          setState("needs_attention");
+          markJobNeedsAttention(errorMessage);
+        } else {
+          setState("needs_attention");
+          markJobNeedsAttention(errorMessage);
+        }
+        clearTimers();
+        assemblyStartRef.current = null;
+        queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+        return;
+      }
       
       queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     } catch (err) {
@@ -847,7 +1005,7 @@ export function useReelAssembly(
       activeJobIdRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
     }
-  }, [reelId, queryClient, failWithTimeout, pollStatus, clearTimers, retryCount, ensureRenderJob, markJobNeedsAttention, currentStep]);
+  }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, markJobNeedsAttention, currentStep]);
   
   const canRetry = (state === "failed" || state === "needs_attention") && retryCount < MAX_RETRY_ATTEMPTS;
   
