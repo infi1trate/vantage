@@ -44,6 +44,9 @@ interface AnnotationsPanelProps {
   coachError?: string | null;
   // Comments feature
   commentsEnabled?: boolean;
+  // Session/video availability
+  sessionTitle?: string;
+  videoAvailable?: boolean;
 }
 
 const MARKER_TYPES = [
@@ -75,6 +78,8 @@ export function AnnotationsPanel({
   isLoadingSuggestions = false,
   coachError,
   commentsEnabled = false,
+  sessionTitle,
+  videoAvailable = true,
 }: AnnotationsPanelProps) {
   const { user } = useAuth();
   const [selectedType, setSelectedType] = useState<Annotation["annotation_type"]>("marker");
@@ -137,6 +142,8 @@ export function AnnotationsPanel({
         coachError={coachError}
         commentsEnabled={commentsEnabled}
         onSeekTo={onMarkerClick}
+        sessionTitle={sessionTitle}
+        videoAvailable={videoAvailable}
       />
     );
   }

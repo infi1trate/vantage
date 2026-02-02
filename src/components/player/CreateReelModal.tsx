@@ -50,6 +50,10 @@ interface CreateReelModalProps {
   moments: Annotation[];
   sessionId: string;
   sessionTitle?: string;
+  /** Whether the session has a video available. If false, shows a fallback modal. */
+  videoAvailable?: boolean;
+  /** Navigate to session processing page when video is not ready */
+  onViewSessionProcessing?: () => void;
 }
 
 type AspectRatioValue = "16:9" | "9:16" | "1:1";
@@ -858,6 +862,8 @@ export function CreateReelModal({
   moments,
   sessionId,
   sessionTitle,
+  videoAvailable = true,
+  onViewSessionProcessing,
 }: CreateReelModalProps) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -898,9 +904,38 @@ export function CreateReelModal({
     }
   }, [pendingReelId, navigate]);
 
-  const title = "Create Reel";
+  const handleViewProcessing = useCallback(() => {
+    onOpenChange(false);
+    onViewSessionProcessing?.();
+  }, [onOpenChange, onViewSessionProcessing]);
 
-  const content = (
+  const title = videoAvailable ? "Create Reel" : "Session video isn't ready";
+
+  // Video not available - show fallback modal
+  const fallbackContent = (
+    <div className="flex flex-col items-center justify-center p-6 gap-4 text-center">
+      <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
+        <AlertCircle className="h-8 w-8 text-vantage-warning" />
+      </div>
+      <div className="space-y-2 max-w-xs">
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          We can create reels once gameplay video is available. The session is still processing.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 w-full max-w-[200px] pt-2">
+        {onViewSessionProcessing && (
+          <Button onClick={handleViewProcessing} className="w-full">
+            View session processing
+          </Button>
+        )}
+        <Button variant="outline" onClick={handleClose} className="w-full">
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+
+  const content = videoAvailable ? (
     <ReelCreatorContent
       moments={reelMoments}
       sessionId={sessionId}
@@ -908,7 +943,7 @@ export function CreateReelModal({
       onReelCreated={handleReelCreated}
       onClose={handleClose}
     />
-  );
+  ) : fallbackContent;
 
   // Use Drawer on mobile, Dialog on desktop
   if (isMobile) {
@@ -922,7 +957,11 @@ export function CreateReelModal({
           <DrawerContent className="max-h-[90vh]">
             <DrawerHeader className="pb-0">
               <DrawerTitle className="flex items-center gap-2 text-base">
-                <Film className="h-5 w-5 text-primary" />
+                {videoAvailable ? (
+                  <Film className="h-5 w-5 text-primary" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-vantage-warning" />
+                )}
                 {title}
               </DrawerTitle>
             </DrawerHeader>
@@ -943,7 +982,11 @@ export function CreateReelModal({
         <DialogContent className="sm:max-w-md p-0 gap-0">
           <DialogHeader className="px-4 pt-4 pb-2">
             <DialogTitle className="flex items-center gap-2 text-base">
-              <Film className="h-5 w-5 text-primary" />
+              {videoAvailable ? (
+                <Film className="h-5 w-5 text-primary" />
+              ) : (
+                <AlertCircle className="h-5 w-5 text-vantage-warning" />
+              )}
               {title}
             </DialogTitle>
           </DialogHeader>
