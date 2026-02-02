@@ -4,7 +4,7 @@
  * Re-exports all types for external use.
  */
 
-// Effect metadata types
+// Effect metadata types (legacy store)
 export type {
   FrameStyle,
   SFXType,
@@ -25,6 +25,18 @@ export type {
   SystemCapabilityResult,
 } from "./captureHealth";
 
+// Effect Events (VFX/SFX timeline stickers)
+export type {
+  EffectEvent,
+  EffectType,
+  EffectIntensity,
+  ApplyScope,
+  SnapSource,
+  VFXDefinition,
+  SFXDefinition,
+  EffectRenderGroup,
+} from "./effectEvents";
+
 // Re-export constants
 export { 
   REEL_PACKAGES, 
@@ -32,3 +44,14 @@ export {
   getFramePreviewClass,
   hasEffects,
 } from "./effectMetadataStore";
+
+// Effect catalogs
+export {
+  VFX_CATALOG,
+  SFX_CATALOG,
+  getVFXDefinition,
+  getSFXDefinition,
+  getDefaultDuration,
+  getDefaultIntensity,
+  getDefaultVolume,
+} from "./effectEvents";

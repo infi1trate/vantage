@@ -708,6 +708,77 @@ export type Database = {
           },
         ]
       }
+      effect_events: {
+        Row: {
+          apply_scope: string
+          clip_id: string | null
+          created_at: string
+          duration_ms: number
+          id: string
+          intensity: string | null
+          is_enabled: boolean | null
+          key: string
+          params: Json | null
+          reel_id: string | null
+          session_id: string
+          snap_source: string | null
+          snapped_to_id: string | null
+          start_time_ms: number
+          type: string
+          updated_at: string
+          user_id: string
+          volume: number | null
+        }
+        Insert: {
+          apply_scope?: string
+          clip_id?: string | null
+          created_at?: string
+          duration_ms?: number
+          id?: string
+          intensity?: string | null
+          is_enabled?: boolean | null
+          key: string
+          params?: Json | null
+          reel_id?: string | null
+          session_id: string
+          snap_source?: string | null
+          snapped_to_id?: string | null
+          start_time_ms: number
+          type: string
+          updated_at?: string
+          user_id: string
+          volume?: number | null
+        }
+        Update: {
+          apply_scope?: string
+          clip_id?: string | null
+          created_at?: string
+          duration_ms?: number
+          id?: string
+          intensity?: string | null
+          is_enabled?: boolean | null
+          key?: string
+          params?: Json | null
+          reel_id?: string | null
+          session_id?: string
+          snap_source?: string | null
+          snapped_to_id?: string | null
+          start_time_ms?: number
+          type?: string
+          updated_at?: string
+          user_id?: string
+          volume?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "effect_events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       extension_auth_codes: {
         Row: {
           code: string
