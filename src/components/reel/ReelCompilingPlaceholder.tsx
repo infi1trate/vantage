@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2, Search, FileQuestion, PlusCircle, MessageSquare } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
-import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory, getAssetErrorContent } from "@/lib/reels";
+import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory, getAssetErrorContent, getGameplayVideoContent, GameplayVideoStatus } from "@/lib/reels";
 
 import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
 
@@ -43,6 +43,8 @@ interface ReelCompilingPlaceholderProps {
   isNeedsAttention?: boolean;
   /** Whether waiting for source video to be ready */
   isWaitingForSource?: boolean;
+  /** Gameplay video status for correct UI rendering */
+  gameplayVideoStatus?: "processing" | "ready" | "failed" | "missing" | "unknown";
   /** Error message to display (may be JSON for structured clip errors) */
   errorMessage?: string | null;
   /** Retry handler */
@@ -59,6 +61,8 @@ interface ReelCompilingPlaceholderProps {
   onStartRecording?: () => void;
   /** Report issue handler */
   onReportIssue?: () => void;
+  /** Retry processing handler - triggers reprocessing of the session video */
+  onRetryProcessing?: () => void;
   /** Skip failing clip handler - removes the failing moment and retries */
   onSkipClip?: (momentId: string) => Promise<void>;
   /** Auto-fix clip handler - attempts to repair invalid range */
@@ -119,6 +123,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   isFailed = false,
   isNeedsAttention = false,
   isWaitingForSource = false,
+  gameplayVideoStatus = "unknown",
   errorMessage,
   onRetry,
   isRetrying = false,
@@ -127,6 +132,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   onLeaveAndNotify,
   onStartRecording,
   onReportIssue,
+  onRetryProcessing,
   onSkipClip,
   onAutoFix,
   progress,
@@ -134,6 +140,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
 }: ReelCompilingPlaceholderProps) {
   // Determine if we're in an error-like state (failed or needs attention)
   const hasIssue = isFailed || isNeedsAttention;
+  
+  // Get gameplay video content based on status for waiting_for_source state
+  const gameplayContent = useMemo(() => {
+    if (!isWaitingForSource) return null;
+    return getGameplayVideoContent(gameplayVideoStatus as GameplayVideoStatus);
+  }, [isWaitingForSource, gameplayVideoStatus]);
 
   // Parse structured clip error from errorMessage if available
   const clipError = useMemo(() => parseClipValidationError(errorMessage ?? null), [errorMessage]);
@@ -440,6 +452,26 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                           )}
                         </Button>
                       )}
+                      {assetErrorContent.primaryCta.action === "retry_processing" && onRetryProcessing && (
+                        <Button
+                          onClick={onRetryProcessing}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          {assetErrorContent.primaryCta.label}
+                        </Button>
+                      )}
+                      {assetErrorContent.primaryCta.action === "leave_notify" && onLeaveAndNotify && (
+                        <Button
+                          onClick={onLeaveAndNotify}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Bell className="h-4 w-4" />
+                          {assetErrorContent.primaryCta.label}
+                        </Button>
+                      )}
                       {assetErrorContent.primaryCta.action === "back_to_session" && onCancel && (
                         <Button
                           onClick={onCancel}
@@ -461,7 +493,19 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                         </Button>
                       )}
 
-                      {/* Secondary CTA - only show "Leave and notify" when canNotify is true */}
+                      {/* Secondary CTA */}
+                      {assetErrorContent.secondaryCta.action === "check_session" && onCheckSession &&
+                       assetErrorContent.primaryCta.action !== "check_session" && (
+                        <Button
+                          variant="outline"
+                          onClick={onCheckSession}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Search className="h-4 w-4" />
+                          {assetErrorContent.secondaryCta.label}
+                        </Button>
+                      )}
                       {assetErrorContent.secondaryCta.action === "leave_notify" && 
                        assetErrorContent.canNotify && 
                        onLeaveAndNotify && (
@@ -724,90 +768,153 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
               </>
             ) : isWaitingForSource ? (
               <>
-                {/* Waiting for Source State */}
-                <motion.div
-                  className="relative"
-                  animate={{ scale: [1, 1.02, 1] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                >
-                  <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
-                    <Clock className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                  <motion.div
-                    className="absolute -top-1 -right-1"
-                    animate={{ 
-                      opacity: [0.5, 1, 0.5],
-                    }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  >
-                    <Loader2 className="h-5 w-5 text-primary animate-spin" />
-                  </motion.div>
-                </motion.div>
-                
-                {/* Title + Subtitle */}
-                <div className="text-center">
-                  <p className="text-base font-semibold text-foreground">
-                    Finishing session processing…
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Reel will assemble when ready.
-                  </p>
-                </div>
-                
-                {/* Pulsing progress indicator */}
-                <div className="w-full max-w-xs">
-                  <div className="relative h-2 bg-muted/50 rounded-full overflow-hidden">
+                {/* Waiting for Source State - Uses gameplay video status for correct UI */}
+                {gameplayContent && (
+                  <>
+                    {/* Icon based on status */}
                     <motion.div
-                      className="absolute inset-y-0 left-0 bg-primary/50 rounded-full"
-                      initial={{ width: "0%" }}
-                      animate={{ width: ["0%", "30%", "0%"] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    />
-                  </div>
-                </div>
-                
-                {/* Background helper text */}
-                <p className="text-xs text-muted-foreground/70 text-center mt-2">
-                  You can leave this page — we'll keep working in the background.
-                </p>
-                
-                {/* CTAs: Check session video (primary diagnostic) + Leave and notify */}
-                <div className="flex flex-col items-center gap-3 mt-3">
-                  {/* Primary: Check session video - always available as diagnostic path */}
-                  {onCheckSession && (
-                    <Button
-                      onClick={onCheckSession}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
+                      className="relative"
+                      animate={{ scale: [1, 1.02, 1] }}
+                      transition={{ duration: 3, repeat: Infinity }}
                     >
-                      <Search className="h-4 w-4" />
-                      Check session video
-                    </Button>
-                  )}
-                  
-                  {/* Secondary: Leave and notify - background processing will continue */}
-                  {onLeaveAndNotify && (
-                    <Button
-                      variant="outline"
-                      onClick={onLeaveAndNotify}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      <Bell className="h-4 w-4" />
-                      Leave and notify me
-                    </Button>
-                  )}
-                  
-                  {/* Tertiary: Back to session */}
-                  {onCancel && (
-                    <button
-                      onClick={onCancel}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
-                    >
-                      Back to session
-                    </button>
-                  )}
-                </div>
+                      <div className={cn(
+                        "w-16 h-16 rounded-full flex items-center justify-center",
+                        gameplayVideoStatus === "failed" ? "bg-destructive/10" :
+                        gameplayVideoStatus === "missing" ? "bg-vantage-warning/10" :
+                        "bg-muted/50"
+                      )}>
+                        {gameplayVideoStatus === "failed" ? (
+                          <AlertCircle className="h-8 w-8 text-destructive" />
+                        ) : gameplayVideoStatus === "missing" ? (
+                          <FileQuestion className="h-8 w-8 text-vantage-warning" />
+                        ) : (
+                          <Clock className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      {/* Only show spinner for processing/unknown states */}
+                      {(gameplayVideoStatus === "processing" || gameplayVideoStatus === "unknown") && (
+                        <motion.div
+                          className="absolute -top-1 -right-1"
+                          animate={{ opacity: [0.5, 1, 0.5] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        >
+                          <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                        </motion.div>
+                      )}
+                    </motion.div>
+                    
+                    {/* Title + Subtitle from gameplayContent */}
+                    <div className="text-center max-w-sm">
+                      <p className="text-lg font-semibold text-foreground">
+                        {gameplayContent.title}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                        {gameplayContent.body}
+                      </p>
+                    </div>
+                    
+                    {/* Progress indicator - only for processing/unknown states */}
+                    {(gameplayVideoStatus === "processing" || gameplayVideoStatus === "unknown") && (
+                      <div className="w-full max-w-xs">
+                        <div className="relative h-2 bg-muted/50 rounded-full overflow-hidden">
+                          <motion.div
+                            className="absolute inset-y-0 left-0 bg-primary/50 rounded-full"
+                            initial={{ width: "0%" }}
+                            animate={{ width: ["0%", "30%", "0%"] }}
+                            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Background helper text - only for processing states */}
+                    {gameplayContent.canNotify && (
+                      <p className="text-xs text-muted-foreground/70 text-center mt-2">
+                        You can leave this page — we'll keep working in the background.
+                      </p>
+                    )}
+                    
+                    {/* CTAs based on gameplayContent */}
+                    <div className="flex flex-col items-center gap-3 mt-3">
+                      {/* Primary CTA */}
+                      {gameplayContent.primaryCta.action === "leave_notify" && onLeaveAndNotify && (
+                        <Button
+                          onClick={onLeaveAndNotify}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Bell className="h-4 w-4" />
+                          {gameplayContent.primaryCta.label}
+                        </Button>
+                      )}
+                      {gameplayContent.primaryCta.action === "retry_processing" && onRetryProcessing && (
+                        <Button
+                          onClick={onRetryProcessing}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          {gameplayContent.primaryCta.label}
+                        </Button>
+                      )}
+                      {gameplayContent.primaryCta.action === "check_session" && onCheckSession && (
+                        <Button
+                          onClick={onCheckSession}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Search className="h-4 w-4" />
+                          {gameplayContent.primaryCta.label}
+                        </Button>
+                      )}
+                      
+                      {/* Secondary CTA */}
+                      {gameplayContent.secondaryCta.action === "check_session" && onCheckSession && 
+                       gameplayContent.primaryCta.action !== "check_session" && (
+                        <Button
+                          variant="outline"
+                          onClick={onCheckSession}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <Search className="h-4 w-4" />
+                          {gameplayContent.secondaryCta.label}
+                        </Button>
+                      )}
+                      {gameplayContent.secondaryCta.action === "start_recording" && onStartRecording && (
+                        <Button
+                          variant="outline"
+                          onClick={onStartRecording}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          {gameplayContent.secondaryCta.label}
+                        </Button>
+                      )}
+                      
+                      {/* Tertiary CTA - text link */}
+                      {gameplayContent.tertiaryCta && onCancel && (
+                        <button
+                          onClick={onCancel}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                        >
+                          {gameplayContent.tertiaryCta.label}
+                        </button>
+                      )}
+                      
+                      {/* Link CTA - Report issue */}
+                      {gameplayContent.linkCta && onReportIssue && (
+                        <button
+                          onClick={onReportIssue}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                        >
+                          {gameplayContent.linkCta.label}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <>
