@@ -10,10 +10,10 @@ import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward } from "lucide-react";
+import { Film, Sparkles, AlertCircle, Clock, RefreshCw, Loader2, Check, ArrowLeft, Bell, SkipForward, Wand2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { AssemblyDebugPanel, type AssemblyStep } from "./AssemblyDebugPanel";
-import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage } from "@/lib/reels";
+import { ClipValidationError, formatTimestamp, parseClipValidationError, parseLastError, getErrorMessage, getReasonLabel, getPrimaryCtaConfig, getErrorCategory } from "@/lib/reels";
 
 import type { SegmentProgress, SegmentStatus } from "@/hooks/useReelAssembly";
 
@@ -55,6 +55,8 @@ interface ReelCompilingPlaceholderProps {
   onLeaveAndNotify?: () => void;
   /** Skip failing clip handler - removes the failing moment and retries */
   onSkipClip?: (momentId: string) => Promise<void>;
+  /** Auto-fix clip handler - attempts to repair invalid range */
+  onAutoFix?: (momentId: string) => Promise<void>;
   /** Real progress from assembly hook (truthful, not simulated) */
   progress?: AssemblyProgress;
   /** Debug instrumentation data */
@@ -117,6 +119,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   onCancel,
   onLeaveAndNotify,
   onSkipClip,
+  onAutoFix,
   progress,
   debugData,
 }: ReelCompilingPlaceholderProps) {
@@ -128,6 +131,22 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   
   // Parse structured LastError from errorMessage if available
   const lastError = useMemo(() => parseLastError(errorMessage ?? null), [errorMessage]);
+  
+  // Get the reason label and primary CTA config based on error type
+  const reasonLabel = useMemo(() => {
+    if (!clipError) return null;
+    return getReasonLabel(clipError.reason);
+  }, [clipError]);
+  
+  const primaryCta = useMemo(() => {
+    if (!clipError) return null;
+    return getPrimaryCtaConfig(clipError.reason);
+  }, [clipError]);
+  
+  const errorCategory = useMemo(() => {
+    if (!clipError) return null;
+    return getErrorCategory(clipError.reason);
+  }, [clipError]);
   
   // User-friendly error display - use getErrorMessage which handles all formats
   const displayErrorMessage = useMemo(() => {
@@ -213,12 +232,23 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     Couldn't assemble this reel
                   </p>
                   
-                  {/* Show specific failing clip in highlighted format */}
+                  {/* Show specific failing clip with reason label */}
                   {clipError && (
-                    <div className="mt-3 px-4 py-2 rounded-lg bg-destructive/10 border border-destructive/20 inline-block">
-                      <p className="text-sm font-medium text-destructive">
-                        Can't access: {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
-                      </p>
+                    <div className="mt-3 space-y-2">
+                      {/* Reason label badge */}
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-medium">
+                        {errorCategory === "video_not_ready" && <Clock className="h-3 w-3" />}
+                        {errorCategory === "invalid_range" && <Wand2 className="h-3 w-3" />}
+                        {errorCategory === "missing_source" && <AlertCircle className="h-3 w-3" />}
+                        {reasonLabel}
+                      </div>
+                      
+                      {/* Clip info */}
+                      <div className="px-4 py-2 rounded-lg bg-destructive/10 border border-destructive/20 inline-block">
+                        <p className="text-sm font-medium text-destructive">
+                          {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
+                        </p>
+                      </div>
                     </div>
                   )}
                   
@@ -229,32 +259,76 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   )}
                 </div>
 
-                {/* Recovery CTAs - order: Skip (primary when clip error), Retry, Back */}
+                {/* Recovery CTAs - contextual based on error type */}
                 <div className="flex flex-col items-center gap-3 mt-3">
-                  {/* Primary: Skip this clip & continue (when we know which clip failed) */}
-                  {clipError && onSkipClip && (
-                    <Button
-                      onClick={() => onSkipClip(clipError.momentId)}
-                      disabled={isRetrying}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      {isRetrying ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Skipping...
-                        </>
-                      ) : (
-                        <>
-                          <SkipForward className="h-4 w-4" />
-                          Skip this clip & continue
-                        </>
+                  {/* Primary CTA - based on error category */}
+                  {clipError && primaryCta && (
+                    <>
+                      {primaryCta.action === "wait_retry" && onRetry && (
+                        <Button
+                          onClick={onRetry}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Waiting...
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
                       )}
-                    </Button>
+                      {primaryCta.action === "auto_fix" && onAutoFix && (
+                        <Button
+                          onClick={() => onAutoFix(clipError.momentId)}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Fixing...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {primaryCta.action === "skip_clip" && onSkipClip && (
+                        <Button
+                          onClick={() => onSkipClip(clipError.momentId)}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Skipping...
+                            </>
+                          ) : (
+                            <>
+                              <SkipForward className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
                   )}
                   
-                  {/* Secondary: Retry */}
-                  {onRetry && (
+                  {/* Secondary: Retry (if not already primary) */}
+                  {onRetry && (!clipError || primaryCta?.action !== "wait_retry") && (
                     <Button
                       variant={clipError ? "outline" : "default"}
                       onClick={onRetry}
@@ -289,8 +363,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
 
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
-                  {clipError
-                    ? "Skip this clip to continue with remaining clips, or retry to try again."
+                  {errorCategory === "video_not_ready"
+                    ? "The video is still processing. Wait a moment and try again."
+                    : errorCategory === "invalid_range"
+                    ? "We'll automatically fix the clip timing and continue."
+                    : clipError
+                    ? "Skip this clip to continue with remaining clips."
                     : "Your format and selected clips are preserved — just hit retry."}
                 </p>
               </>
@@ -298,7 +376,11 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
               <>
                 {/* Needs Attention State - Specific clip issue or timeout */}
                 <div className="w-16 h-16 rounded-full bg-vantage-warning/10 flex items-center justify-center">
-                  {clipError ? (
+                  {errorCategory === "video_not_ready" ? (
+                    <Clock className="h-8 w-8 text-vantage-warning" />
+                  ) : errorCategory === "invalid_range" ? (
+                    <Wand2 className="h-8 w-8 text-vantage-warning" />
+                  ) : clipError ? (
                     <AlertCircle className="h-8 w-8 text-vantage-warning" />
                   ) : (
                     <Clock className="h-8 w-8 text-vantage-warning" />
@@ -312,12 +394,23 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                       : "This is taking longer than expected"}
                   </p>
                   
-                  {/* Show specific failing clip in highlighted format */}
+                  {/* Show specific failing clip with reason label */}
                   {clipError && (
-                    <div className="mt-3 px-4 py-2 rounded-lg bg-vantage-warning/10 border border-vantage-warning/20 inline-block">
-                      <p className="text-sm font-medium text-vantage-warning">
-                        Can't access: {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
-                      </p>
+                    <div className="mt-3 space-y-2">
+                      {/* Reason label badge */}
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-vantage-warning/10 text-vantage-warning text-xs font-medium">
+                        {errorCategory === "video_not_ready" && <Clock className="h-3 w-3" />}
+                        {errorCategory === "invalid_range" && <Wand2 className="h-3 w-3" />}
+                        {errorCategory === "missing_source" && <AlertCircle className="h-3 w-3" />}
+                        {reasonLabel}
+                      </div>
+                      
+                      {/* Clip info */}
+                      <div className="px-4 py-2 rounded-lg bg-vantage-warning/10 border border-vantage-warning/20 inline-block">
+                        <p className="text-sm font-medium text-vantage-warning">
+                          {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
+                        </p>
+                      </div>
                     </div>
                   )}
                   
@@ -328,32 +421,76 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   )}
                 </div>
 
-                {/* Recovery CTAs - order: Skip (primary when clip error), Retry, Leave, Back */}
+                {/* Recovery CTAs - contextual based on error type */}
                 <div className="flex flex-col items-center gap-3 mt-3">
-                  {/* Primary: Skip this clip & continue (when we know which clip failed) */}
-                  {clipError && onSkipClip && (
-                    <Button
-                      onClick={() => onSkipClip(clipError.momentId)}
-                      disabled={isRetrying}
-                      className="gap-2 min-w-[200px]"
-                      size="lg"
-                    >
-                      {isRetrying ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Skipping...
-                        </>
-                      ) : (
-                        <>
-                          <SkipForward className="h-4 w-4" />
-                          Skip this clip & continue
-                        </>
+                  {/* Primary CTA - based on error category */}
+                  {clipError && primaryCta && (
+                    <>
+                      {primaryCta.action === "wait_retry" && onRetry && (
+                        <Button
+                          onClick={onRetry}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Waiting...
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
                       )}
-                    </Button>
+                      {primaryCta.action === "auto_fix" && onAutoFix && (
+                        <Button
+                          onClick={() => onAutoFix(clipError.momentId)}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Fixing...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {primaryCta.action === "skip_clip" && onSkipClip && (
+                        <Button
+                          onClick={() => onSkipClip(clipError.momentId)}
+                          disabled={isRetrying}
+                          className="gap-2 min-w-[200px]"
+                          size="lg"
+                        >
+                          {isRetrying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Skipping...
+                            </>
+                          ) : (
+                            <>
+                              <SkipForward className="h-4 w-4" />
+                              {primaryCta.label}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
                   )}
 
-                  {/* Secondary: Retry */}
-                  {onRetry && (
+                  {/* Secondary: Retry (if not already primary) */}
+                  {onRetry && (!clipError || primaryCta?.action !== "wait_retry") && (
                     <Button
                       variant={clipError ? "outline" : "default"}
                       onClick={onRetry}
@@ -401,8 +538,12 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
 
                 {/* Reassurance text */}
                 <p className="text-xs text-muted-foreground/70 mt-4 text-center max-w-xs">
-                  {clipError
-                    ? "Skip this clip to continue with remaining clips, or retry."
+                  {errorCategory === "video_not_ready"
+                    ? "The video is still processing. Wait a moment and try again."
+                    : errorCategory === "invalid_range"
+                    ? "We'll automatically fix the clip timing and continue."
+                    : clipError
+                    ? "Skip this clip to continue with remaining clips."
                     : "Your format and clips are saved. You'll get a notification when it's ready."}
                 </p>
               </>
