@@ -72,6 +72,7 @@ const RenderJobItem = memo(function RenderJobItem({
   const [showDetails, setShowDetails] = useState(false);
   
   const isActive = job.status === "queued" || job.status === "processing" || job.status === "uploading";
+  const isWaiting = job.status === "waiting";
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
   const isNeedsAttention = job.status === "needs_attention";
@@ -91,6 +92,8 @@ const RenderJobItem = memo(function RenderJobItem({
         return <XCircle className="h-4 w-4 text-destructive shrink-0" />;
       case "needs_attention":
         return <AlertCircle className="h-4 w-4 text-vantage-warning shrink-0" />;
+      case "waiting":
+        return <Loader2 className="h-4 w-4 text-muted-foreground animate-spin shrink-0" />;
       case "uploading":
         return <Upload className="h-4 w-4 text-primary animate-pulse shrink-0" />;
       case "processing":
@@ -313,6 +316,18 @@ const RenderJobItem = memo(function RenderJobItem({
               Preview ready — final render in progress
             </p>
           )}
+        </div>
+      )}
+      
+      {/* Waiting for source video - no progress bar, just message */}
+      {isWaiting && (
+        <div className="mt-1 pl-6.5">
+          <div className="flex items-start gap-2 p-2 rounded bg-muted/50 border border-border/30">
+            <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground">
+              {job.shortReason || "Waiting for session video…"}
+            </p>
+          </div>
         </div>
       )}
       
