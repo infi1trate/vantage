@@ -184,12 +184,17 @@ export const HighlightsSection = memo(function HighlightsSection({
         <Button
           variant="outline"
           size="sm"
-          className="w-full h-10 gap-2 bg-gradient-to-r from-primary/5 via-transparent to-accent/5 border-primary/20 hover:border-primary/40 hover:bg-primary/10 transition-all group"
+          className="w-full h-auto py-2.5 gap-2 bg-gradient-to-r from-primary/5 via-transparent to-accent/5 border-primary/20 hover:border-primary/40 hover:bg-primary/10 transition-all group flex-col items-start"
           onClick={() => setReelModalOpen(true)}
         >
-          <Sparkles className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
-          <span className="text-sm font-medium">Create Reel</span>
-          <Film className="h-3.5 w-3.5 text-muted-foreground ml-auto" />
+          <div className="flex items-center gap-2 w-full">
+            <Sparkles className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-medium">Create Reel</span>
+            <Film className="h-3.5 w-3.5 text-muted-foreground ml-auto" />
+          </div>
+          <span className="text-[11px] text-muted-foreground font-normal pl-6">
+            Edit clips, add effects, and export
+          </span>
         </Button>
       </div>
 

@@ -313,6 +313,8 @@ export default function ReelEditor() {
             
             <ExportButton 
               sessionId={reel.session_id || ""} 
+              reelStatus={reel.status as "draft" | "compiling" | "ready" | "rendering" | "exporting"}
+              disabled={!isReelReady}
               onExport={() => {
                 toast.info("Rendering effects...", {
                   description: `${effects.length} effects will be composited into the final video`,
