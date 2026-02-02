@@ -11,12 +11,13 @@
  */
 
 export type ProcessingStatus = 
-  | "queued"      // Waiting to start
-  | "processing"  // Currently processing
-  | "uploading"   // Uploading to storage
-  | "completed"   // Successfully finished
-  | "failed"      // Error occurred
-  | "cancelled";  // User cancelled
+  | "queued"           // Waiting to start
+  | "processing"       // Currently processing
+  | "uploading"        // Uploading to storage
+  | "completed"        // Successfully finished
+  | "failed"           // Error occurred
+  | "needs_attention"  // Stalled or requires user action (e.g., timeout)
+  | "cancelled";       // User cancelled
 
 export interface ProcessingStage {
   id: string;

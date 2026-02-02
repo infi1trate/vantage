@@ -74,6 +74,7 @@ const RenderJobItem = memo(function RenderJobItem({
   const isActive = job.status === "queued" || job.status === "processing" || job.status === "uploading";
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
+  const isNeedsAttention = job.status === "needs_attention";
   const isCancelled = job.status === "cancelled";
   
   const typeConfig = JOB_TYPE_CONFIG[job.type];
@@ -88,6 +89,8 @@ const RenderJobItem = memo(function RenderJobItem({
         return <CheckCircle2 className="h-4 w-4 text-vantage-success shrink-0" />;
       case "failed":
         return <XCircle className="h-4 w-4 text-destructive shrink-0" />;
+      case "needs_attention":
+        return <AlertCircle className="h-4 w-4 text-vantage-warning shrink-0" />;
       case "uploading":
         return <Upload className="h-4 w-4 text-primary animate-pulse shrink-0" />;
       case "processing":
@@ -104,6 +107,7 @@ const RenderJobItem = memo(function RenderJobItem({
       "flex flex-col gap-2 p-3 rounded-lg transition-all duration-150",
       "bg-card/80 border border-border/60",
       isFailed && "border-destructive/40 bg-destructive/5",
+      isNeedsAttention && "border-vantage-warning/40 bg-vantage-warning/5",
       isCompleted && "border-vantage-success/30 bg-vantage-success/5",
       compact && "p-2"
     )}>
@@ -201,6 +205,35 @@ const RenderJobItem = memo(function RenderJobItem({
             </>
           )}
           
+          {/* Needs attention actions - Retry + Back to session */}
+          {isNeedsAttention && (
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7 gap-1.5"
+                onClick={() => onRetry(job.id)}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {!compact && <span>Retry</span>}
+              </Button>
+              {/* Back to session link */}
+              {job.sessionId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5"
+                  asChild
+                >
+                  <Link to={`/session/${job.sessionId}`}>
+                    {!compact && <span>Back to session</span>}
+                    {compact && <Eye className="h-3.5 w-3.5" />}
+                  </Link>
+                </Button>
+              )}
+            </>
+          )}
+          
           {/* Active job actions */}
           {isActive && job.canCancel && (
             <Tooltip>
@@ -219,7 +252,7 @@ const RenderJobItem = memo(function RenderJobItem({
           )}
           
           {/* Dismiss button for terminal states */}
-          {(isCompleted || isFailed || isCancelled) && (
+          {(isCompleted || isFailed || isNeedsAttention || isCancelled) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -285,6 +318,18 @@ const RenderJobItem = memo(function RenderJobItem({
           </div>
         </div>
       )}
+      
+      {/* Needs attention warning */}
+      {isNeedsAttention && (
+        <div className="mt-1 pl-6.5">
+          <div className="flex items-start gap-2 p-2 rounded bg-vantage-warning/10 border border-vantage-warning/20">
+            <AlertCircle className="h-3.5 w-3.5 text-vantage-warning shrink-0 mt-0.5" />
+            <p className="text-xs text-vantage-warning">
+              {job.errorMessage || "This is taking longer than expected."}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -297,6 +342,7 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
     activeJobs,
     completedJobs,
     failedJobs,
+    needsAttentionJobs,
     hasActiveJobs,
     cancelJob,
     retryJob,
@@ -314,12 +360,14 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
   // Filter visible jobs
   const visibleJobs = useMemo(() => {
     const active = activeJobs.filter(j => !hiddenJobIds.has(j.id));
+    const attention = needsAttentionJobs.filter(j => !hiddenJobIds.has(j.id));
     const failed = failedJobs.filter(j => !hiddenJobIds.has(j.id));
     const completed = completedJobs.filter(j => !hiddenJobIds.has(j.id)).slice(0, 3);
-    return [...active, ...failed, ...completed];
-  }, [activeJobs, failedJobs, completedJobs, hiddenJobIds]);
+    return [...active, ...attention, ...failed, ...completed];
+  }, [activeJobs, needsAttentionJobs, failedJobs, completedJobs, hiddenJobIds]);
   
   const activeCount = activeJobs.filter(j => !hiddenJobIds.has(j.id)).length;
+  const attentionCount = needsAttentionJobs.filter(j => !hiddenJobIds.has(j.id)).length;
   const failedCount = failedJobs.filter(j => !hiddenJobIds.has(j.id)).length;
   const hasCompleted = completedJobs.some(j => !hiddenJobIds.has(j.id));
   
@@ -330,6 +378,9 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
       const typeLabel = JOB_TYPE_CONFIG[job.type]?.label || "Processing";
       return activeCount > 1 ? `${typeLabel} (${activeCount})` : typeLabel;
     }
+    if (attentionCount > 0) {
+      return `Needs attention (${attentionCount})`;
+    }
     if (failedCount > 0) {
       return `Failed (${failedCount})`;
     }
@@ -337,7 +388,7 @@ export const RenderQueueFooter = memo(function RenderQueueFooter() {
       return "Complete";
     }
     return "Processing";
-  }, [activeCount, failedCount, hasCompleted, activeJobs]);
+  }, [activeCount, attentionCount, failedCount, hasCompleted, activeJobs]);
   
   const latestCompleted = completedJobs.find(j => !hiddenJobIds.has(j.id));
   
