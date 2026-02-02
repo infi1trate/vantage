@@ -29,21 +29,25 @@ export function PostRecordingStateBody({
   onOpenRecordingsFolder,
 }: PostRecordingStateBodyProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
+    <div 
+      className="flex flex-col items-center justify-center py-8 px-6 text-center"
+      role="status"
+      aria-live="polite"
+    >
       {/* Processing State */}
       {state === "processing" && (
         <>
-          <div className="relative mb-6">
-            <div className="w-16 h-16 rounded-full bg-vantage-green/10 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-vantage-green animate-spin" />
+          <div className="relative mb-5" aria-hidden="true">
+            <div className="w-14 h-14 rounded-full bg-vantage-green/10 flex items-center justify-center">
+              <Loader2 className="w-7 h-7 text-vantage-green animate-spin" />
             </div>
             {/* Subtle pulse ring */}
-            <div className="absolute inset-0 rounded-full bg-vantage-green/20 animate-ping" style={{ animationDuration: "1.5s" }} />
+            <div className="absolute inset-0 rounded-full bg-vantage-green/15 animate-ping" style={{ animationDuration: "1.5s" }} />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">
             Processing recording
           </h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground max-w-[240px]">
             Optimizing for smooth playback.
           </p>
         </>
@@ -52,8 +56,8 @@ export function PostRecordingStateBody({
       {/* Uploading State */}
       {state === "uploading" && (
         <>
-          <div className="w-16 h-16 rounded-full bg-vantage-green/10 flex items-center justify-center mb-6">
-            <Upload className="w-8 h-8 text-vantage-green" />
+          <div className="w-14 h-14 rounded-full bg-vantage-green/10 flex items-center justify-center mb-5" aria-hidden="true">
+            <Upload className="w-7 h-7 text-vantage-green" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">
             Uploading to Vantage
@@ -61,8 +65,12 @@ export function PostRecordingStateBody({
           <p className="text-sm text-muted-foreground mb-4">
             {uploadProgress}% complete
           </p>
-          <div className="w-full max-w-[200px]">
-            <Progress value={uploadProgress} className="h-1.5" />
+          <div className="w-full max-w-[180px]">
+            <Progress 
+              value={uploadProgress} 
+              className="h-1.5" 
+              aria-label={`Upload progress: ${uploadProgress}%`}
+            />
           </div>
         </>
       )}
@@ -70,19 +78,22 @@ export function PostRecordingStateBody({
       {/* Success State */}
       {state === "success" && (
         <>
-          <div className="w-16 h-16 rounded-full bg-vantage-green/20 flex items-center justify-center mb-6">
-            <Check className="w-8 h-8 text-vantage-green" />
+          <div className="w-14 h-14 rounded-full bg-vantage-green/15 flex items-center justify-center mb-5" aria-hidden="true">
+            <Check className="w-7 h-7 text-vantage-green" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">
             Ready to edit
           </h3>
-          <p className="text-sm text-muted-foreground mb-6">
+          <p className="text-sm text-muted-foreground mb-5 max-w-[240px]">
             Your recording has been uploaded successfully.
           </p>
           <div className="flex flex-col gap-2 w-full max-w-[200px]">
             <Button
               onClick={onOpenEditor}
-              className="w-full bg-vantage-green hover:bg-vantage-green/90 text-background font-medium"
+              className={cn(
+                "w-full bg-vantage-green hover:bg-vantage-green/90 text-background font-medium",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
             >
               <ExternalLink className="w-4 h-4 mr-2" />
               Open in Vantage
@@ -90,7 +101,10 @@ export function PostRecordingStateBody({
             <Button
               variant="ghost"
               onClick={onCopyLink}
-              className="w-full text-muted-foreground hover:text-foreground"
+              className={cn(
+                "w-full text-muted-foreground hover:text-foreground hover:bg-white/[0.06]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
             >
               <Copy className="w-4 h-4 mr-2" />
               Copy link
@@ -102,26 +116,32 @@ export function PostRecordingStateBody({
       {/* Error State */}
       {state === "error" && (
         <>
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
-            <AlertCircle className="w-8 h-8 text-destructive" />
+          <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mb-5" aria-hidden="true">
+            <AlertCircle className="w-7 h-7 text-destructive" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">
             Upload failed
           </h3>
-          <p className="text-sm text-muted-foreground mb-6">
+          <p className="text-sm text-muted-foreground mb-5 max-w-[260px]">
             Your recording is saved locally. Try again or open the recordings folder.
           </p>
-          <div className="flex flex-col gap-2 w-full max-w-[220px]">
+          <div className="flex flex-col gap-2 w-full max-w-[200px]">
             <Button
               onClick={onRetryUpload}
-              className="w-full bg-vantage-green hover:bg-vantage-green/90 text-background font-medium"
+              className={cn(
+                "w-full bg-vantage-green hover:bg-vantage-green/90 text-background font-medium",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
             >
               Retry upload
             </Button>
             <Button
               variant="ghost"
               onClick={onOpenRecordingsFolder}
-              className="w-full text-muted-foreground hover:text-foreground"
+              className={cn(
+                "w-full text-muted-foreground hover:text-foreground hover:bg-white/[0.06]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
             >
               <Folder className="w-4 h-4 mr-2" />
               Open recordings folder

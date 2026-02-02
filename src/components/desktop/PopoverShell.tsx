@@ -40,10 +40,10 @@ export function PopoverShell({
         "relative overflow-hidden",
         // Glassmorphism with Vantage theme
         "bg-background/95 backdrop-blur-xl",
-        "border border-border/50",
+        "border border-white/[0.08]",
         "shadow-2xl shadow-black/50",
-        // Sizing
-        isHUD ? "w-auto" : "w-full",
+        // Sizing - max 380px for popover
+        isHUD ? "w-auto" : "w-full max-w-[380px]",
         // Rounded corners
         "rounded-2xl",
         // Subtle glow accent
@@ -59,24 +59,33 @@ export function PopoverShell({
       
       {/* Header row - hidden for HUD mode */}
       {!isHUD && (
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.08]">
           {/* Close button */}
           <Button
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className="h-7 w-7 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
+            aria-label="Close popover"
+            className={cn(
+              "h-8 w-8 p-0 rounded-lg",
+              "hover:bg-white/[0.08] active:bg-white/[0.12]",
+              "text-muted-foreground hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
           >
             <X className="w-4 h-4" />
           </Button>
 
           {/* Segmented control - Record / Screenshot */}
-          <div className="flex items-center bg-white/5 rounded-lg p-0.5">
+          <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5" role="tablist">
             <button
               onClick={() => setMode("record")}
+              role="tab"
+              aria-selected={mode === "record"}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium uppercase tracking-wider",
                 "transition-all duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-inset",
                 mode === "record"
                   ? "bg-vantage-green text-background shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -87,6 +96,9 @@ export function PopoverShell({
             </button>
             <button
               disabled
+              role="tab"
+              aria-selected={false}
+              aria-disabled="true"
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium uppercase tracking-wider",
                 "text-muted-foreground/50 cursor-not-allowed"
@@ -102,7 +114,13 @@ export function PopoverShell({
             variant="ghost"
             size="sm"
             onClick={onHome}
-            className="h-7 w-7 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
+            aria-label="Go to home"
+            className={cn(
+              "h-8 w-8 p-0 rounded-lg",
+              "hover:bg-white/[0.08] active:bg-white/[0.12]",
+              "text-muted-foreground hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
           >
             <Home className="w-4 h-4" />
           </Button>

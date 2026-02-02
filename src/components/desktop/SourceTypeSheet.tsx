@@ -66,7 +66,12 @@ export function SourceTypeSheet({
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="h-8 w-8 p-0 hover:bg-white/10 -ml-1"
+          aria-label="Go back"
+          className={cn(
+            "h-8 w-8 p-0 rounded-lg -ml-1",
+            "hover:bg-white/[0.08] active:bg-white/[0.12]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          )}
         >
           <ChevronLeft className="w-5 h-5" />
         </Button>
@@ -76,7 +81,7 @@ export function SourceTypeSheet({
       </div>
 
       {/* Options */}
-      <div className="space-y-2">
+      <div className="space-y-1.5" role="radiogroup" aria-label="Capture source type">
         {SOURCE_OPTIONS.map((option) => {
           const isSelected = option.type === selectedType;
           const Icon = option.icon;
@@ -86,19 +91,25 @@ export function SourceTypeSheet({
             <button
               key={option.type}
               onClick={() => handleSelect(option.type)}
+              role="radio"
+              aria-checked={isSelected}
+              aria-label={`${option.label}: ${option.description}`}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-3 rounded-xl",
                 "border-2 transition-all duration-150",
                 isSelected
                   ? "border-vantage-green bg-vantage-green/10"
-                  : "border-transparent hover:bg-white/5",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green/50"
+                  : "border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.03]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             >
               {/* Icon */}
               <div className={cn(
-                "flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
-                isSelected ? "bg-vantage-green/20" : "bg-white/5"
+                "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
+                "border transition-colors",
+                isSelected 
+                  ? "bg-vantage-green/20 border-vantage-green/30" 
+                  : "bg-white/[0.06] border-white/[0.08]"
               )}>
                 <Icon className={cn(
                   "w-5 h-5",
@@ -109,26 +120,23 @@ export function SourceTypeSheet({
               {/* Label & description */}
               <div className="flex-1 text-left min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className={cn(
-                    "text-sm font-medium",
-                    isSelected ? "text-foreground" : "text-foreground"
-                  )}>
+                  <span className="text-sm font-medium text-foreground">
                     {option.label}
                   </span>
-                  {isWindow && (
-                    <span className="text-[10px] text-vantage-green font-medium uppercase tracking-wider">
-                      Select
+                  {isWindow && !isSelected && (
+                    <span className="text-[10px] text-vantage-green font-medium">
+                      →
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {option.description}
                 </p>
               </div>
 
               {/* Selected indicator */}
               {isSelected && (
-                <div className="w-5 h-5 rounded-full bg-vantage-green flex items-center justify-center">
+                <div className="w-5 h-5 rounded-full bg-vantage-green flex items-center justify-center shrink-0">
                   <Check className="w-3 h-3 text-background" />
                 </div>
               )}

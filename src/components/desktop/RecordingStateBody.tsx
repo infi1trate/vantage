@@ -56,44 +56,59 @@ export function RecordingStateBody({
       {/* Timer section */}
       <div className="flex items-center gap-3 mb-2">
         {/* REC indicator dot */}
-        <div className={cn(
-          "w-3 h-3 rounded-full",
-          isPaused 
-            ? "bg-amber-500" 
-            : "bg-destructive animate-pulse",
-          "shadow-lg",
-          isPaused 
-            ? "shadow-amber-500/50" 
-            : "shadow-destructive/50"
-        )} />
+        <div 
+          className={cn(
+            "w-3 h-3 rounded-full",
+            isPaused 
+              ? "bg-amber-500" 
+              : "bg-destructive animate-pulse",
+            "shadow-lg",
+            isPaused 
+              ? "shadow-amber-500/50" 
+              : "shadow-destructive/50"
+          )}
+          aria-hidden="true"
+        />
         
         {/* Large timer */}
-        <span className={cn(
-          "font-mono text-4xl font-bold tabular-nums",
-          isNearLimit && !isPaused ? "text-amber-400" : "text-foreground"
-        )}>
+        <span 
+          className={cn(
+            "font-mono text-4xl font-bold tabular-nums tracking-tight",
+            isNearLimit && !isPaused ? "text-amber-400" : "text-foreground"
+          )}
+          role="timer"
+          aria-live="polite"
+          aria-label={`Recording time: ${formatRecordingTime(duration)}`}
+        >
           {formatRecordingTime(duration)}
         </span>
       </div>
 
       {/* Status line */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
-        <span className={cn(
-          "uppercase text-xs font-semibold tracking-wider",
-          isPaused ? "text-amber-500" : "text-vantage-green"
-        )}>
+        <span 
+          className={cn(
+            "uppercase text-xs font-semibold tracking-wider",
+            isPaused ? "text-amber-500" : "text-vantage-green"
+          )}
+          aria-live="polite"
+        >
           {isPaused ? "Paused" : "Recording"}
         </span>
-        <span className="text-white/20">·</span>
-        <SourceIcon className="w-4 h-4" />
-        <span className="truncate max-w-[180px]">
+        <span className="text-white/20" aria-hidden="true">·</span>
+        <SourceIcon className="w-4 h-4" aria-hidden="true" />
+        <span className="truncate max-w-[160px]">
           {sourceName || getSourceLabel(sourceType)}
         </span>
       </div>
 
       {/* Time remaining warning */}
       {isNearLimit && !isPaused && (
-        <div className="mb-4 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/30">
+        <div 
+          className="mb-4 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/25"
+          role="alert"
+          aria-live="polite"
+        >
           <span className="text-xs font-medium text-amber-400">
             {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")} remaining
           </span>
@@ -106,12 +121,14 @@ export function RecordingStateBody({
         <Button
           onClick={isPaused ? onResume : onPause}
           variant="outline"
+          aria-label={isPaused ? "Resume recording" : "Pause recording"}
           className={cn(
             "flex-1 h-12 text-sm font-semibold uppercase tracking-wider",
             "border-2 rounded-xl",
             isPaused 
-              ? "border-vantage-green/50 text-vantage-green hover:bg-vantage-green/10" 
-              : "border-amber-500/50 text-amber-500 hover:bg-amber-500/10"
+              ? "border-vantage-green/40 text-vantage-green hover:bg-vantage-green/10" 
+              : "border-amber-500/40 text-amber-500 hover:bg-amber-500/10",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           )}
         >
           {isPaused ? (
@@ -130,12 +147,14 @@ export function RecordingStateBody({
         {/* Stop button */}
         <Button
           onClick={onStop}
+          aria-label="Stop recording"
           className={cn(
             "flex-1 h-12 text-sm font-semibold uppercase tracking-wider",
             "bg-destructive hover:bg-destructive/90 text-destructive-foreground",
             "shadow-lg shadow-destructive/25",
             "rounded-xl",
-            "transition-all duration-150 active:scale-[0.98]"
+            "transition-all duration-150 active:scale-[0.98]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           )}
         >
           <Square className="w-4 h-4 mr-2 fill-current" />
