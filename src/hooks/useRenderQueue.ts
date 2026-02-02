@@ -29,6 +29,7 @@ interface UseRenderQueueResult {
   activeJobs: RenderJob[];
   completedJobs: RenderJob[];
   failedJobs: RenderJob[];
+  needsAttentionJobs: RenderJob[];
   
   // Counts
   activeCount: number;
@@ -95,6 +96,7 @@ export function useRenderQueue(): UseRenderQueueResult {
   
   const completedJobs = jobs.filter(j => j.status === "completed");
   const failedJobs = jobs.filter(j => j.status === "failed");
+  const needsAttentionJobs = jobs.filter(j => j.status === "needs_attention");
   
   const startJob = useCallback((params: Parameters<typeof createRenderJob>[0]) => {
     const job = createRenderJob(params);
@@ -185,6 +187,7 @@ export function useRenderQueue(): UseRenderQueueResult {
     activeJobs,
     completedJobs,
     failedJobs,
+    needsAttentionJobs,
     activeCount: activeJobs.length,
     hasActiveJobs: activeJobs.length > 0,
     startJob,

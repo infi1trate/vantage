@@ -184,19 +184,48 @@ export function useReelAssembly(
   const completeJob = useCallback(() => {
     if (!renderJobIdRef.current) return;
     
+    // Stop progress simulation first
+    if (progressSimulationRef.current) {
+      clearInterval(progressSimulationRef.current);
+      progressSimulationRef.current = null;
+    }
+    
     updateRenderJob(renderJobIdRef.current, {
       status: "completed",
       overallProgress: 100,
+      currentStageIndex: 2, // Final stage
     });
     renderJobIdRef.current = null;
   }, []);
   
-  // Fail render job
+  // Fail render job (hard failure)
   const failJob = useCallback((errorMessage: string) => {
     if (!renderJobIdRef.current) return;
     
+    // Stop progress simulation
+    if (progressSimulationRef.current) {
+      clearInterval(progressSimulationRef.current);
+      progressSimulationRef.current = null;
+    }
+    
     updateRenderJob(renderJobIdRef.current, {
       status: "failed",
+      errorMessage,
+    });
+  }, []);
+  
+  // Mark job as needing attention (soft failure, recoverable)
+  const markJobNeedsAttention = useCallback((errorMessage: string) => {
+    if (!renderJobIdRef.current) return;
+    
+    // Stop progress simulation but keep job reference for retry
+    if (progressSimulationRef.current) {
+      clearInterval(progressSimulationRef.current);
+      progressSimulationRef.current = null;
+    }
+    
+    updateRenderJob(renderJobIdRef.current, {
+      status: "needs_attention",
       errorMessage,
     });
   }, []);
@@ -278,7 +307,7 @@ export function useReelAssembly(
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
   }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, startProgressSimulation, completeJob, failJob]);
   
-  // Fail the assembly with timeout
+  // Fail the assembly with timeout - marks as "needs_attention" for recovery
   const failWithTimeout = useCallback(async () => {
     if (!reelId || !mountedRef.current) return;
     
@@ -294,8 +323,8 @@ export function useReelAssembly(
     
     console.warn("[ReelAssembly] Assembly timed out after 45s");
     
-    // Fail the render job
-    failJob("Reel assembly is taking longer than expected. Please try again.");
+    // Mark job as needing attention (not hard failure - recoverable)
+    markJobNeedsAttention("This is taking longer than expected.");
     
     try {
       // Update reel to failed status
@@ -306,14 +335,14 @@ export function useReelAssembly(
         .from("reels")
         .update({ 
           status: "failed",
-          render_error: "Reel assembly is taking longer than expected. Please try again.",
+          render_error: "This is taking longer than expected.",
           updated_at: new Date().toISOString(),
         })
         .eq("id", reelId);
       
       if (mountedRef.current) {
         setState("failed");
-        setError("Reel assembly is taking longer than expected. Please try again.");
+        setError("This is taking longer than expected.");
         clearTimers();
         assemblyStartRef.current = null;
         queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
@@ -321,7 +350,7 @@ export function useReelAssembly(
     } catch (err) {
       console.error("[ReelAssembly] Failed to update timeout status:", err);
     }
-  }, [reelId, queryClient, clearTimers, retryCount, failJob]);
+  }, [reelId, queryClient, clearTimers, retryCount, markJobNeedsAttention]);
   
   // Poll for status as a backup mechanism
   const pollStatus = useCallback(async () => {
