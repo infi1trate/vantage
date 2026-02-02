@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatRecordingLimit, MOCK_MICS, CaptureSourceType } from "./types";
+import { MoreMenu } from "./MoreMenu";
 
 interface IdleStateBodyProps {
   // Source
@@ -35,7 +36,9 @@ interface IdleStateBodyProps {
   // Footer
   onEffectsClick?: () => void;
   onNotesClick?: () => void;
-  onMoreClick?: () => void;
+  // Account
+  username: string;
+  onSignOut: () => void;
 }
 
 // Get source display info
@@ -76,7 +79,8 @@ export function IdleStateBody({
   canStartRecording,
   onEffectsClick,
   onNotesClick,
-  onMoreClick,
+  username,
+  onSignOut,
 }: IdleStateBodyProps) {
   const selectedMic = MOCK_MICS.find(m => m.id === selectedMicId) || MOCK_MICS[0];
   const sourceDisplay = getSourceDisplay(sourceType, selectedWindowName);
@@ -304,17 +308,24 @@ export function IdleStateBody({
           <span className="text-[10px] uppercase tracking-wider">Notes</span>
         </button>
         
-        <button
-          onClick={onMoreClick}
-          className={cn(
-            "flex flex-col items-center gap-1 px-4 py-2 rounded-lg",
-            "text-muted-foreground hover:text-foreground hover:bg-white/5",
-            "transition-all duration-150"
-          )}
-        >
-          <MoreHorizontal className="w-5 h-5" />
-          <span className="text-[10px] uppercase tracking-wider">More</span>
-        </button>
+        <MoreMenu
+          trigger={
+            <button
+              className={cn(
+                "flex flex-col items-center gap-1 px-4 py-2 rounded-lg",
+                "text-muted-foreground hover:text-foreground hover:bg-white/5",
+                "transition-all duration-150"
+              )}
+            >
+              <MoreHorizontal className="w-5 h-5" />
+              <span className="text-[10px] uppercase tracking-wider">More</span>
+            </button>
+          }
+          username={username}
+          onSignOut={onSignOut}
+          onSettings={() => console.log("Settings clicked - stub")}
+          onHelp={() => console.log("Help clicked - stub")}
+        />
       </div>
     </div>
   );

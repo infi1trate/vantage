@@ -19,8 +19,14 @@ import {
   RECORDING_LIMIT_SECONDS,
 } from "./types";
 
-// Extended state to include source picker
-type ExtendedPopoverState = PopoverState | "selecting_source_type";
+// Extended state to include source picker and authorizing
+type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing";
+
+// Mock user for account display
+export const MOCK_USER = {
+  username: "jacob.turner",
+  email: "jacob@vantage.gg",
+};
 
 export interface UsePopoverStateReturn {
   // Current state
@@ -36,8 +42,12 @@ export interface UsePopoverStateReturn {
   // Selected window (for window capture)
   selectedWindow: MockWindow | null;
   
+  // Auth
+  username: string;
+  
   // State transitions
   authorize: () => void;
+  signOut: () => void;
   selectSource: (source: CaptureSource) => void;
   selectSourceType: (type: CaptureSourceType) => void;
   selectWindow: (window: MockWindow) => void;
@@ -101,12 +111,24 @@ export function usePopoverState(): UsePopoverStateReturn {
     }
   }, [duration, state]);
 
-  // Authorize (mock)
+  // Authorize (mock with loading state)
   const authorize = useCallback(() => {
-    // Simulate permission grant
+    setState("authorizing");
+    // Simulate auth flow - 1.5s loading
     setTimeout(() => {
       setState("idle");
-    }, 500);
+    }, 1500);
+  }, []);
+
+  // Sign out
+  const signOut = useCallback(() => {
+    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    
+    setDuration(0);
+    setIsPaused(false);
+    setCountdown(null);
+    setState("unauthorized");
   }, []);
 
   // Select capture source
@@ -304,7 +326,9 @@ export function usePopoverState(): UsePopoverStateReturn {
     isPaused,
     countdown,
     selectedWindow,
+    username: MOCK_USER.username,
     authorize,
+    signOut,
     selectSource,
     selectSourceType,
     selectWindow,
