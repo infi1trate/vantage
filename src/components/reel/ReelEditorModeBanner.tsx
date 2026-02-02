@@ -17,7 +17,7 @@ import {
   Wand2,
 } from "lucide-react";
 
-export type ReelStatus = "draft" | "compiling" | "ready" | "rendering" | "error";
+export type ReelStatus = "compiling" | "draft" | "ready" | "rendering" | "error";
 
 interface ReelEditorModeBannerProps {
   status: ReelStatus;

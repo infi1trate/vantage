@@ -7,7 +7,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 
-export type ReelStatus = "draft" | "rendering" | "ready" | "failed";
+export type ReelStatus = "compiling" | "draft" | "rendering" | "ready" | "failed";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 
 export interface Reel {
@@ -39,11 +39,15 @@ export interface CreateReelInput {
 
 /**
  * Create a new reel from selected moments
+ * 
+ * Reels are first-class persistent objects that exist independently
+ * of Session Detail and are always edited via the Reel Editor.
  */
 export async function createReel(input: CreateReelInput): Promise<Reel> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
+  // Create with "compiling" status initially
   const { data, error } = await supabase
     .from("reels")
     .insert({
@@ -52,13 +56,24 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
       title: input.title || "Untitled Reel",
       aspect_ratio: input.aspectRatio,
       source_moment_ids: input.momentIds,
-      status: "draft",
+      status: "compiling",
     })
     .select()
     .single();
 
   if (error) throw error;
-  return data as Reel;
+  
+  // Transition to draft once assembly completes
+  // (Currently instant for metadata-only reels; future: async clip assembly)
+  const { data: updatedData, error: updateError } = await supabase
+    .from("reels")
+    .update({ status: "draft", updated_at: new Date().toISOString() })
+    .eq("id", data.id)
+    .select()
+    .single();
+
+  if (updateError) throw updateError;
+  return updatedData as Reel;
 }
 
 /**
