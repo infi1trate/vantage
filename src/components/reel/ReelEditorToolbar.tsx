@@ -23,6 +23,7 @@ interface ReelEditorToolbarProps {
   onTabChange: (tab: EditorTab) => void;
   showEffects: boolean;
   onShowEffectsChange: (show: boolean) => void;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -37,11 +38,13 @@ export const ReelEditorToolbar = memo(function ReelEditorToolbar({
   onTabChange,
   showEffects,
   onShowEffectsChange,
+  disabled = false,
   className,
 }: ReelEditorToolbarProps) {
   return (
     <div className={cn(
       "flex items-center justify-between px-4 py-2 border-t border-border/40 bg-card/50",
+      disabled && "opacity-50 pointer-events-none",
       className
     )}>
       {/* Tab Switcher */}
@@ -56,6 +59,7 @@ export const ReelEditorToolbar = memo(function ReelEditorToolbar({
               variant={isActive ? "default" : "ghost"}
               size="sm"
               onClick={() => onTabChange(tab.id)}
+              disabled={disabled}
               className={cn(
                 "gap-1.5 h-8 px-3",
                 isActive && "shadow-sm"
@@ -73,6 +77,7 @@ export const ReelEditorToolbar = memo(function ReelEditorToolbar({
         pressed={showEffects}
         onPressedChange={onShowEffectsChange}
         size="sm"
+        disabled={disabled}
         className="gap-1.5"
       >
         {showEffects ? (

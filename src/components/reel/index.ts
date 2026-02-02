@@ -12,6 +12,7 @@ export { ReelEditorSidebar } from "./ReelEditorSidebar";
 export { ReelEffectsPanel } from "./ReelEffectsPanel";
 export { ReelEditorModeBanner } from "./ReelEditorModeBanner";
 export { ReelCompilationStatus } from "./ReelCompilationStatus";
+export { ReelCompilingPlaceholder } from "./ReelCompilingPlaceholder";
 
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";
