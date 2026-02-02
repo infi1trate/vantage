@@ -15,6 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ReelEligibilityResult } from "@/lib/reelEligibility";
 
 export type RailSection = "coach" | "reactions" | "comments" | "highlights";
 
@@ -44,7 +45,8 @@ interface SessionRightRailProps {
   isSessionShared?: boolean;
   // Session/video availability
   sessionTitle?: string;
-  videoAvailable?: boolean;
+  /** Centralized reel eligibility check result (single source of truth) */
+  reelEligibility?: ReelEligibilityResult;
 }
 
 export const SessionRightRail = memo(function SessionRightRail({
@@ -69,7 +71,7 @@ export const SessionRightRail = memo(function SessionRightRail({
   onReactionVisibilityChange,
   isSessionShared = false,
   sessionTitle,
-  videoAvailable = true,
+  reelEligibility = { ok: true },
 }: SessionRightRailProps) {
   const [activeSection, setActiveSection] = useState<RailSection>("highlights");
 
@@ -193,7 +195,7 @@ export const SessionRightRail = memo(function SessionRightRail({
             onAnnotationDelete={onAnnotationDelete}
             sessionId={sessionId}
             sessionTitle={sessionTitle}
-            videoAvailable={videoAvailable}
+            reelEligibility={reelEligibility}
           />
         </TabsContent>
 

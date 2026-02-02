@@ -60,6 +60,11 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { 
+  canCreateReel as checkReelEligibility, 
+  extractEligibilityInput,
+  type ReelEligibilityResult,
+} from "@/lib/reelEligibility";
 
 // Cloud session processing states that indicate ongoing work
 const CLOUD_PROCESSING_STATUSES = ["recording", "processing", "uploading"];
@@ -695,6 +700,43 @@ export default function SessionReview() {
   // Determine if we can show the player
   const canShowPlayer = !isProcessing && !isProcessingFailed && !isNotStoredLocally && !isCloudProcessing && !isCloudFailed && videoUrl;
 
+  // ============ REEL ELIGIBILITY (SINGLE SOURCE OF TRUTH) ============
+  // Use centralized eligibility function for Create Reel button/action
+  const reelEligibility: ReelEligibilityResult = useMemo(() => {
+    // Local sessions with video are always eligible
+    if (isLocal && localVideoUrl) {
+      return { ok: true };
+    }
+    
+    // No session data yet = not eligible
+    if (!session) {
+      return { ok: false, reasonCode: "unknown" as const };
+    }
+    
+    // Use centralized eligibility check with extracted session data
+    // Also consider gameplay asset status
+    const hasGameplayAsset = !!gameplayAsset;
+    const gameplayStatus = gameplayAsset?.status as "ready" | "processing" | "uploading" | "failed" | "missing" | null;
+    
+    const eligibilityInput = {
+      screenVideo: {
+        present: hasGameplayAsset,
+        status: hasGameplayAsset ? (gameplayStatus || "ready") : "missing",
+        url: gameplayAsset?.storage_url || null,
+      },
+      videoUrl: session.video_url,
+      sessionStatus: session.status,
+      // ReelSource status from metadata (if present)
+      reelSourceStatus: extractEligibilityInput({
+        video_url: session.video_url,
+        status: session.status,
+        metadata: session.metadata as Record<string, unknown> | null,
+      }).reelSourceStatus,
+    };
+    
+    return checkReelEligibility(eligibilityInput);
+  }, [isLocal, localVideoUrl, session, gameplayAsset]);
+
   const cloudVideoMeta: VideoMetaInfo | null = !isLocal && gameplayAsset ? {
     blobType: gameplayAsset.mime_type || null,
     blobSize: gameplayAsset.file_size_bytes || null,
@@ -992,7 +1034,7 @@ export default function SessionReview() {
               coachError={coachError}
               commentsEnabled={false}
               sessionTitle={displayTitle}
-              videoAvailable={!!videoUrl}
+              reelEligibility={reelEligibility}
             />
           )}
         </div>
