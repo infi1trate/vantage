@@ -199,17 +199,10 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
 
   if (error) throw error;
   
-  // Transition to draft once assembly completes
-  // (Currently instant for metadata-only reels; future: async clip assembly)
-  const { data: updatedData, error: updateError } = await supabase
-    .from("reels")
-    .update({ status: "draft", updated_at: new Date().toISOString() })
-    .eq("id", data.id)
-    .select()
-    .single();
-
-  if (updateError) throw updateError;
-  return toReel(updatedData);
+  // Return immediately - assembly will be triggered by the hook
+  // The reel is in "compiling" status with "collecting_clips" step
+  // The Reel Editor will detect this and show the compiling placeholder
+  return toReel(data);
 }
 
 /**
