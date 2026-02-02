@@ -31,7 +31,12 @@ export function WindowPickerGrid({
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="h-8 w-8 p-0 hover:bg-white/10 -ml-1"
+          aria-label="Go back"
+          className={cn(
+            "h-8 w-8 p-0 rounded-lg -ml-1",
+            "hover:bg-white/[0.08] active:bg-white/[0.12]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          )}
         >
           <ChevronLeft className="w-5 h-5" />
         </Button>
@@ -41,7 +46,11 @@ export function WindowPickerGrid({
       </div>
 
       {/* 2-column Window grid */}
-      <div className="grid grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+      <div 
+        className="grid grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto pr-1 -mr-1"
+        role="radiogroup"
+        aria-label="Available windows"
+      >
         {windows.map((window) => {
           const isSelected = window.id === selectedWindowId;
           
@@ -49,38 +58,42 @@ export function WindowPickerGrid({
             <button
               key={window.id}
               onClick={() => onSelect(window)}
+              role="radio"
+              aria-checked={isSelected}
+              aria-label={`Select ${window.name}`}
               className={cn(
                 // Base
                 "relative group rounded-xl overflow-hidden",
                 "border-2 transition-all duration-150",
                 // States
                 isSelected 
-                  ? "border-vantage-green ring-2 ring-vantage-green/30" 
-                  : "border-transparent hover:border-white/20",
+                  ? "border-vantage-green ring-2 ring-vantage-green/20" 
+                  : "border-white/[0.06] hover:border-white/[0.15]",
                 // Focus
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green/50"
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             >
               {/* Thumbnail placeholder with grid texture */}
               <div className="aspect-[4/3] relative overflow-hidden">
                 {/* Gray gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5" />
+                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] to-white/[0.03]" />
                 
                 {/* Subtle grid texture */}
                 <div 
                   className="absolute inset-0 opacity-20"
                   style={{
                     backgroundImage: `
-                      linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
+                      linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)
                     `,
                     backgroundSize: '12px 12px'
                   }}
+                  aria-hidden="true"
                 />
                 
                 {/* App icon placeholder */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center">
                     <span className="text-lg font-bold text-white/40">
                       {window.appName.charAt(0)}
                     </span>
@@ -90,20 +103,20 @@ export function WindowPickerGrid({
                 {/* Hover overlay */}
                 <div className={cn(
                   "absolute inset-0 transition-opacity duration-150",
-                  "bg-vantage-green/0 group-hover:bg-vantage-green/10"
+                  "bg-vantage-green/0 group-hover:bg-vantage-green/5"
                 )} />
                 
                 {/* Selected check */}
                 {isSelected && (
-                  <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-vantage-green flex items-center justify-center shadow-lg">
-                    <Check className="w-4 h-4 text-background" />
+                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-vantage-green flex items-center justify-center shadow-lg">
+                    <Check className="w-3 h-3 text-background" />
                   </div>
                 )}
               </div>
 
               {/* Window label */}
-              <div className="px-2 py-2 bg-white/5">
-                <p className="text-xs font-medium text-foreground truncate text-center">
+              <div className="px-2 py-1.5 bg-white/[0.04]">
+                <p className="text-[11px] font-medium text-foreground truncate text-center">
                   {window.name}
                 </p>
               </div>
