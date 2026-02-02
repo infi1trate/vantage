@@ -24,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ReelStatus, AssemblyStep, updateReel, getReel, retryAssembly, isJobActive, cancelAssemblyJob, isAttemptActive, LastError, buildSegmentProgress, SegmentProgressInfo, SegmentStatusType, executeAssembly, MomentSegmentInput } from "@/lib/reels";
 import { resolveAllSegments, toMomentSegmentInputs } from "@/lib/segmentResolver";
 import { waitForAssetReadiness, checkAssetReadiness, getAssetStatusMessage, AssetReadinessStatus, watchForAssetReadiness, isPermanentFailure } from "@/lib/assetReadiness";
-import { checkReelSourceReadiness, getReelSourceStatusMessage } from "@/lib/reelSource";
+import { checkReelSourceReadiness, getReelSourceStatusMessage, startLegacyBackfill, ensureReelSourceReady } from "@/lib/reelSource";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRenderJob,
@@ -820,11 +820,61 @@ export function useReelAssembly(
         console.log("[ReelAssembly] Checking ReelSource readiness for session:", sessionId);
         
         // First check ReelSource (preferred) - provides version-aware guarantees
-        const reelSourceResult = await checkReelSourceReadiness(sessionId);
+        let reelSourceResult = await checkReelSourceReadiness(sessionId);
         
         // Log legacy vs new session detection
         if (reelSourceResult.isLegacy) {
-          console.log("[ReelAssembly] Legacy session detected (no ReelSource), using fallback check");
+          console.log("[ReelAssembly] Legacy session detected, may need backfill");
+          
+          // === LEGACY SESSION: Check if backfill is needed ===
+          // If the session has video but no proper ReelSource metadata,
+          // trigger on-demand backfill before proceeding
+          if (reelSourceResult.isReady && reelSourceResult.videoUrl) {
+            console.log("[ReelAssembly] Legacy session with video - triggering backfill");
+            
+            // Transition to preparing_legacy state for UI feedback
+            setState("preparing_legacy");
+            ensureRenderJob();
+            markJobWaiting("Preparing recording for reels…");
+            
+            // Trigger backfill (this creates/updates ReelSource metadata)
+            const backfillResult = await startLegacyBackfill(sessionId);
+            
+            if (!backfillResult.success) {
+              // Backfill failed - transition to needs_attention
+              const errorMessage = backfillResult.message || "Failed to prepare legacy recording";
+              console.warn("[ReelAssembly] Legacy backfill failed:", errorMessage);
+              
+              setError(errorMessage);
+              setState("needs_attention");
+              
+              await supabase
+                .from("reels")
+                .update({
+                  status: "needs_attention",
+                  render_error: JSON.stringify({
+                    reason: "asset_not_ready",
+                    description: errorMessage,
+                    isRecoverable: true, // Can retry backfill
+                    isLegacy: true,
+                  }),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", reelId);
+              
+              markJobNeedsAttention(errorMessage);
+              clearTimers();
+              queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+              return;
+            }
+            
+            // Backfill succeeded - continue with assembly
+            console.log("[ReelAssembly] Legacy backfill completed, continuing assembly");
+            setState("assembling");
+            
+            // Re-check readiness after backfill to get updated ReelSource
+            reelSourceResult = await checkReelSourceReadiness(sessionId);
+          }
         } else if (reelSourceResult.reelSource) {
           console.log(`[ReelAssembly] ReelSource v${reelSourceResult.reelSource.version}, status: ${reelSourceResult.reelSource.status}`);
         }
