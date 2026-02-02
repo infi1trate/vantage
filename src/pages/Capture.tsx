@@ -7,12 +7,14 @@ import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAss
 import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { usePreflightChecks } from "@/hooks/usePreflightChecks";
+import { useCaptureHealth } from "@/hooks/useCaptureHealth";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureWizard } from "@/components/capture/CaptureWizard";
 import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { StorageRecoveryScreen } from "@/components/capture/StorageRecoveryScreen";
+import { PerformanceModeBadge } from "@/components/capture/PerformanceModeBadge";
 import { saveLocalSession, LocalSession, type SaveSessionResult, formatBytes } from "@/lib/localSessionStorage";
 import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
 import { markCaptureStop, setCameraPreviewActive, recordFrameTime } from "@/lib/processingTelemetry";
@@ -82,6 +84,9 @@ export default function CapturePage() {
   
   const capture = useCaptureManager();
   
+  // Capture health monitoring for performance mode
+  const captureHealth = useCaptureHealth(false, true);
+  
   // Preflight checks - validate streams before allowing recording
   const preflight = usePreflightChecks({
     screenStream: capture.screenStream,
@@ -93,6 +98,15 @@ export default function CapturePage() {
     capture.captureState === "recording" || 
     capture.captureState === "paused" || 
     capture.captureState === "finalizing";
+  
+  // Start/stop health monitoring based on recording state
+  useEffect(() => {
+    if (isRecordingOrFinalizing && !captureHealth.isMonitoring) {
+      captureHealth.startMonitoring();
+    } else if (!isRecordingOrFinalizing && captureHealth.isMonitoring) {
+      captureHealth.stopMonitoring();
+    }
+  }, [isRecordingOrFinalizing, captureHealth]);
   
   // Check if camera preview is active (for CPU-aware processing pause)
   const isCameraPreviewActiveNow = 
@@ -491,6 +505,13 @@ export default function CapturePage() {
                   <span className="text-xs text-muted-foreground font-mono ml-2">
                     {formatBytes(capture.debugInfo.totalBytes)}
                   </span>
+                  {/* Performance Mode Badge - shows during recording */}
+                  <PerformanceModeBadge
+                    mode={captureHealth.mode}
+                    health={captureHealth.health}
+                    isRecording={true}
+                    size="sm"
+                  />
                 </>
               )}
               {isPaused && (
@@ -503,6 +524,13 @@ export default function CapturePage() {
                   <span className="text-xs text-muted-foreground font-mono ml-2">
                     {formatBytes(capture.debugInfo.totalBytes)}
                   </span>
+                  {/* Performance Mode Badge - shows when paused too */}
+                  <PerformanceModeBadge
+                    mode={captureHealth.mode}
+                    health={captureHealth.health}
+                    isRecording={false}
+                    size="sm"
+                  />
                 </>
               )}
               {isPreviewReady && (
