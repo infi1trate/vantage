@@ -509,3 +509,238 @@ export function supportsFeature(
   
   return false;
 }
+
+// ==================== Legacy Backfill ====================
+
+/**
+ * Backfill result
+ */
+export interface BackfillResult {
+  success: boolean;
+  reelSource: ReelSource | null;
+  message: string;
+  /** Whether the backfill is still in progress (async) */
+  isPending?: boolean;
+}
+
+/**
+ * Start ReelSource backfill for a legacy session.
+ * 
+ * This is called when a user attempts to create a reel from a legacy session
+ * that has no ReelSource. The backfill:
+ * 
+ * 1) Validates the existing video_url
+ * 2) Finds or creates a video_assets reference
+ * 3) Extracts duration metadata
+ * 4) Marks ReelSource as "ready"
+ * 
+ * The backfill is:
+ * - Non-destructive: Never modifies original video files
+ * - Lightweight: No re-encoding
+ * - Idempotent: Safe to call multiple times
+ */
+export async function startLegacyBackfill(
+  sessionId: string
+): Promise<BackfillResult> {
+  console.log(`[ReelSource] Starting legacy backfill for session ${sessionId}`);
+  
+  try {
+    // 1) Fetch session data
+    const { data: session, error: sessionError } = await supabase
+      .from("capture_sessions")
+      .select("id, metadata, video_url, duration_seconds, status, user_id")
+      .eq("id", sessionId)
+      .single();
+    
+    if (sessionError || !session) {
+      return {
+        success: false,
+        reelSource: null,
+        message: "Session not found",
+      };
+    }
+    
+    // 2) Check if ReelSource already exists
+    const existingReelSource = getReelSourceFromMetadata(
+      session.metadata as Record<string, unknown>
+    );
+    
+    if (existingReelSource && existingReelSource.status === "ready") {
+      console.log(`[ReelSource] Session ${sessionId} already has ready ReelSource`);
+      return {
+        success: true,
+        reelSource: existingReelSource,
+        message: "ReelSource already ready",
+      };
+    }
+    
+    // 3) Validate video exists
+    if (!session.video_url) {
+      console.warn(`[ReelSource] Legacy session ${sessionId} has no video_url`);
+      
+      // Create a "missing" ReelSource to prevent repeated backfill attempts
+      const missingReelSource = createMissingReelSource();
+      await saveReelSource(sessionId, missingReelSource);
+      
+      return {
+        success: false,
+        reelSource: missingReelSource,
+        message: "No video available for this session",
+      };
+    }
+    
+    // 4) Set status to "preparing" immediately
+    const preparingReelSource = createPreparingReelSource(null, null);
+    await saveReelSource(sessionId, preparingReelSource);
+    
+    console.log(`[ReelSource] Set session ${sessionId} to preparing, starting backfill job`);
+    
+    // 5) Find or create video_asset reference
+    const { data: existingAsset } = await supabase
+      .from("video_assets")
+      .select("id, duration_ms, status")
+      .eq("session_id", sessionId)
+      .eq("asset_type", "gameplay")
+      .maybeSingle();
+    
+    let videoAssetId: string | null = null;
+    let durationMs: number | null = null;
+    
+    if (existingAsset) {
+      // Use existing asset
+      videoAssetId = existingAsset.id;
+      durationMs = existingAsset.duration_ms;
+      console.log(`[ReelSource] Found existing video_asset ${videoAssetId} for session ${sessionId}`);
+    } else {
+      // Create a new video_asset reference for the legacy session
+      // Duration comes from session.duration_seconds (converted to ms)
+      durationMs = session.duration_seconds ? session.duration_seconds * 1000 : null;
+      
+      const { data: newAsset, error: assetError } = await supabase
+        .from("video_assets")
+        .insert({
+          session_id: sessionId,
+          user_id: session.user_id,
+          storage_url: session.video_url,
+          asset_type: "gameplay",
+          duration_ms: durationMs || 0,
+          status: "ready", // Legacy videos are assumed ready
+        })
+        .select()
+        .single();
+      
+      if (assetError) {
+        console.error(`[ReelSource] Failed to create video_asset:`, assetError);
+        
+        // Mark as failed
+        const failedReelSource = createFailedReelSource(
+          null,
+          durationMs,
+          `Failed to create asset reference: ${assetError.message}`
+        );
+        await saveReelSource(sessionId, failedReelSource);
+        
+        return {
+          success: false,
+          reelSource: failedReelSource,
+          message: "Failed to create asset reference",
+        };
+      }
+      
+      videoAssetId = newAsset.id;
+      console.log(`[ReelSource] Created new video_asset ${videoAssetId} for legacy session ${sessionId}`);
+    }
+    
+    // 6) Validate duration (attempt to extract from video if missing)
+    // For now, use session duration; future: probe video for exact duration
+    if (!durationMs && session.duration_seconds) {
+      durationMs = session.duration_seconds * 1000;
+    }
+    
+    // 7) Mark ReelSource as ready
+    const readyReelSource = createReadyReelSource(
+      videoAssetId!,
+      durationMs || 0
+    );
+    // Mark as v1 since this is a backfilled legacy session
+    readyReelSource.version = "v1";
+    
+    await saveReelSource(sessionId, readyReelSource);
+    
+    console.log(`[ReelSource] Backfill complete for session ${sessionId}: asset=${videoAssetId}, duration=${durationMs}ms`);
+    
+    return {
+      success: true,
+      reelSource: readyReelSource,
+      message: "Backfill complete",
+    };
+  } catch (err) {
+    console.error(`[ReelSource] Backfill error for session ${sessionId}:`, err);
+    
+    // Attempt to mark as failed
+    try {
+      const failedReelSource = createFailedReelSource(
+        null,
+        null,
+        err instanceof Error ? err.message : "Unknown error"
+      );
+      await saveReelSource(sessionId, failedReelSource);
+      
+      return {
+        success: false,
+        reelSource: failedReelSource,
+        message: err instanceof Error ? err.message : "Backfill failed",
+      };
+    } catch {
+      return {
+        success: false,
+        reelSource: null,
+        message: err instanceof Error ? err.message : "Backfill failed",
+      };
+    }
+  }
+}
+
+/**
+ * Ensure ReelSource is ready before creating a reel.
+ * 
+ * This is the primary gate for reel creation:
+ * - New sessions (v2): ReelSource should already exist
+ * - Legacy sessions: Triggers on-demand backfill
+ * 
+ * Returns true if ready, false if not (with status message).
+ */
+export async function ensureReelSourceReady(
+  sessionId: string
+): Promise<{ ready: boolean; message: string; reelSource: ReelSource | null }> {
+  // Check current readiness
+  const readiness = await checkReelSourceReadiness(sessionId);
+  
+  if (readiness.isReady) {
+    return {
+      ready: true,
+      message: "Ready",
+      reelSource: readiness.reelSource,
+    };
+  }
+  
+  // If legacy session with video, trigger backfill
+  if (readiness.isLegacy && readiness.videoUrl) {
+    console.log(`[ReelSource] Legacy session detected, triggering backfill for ${sessionId}`);
+    
+    const backfillResult = await startLegacyBackfill(sessionId);
+    
+    return {
+      ready: backfillResult.success,
+      message: backfillResult.message,
+      reelSource: backfillResult.reelSource,
+    };
+  }
+  
+  // Not recoverable
+  return {
+    ready: false,
+    message: readiness.message,
+    reelSource: readiness.reelSource,
+  };
+}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Annotation } from "@/lib/captures";
-import { createReel, AspectRatio } from "@/lib/reels";
+import { createReel, AspectRatio, ReelSourceNotReadyError } from "@/lib/reels";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -729,7 +729,17 @@ function ReelCreatorContent({
       onReelCreated(reel.id);
     } catch (error) {
       console.error("Failed to create reel:", error);
-      toast.error("Failed to create reel");
+      
+      // Handle ReelSource not ready (legacy backfill failed or no video)
+      if (error instanceof ReelSourceNotReadyError) {
+        toast.error("Cannot create reel", {
+          description: error.userMessage || "Session video is not available",
+        });
+      } else {
+        toast.error("Failed to create reel", {
+          description: error instanceof Error ? error.message : "Please try again",
+        });
+      }
       setIsGenerating(false);
     }
   }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated]);

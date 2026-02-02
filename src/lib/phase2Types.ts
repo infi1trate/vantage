@@ -43,6 +43,7 @@ export type {
   ReelSourceVersion,
   ReelSourceStatus,
   ReelSourceReadinessResult,
+  BackfillResult,
 } from "./reelSource";
 
 // Re-export constants
@@ -70,4 +71,6 @@ export {
   checkReelSourceReadiness,
   getReelSourceStatusMessage,
   supportsFeature,
+  ensureReelSourceReady,
+  startLegacyBackfill,
 } from "./reelSource";
