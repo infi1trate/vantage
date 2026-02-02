@@ -326,37 +326,63 @@ export function IdleStateBody({
         </p>
       </div>
 
-      {/* Footer tabs */}
-      <div className="h-px bg-white/[0.08] my-4" aria-hidden="true" />
+      {/* Footer action bar */}
+      <div className="h-px bg-white/[0.06] mt-5 mb-3" aria-hidden="true" />
       
-      <nav className="flex items-center justify-center gap-8" aria-label="Quick actions">
+      <nav 
+        className="flex items-center justify-between px-2" 
+        aria-label="Quick actions"
+      >
+        {/* Effects button - left aligned */}
         <button
           onClick={() => setEffectsOpen(true)}
           aria-label="Open effects settings"
+          aria-haspopup="dialog"
           className={cn(
-            "flex flex-col items-center gap-1.5 px-6 py-2 rounded-xl",
-            "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
-            "transition-all duration-150",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
+            "text-muted-foreground",
+            "transition-all duration-150 ease-out",
+            // Hover state
+            "hover:text-foreground hover:bg-white/[0.06]",
+            // Active/pressed state
+            "active:scale-[0.97] active:bg-white/[0.08]",
+            // Focus ring
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            // When effects modal is open
+            effectsOpen && "text-vantage-green bg-vantage-green/10"
           )}
         >
-          <Sparkles className="w-5 h-5" />
-          <span className="text-[10px] uppercase tracking-wider font-medium">Effects</span>
+          <Sparkles className={cn(
+            "w-4 h-4 transition-transform duration-150",
+            "group-hover:scale-110",
+            effectsOpen && "text-vantage-green"
+          )} />
+          <span className="text-xs font-medium">Effects</span>
         </button>
         
+        {/* More button - right aligned */}
         <MoreMenu
           trigger={
             <button
-              aria-label="Open more options"
+              aria-label="Open more options menu"
+              aria-haspopup="menu"
               className={cn(
-                "flex flex-col items-center gap-1.5 px-6 py-2 rounded-xl",
-                "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
-                "transition-all duration-150",
+                "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
+                "text-muted-foreground",
+                "transition-all duration-150 ease-out",
+                // Hover state
+                "hover:text-foreground hover:bg-white/[0.06]",
+                // Active/pressed state
+                "active:scale-[0.97] active:bg-white/[0.08]",
+                // Focus ring
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             >
-              <MoreHorizontal className="w-5 h-5" />
-              <span className="text-[10px] uppercase tracking-wider font-medium">More</span>
+              <MoreHorizontal className={cn(
+                "w-4 h-4 transition-transform duration-150",
+                "group-hover:scale-110"
+              )} />
+              <span className="text-xs font-medium">More</span>
             </button>
           }
           username={username}
