@@ -26,11 +26,14 @@ interface SettingsConfig {
   defaultSource: CaptureSourceType;
   defaultMicId: string;
   openEditorAfter: boolean;
+  forceUploadError: boolean;
 }
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  forceUploadError: boolean;
+  onForceUploadErrorChange: (value: boolean) => void;
 }
 
 const DEFAULT_CONFIG: SettingsConfig = {
@@ -38,16 +41,30 @@ const DEFAULT_CONFIG: SettingsConfig = {
   defaultSource: "screen",
   defaultMicId: "mic1",
   openEditorAfter: true,
+  forceUploadError: false,
 };
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [config, setConfig] = useState<SettingsConfig>(DEFAULT_CONFIG);
+export function SettingsModal({ 
+  isOpen, 
+  onClose,
+  forceUploadError,
+  onForceUploadErrorChange,
+}: SettingsModalProps) {
+  const [config, setConfig] = useState<SettingsConfig>({
+    ...DEFAULT_CONFIG,
+    forceUploadError,
+  });
+
+  // Sync external forceUploadError state
+  useEffect(() => {
+    setConfig(prev => ({ ...prev, forceUploadError }));
+  }, [forceUploadError]);
 
   // Reset to defaults when modal opens
   useEffect(() => {
     if (isOpen) {
       // In a real app, load from persisted settings
-      setConfig(DEFAULT_CONFIG);
+      setConfig(prev => ({ ...DEFAULT_CONFIG, forceUploadError: prev.forceUploadError }));
     }
   }, [isOpen]);
 
@@ -150,6 +167,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             checked={config.openEditorAfter}
             onCheckedChange={(checked) => setConfig({ ...config, openEditorAfter: checked })}
           />
+        </div>
+
+        <div className="h-px bg-white/10" />
+
+        {/* Developer/Debug Section */}
+        <div className="space-y-3">
+          <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Developer
+          </Label>
+          
+          {/* Force Upload Error Toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <Label className="text-sm font-medium cursor-pointer">
+                Force upload error
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Simulate upload failure for testing
+              </p>
+            </div>
+            <Switch
+              checked={config.forceUploadError}
+              onCheckedChange={(checked) => {
+                setConfig({ ...config, forceUploadError: checked });
+                onForceUploadErrorChange(checked);
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>
