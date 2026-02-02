@@ -93,7 +93,7 @@ const formatDuration = (seconds: number) => {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 };
 
-// Memoized moment toggle row
+// Memoized moment toggle row - aligned grid: checkbox | icon | label | timestamp
 const MomentToggleRow = memo(function MomentToggleRow({
   annotation,
   selected,
@@ -109,30 +109,32 @@ const MomentToggleRow = memo(function MomentToggleRow({
   return (
     <button
       className={cn(
-        "w-full flex items-center gap-3 p-3 min-h-12 rounded-lg text-left transition-all touch-manipulation",
+        "w-full grid grid-cols-[20px_20px_1fr_auto] items-center gap-3 px-3 py-2.5 h-11 rounded-lg text-left transition-all touch-manipulation",
         selected 
           ? "bg-primary/10 border border-primary/30" 
-          : "bg-muted/20 border border-transparent opacity-50 hover:opacity-70 active:opacity-90"
+          : "bg-muted/20 border border-transparent opacity-60 hover:opacity-80 active:opacity-100"
       )}
       onClick={onToggle}
     >
       {/* Checkbox indicator */}
       <div className={cn(
-        "shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
+        "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
         selected 
           ? "bg-primary border-primary" 
-          : "border-muted-foreground/30"
+          : "border-muted-foreground/40"
       )}>
         {selected && <Check className="h-3 w-3 text-primary-foreground" />}
       </div>
 
       {/* Event Icon */}
-      <Icon className={cn("h-4 w-4 shrink-0", config.color)} />
+      <Icon className={cn("h-4 w-4", config.color)} />
       
-      {/* Label + Time */}
-      <span className="flex-1 text-sm font-medium">
+      {/* Label */}
+      <span className="text-sm font-medium truncate">
         {config.label}
       </span>
+      
+      {/* Timestamp */}
       <span className="text-xs font-mono tabular-nums text-muted-foreground">
         {formatTime(annotation.timestamp_seconds)}
       </span>
@@ -140,7 +142,7 @@ const MomentToggleRow = memo(function MomentToggleRow({
   );
 });
 
-// Aspect ratio button
+// Aspect ratio button - clear active state with glow + consistent sizing
 const AspectButton = memo(function AspectButton({
   ratio,
   selected,
@@ -155,25 +157,25 @@ const AspectButton = memo(function AspectButton({
   return (
     <button
       className={cn(
-        "flex flex-col items-center gap-2 p-4 rounded-xl transition-all min-w-[90px]",
+        "flex flex-col items-center justify-center gap-2 p-4 rounded-xl transition-all w-[100px] h-[88px]",
         selected 
-          ? "bg-primary/10 ring-2 ring-primary/50" 
-          : "bg-muted/20 hover:bg-muted/40"
+          ? "bg-primary/15 ring-2 ring-primary shadow-[0_0_12px_-2px_hsl(var(--primary)/0.4)]" 
+          : "bg-muted/30 hover:bg-muted/50 border border-transparent"
       )}
       onClick={onClick}
     >
       <Icon className={cn(
-        "h-6 w-6",
+        "h-6 w-6 transition-colors",
         selected ? "text-primary" : "text-muted-foreground"
       )} />
       <div className="text-center">
         <p className={cn(
-          "text-xs font-medium",
+          "text-xs font-semibold transition-colors",
           selected ? "text-primary" : "text-foreground"
         )}>
           {ratio.label}
         </p>
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-[10px] text-muted-foreground leading-tight">
           {ratio.desc}
         </p>
       </div>
@@ -659,7 +661,8 @@ function ReelCreatorContent({
   onReelCreated: (reelId: string) => void;
   onClose: () => void;
 }) {
-  const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("9:16");
+  // Default to 16:9 (Landscape) as per UX requirement
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioValue>("16:9");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     // Auto-select all moments by default, ordered by timeline
     return new Set(moments.map(m => m.id));
@@ -729,15 +732,15 @@ function ReelCreatorContent({
 
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
-      {/* AI Badge */}
-      <div className="shrink-0 px-4 pt-2 pb-3">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20">
-          <Sparkles className="h-4 w-4 text-primary" />
+      {/* AI Badge - consistent padding, never overlaps content */}
+      <div className="shrink-0 px-4 pt-3 pb-3">
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20">
+          <Sparkles className="h-4 w-4 text-primary shrink-0" />
           <span className="text-xs font-medium text-primary">
             AI assembled this for you
           </span>
-          <span className="text-[10px] text-muted-foreground ml-auto">
-            ~{Math.ceil(estimatedDuration)}s estimated
+          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 tabular-nums">
+            ~{Math.ceil(estimatedDuration)}s
           </span>
         </div>
       </div>
@@ -747,7 +750,7 @@ function ReelCreatorContent({
         <h4 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide mb-3">
           Format
         </h4>
-        <div className="flex gap-2 justify-center overflow-x-auto pb-1">
+        <div className="flex gap-2 justify-center flex-wrap sm:flex-nowrap">
           {ASPECT_RATIOS.map(ratio => (
             <AspectButton
               key={ratio.value}
@@ -764,15 +767,15 @@ function ReelCreatorContent({
 
       {/* Moment Selection */}
       <section className="flex-1 min-h-0 flex flex-col">
-        <div className="shrink-0 px-4 py-3 flex items-center justify-between">
-          <h4 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">
+        <div className="shrink-0 px-4 py-3 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+          <h4 className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide whitespace-nowrap">
             Moments ({selectedMoments.length}/{sortedMoments.length})
           </h4>
-          <div className="flex gap-2">
+          <div className="flex gap-1 shrink-0">
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs px-2"
+              className="h-7 text-xs px-2.5"
               onClick={selectAll}
               disabled={selectedIds.size === moments.length}
             >
@@ -781,7 +784,7 @@ function ReelCreatorContent({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs px-2"
+              className="h-7 text-xs px-2.5"
               onClick={deselectAll}
               disabled={selectedIds.size === 0}
             >
@@ -817,7 +820,7 @@ function ReelCreatorContent({
         </ScrollArea>
       </section>
 
-      {/* Footer CTA */}
+      {/* Footer CTA - dynamic text based on format */}
       <div className="shrink-0 p-4 border-t border-border/30 bg-muted/10">
         <Button
           className="w-full h-12 text-sm font-semibold gap-2"
@@ -841,8 +844,8 @@ function ReelCreatorContent({
             </>
           )}
         </Button>
-        <p className="text-[10px] text-muted-foreground text-center mt-2">
-          Moments will be auto-ordered by timeline
+        <p className="text-[11px] text-muted-foreground text-center mt-2.5">
+          You'll be taken to the Reel Editor next.
         </p>
       </div>
     </div>
