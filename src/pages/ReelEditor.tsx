@@ -597,6 +597,7 @@ export default function ReelEditor() {
                   isFailed={editorState.state === "failed"}
                   isNeedsAttention={editorState.state === "needs_attention"}
                   isWaitingForSource={editorState.state === "waiting_for_source"}
+                  isPreparingLegacy={editorState.state === "preparing_legacy"}
                   gameplayVideoStatus={gameplayVideoStatus}
                   errorMessage={reel.render_error || assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}

@@ -40,6 +40,9 @@ export const EditorStateBadge = memo(function EditorStateBadge({
           styles.border
         )}
       >
+        {state === "preparing_legacy" && (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        )}
         {state === "waiting_for_source" && (
           <Loader2 className="h-3 w-3 animate-spin" />
         )}

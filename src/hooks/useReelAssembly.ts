@@ -36,7 +36,7 @@ import {
 } from "@/lib/renderQueue";
 import { getErrorCategory, getReasonLabel, ClipValidationError, parseClipValidationError } from "@/lib/reels";
 
-export type AssemblyState = "idle" | "waiting_for_source" | "assembling" | "ready" | "failed" | "needs_attention";
+export type AssemblyState = "idle" | "preparing_legacy" | "waiting_for_source" | "assembling" | "ready" | "failed" | "needs_attention";
 
 const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup

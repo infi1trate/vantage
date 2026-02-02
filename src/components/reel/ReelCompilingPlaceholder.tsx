@@ -43,6 +43,8 @@ interface ReelCompilingPlaceholderProps {
   isNeedsAttention?: boolean;
   /** Whether waiting for source video to be ready */
   isWaitingForSource?: boolean;
+  /** Whether preparing a legacy recording for reels (one-time backfill) */
+  isPreparingLegacy?: boolean;
   /** Gameplay video status for correct UI rendering */
   gameplayVideoStatus?: "processing" | "ready" | "failed" | "missing" | "unknown";
   /** Error message to display (may be JSON for structured clip errors) */
@@ -125,6 +127,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   isFailed = false,
   isNeedsAttention = false,
   isWaitingForSource = false,
+  isPreparingLegacy = false,
   gameplayVideoStatus = "unknown",
   errorMessage,
   onRetry,
@@ -930,6 +933,77 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     </div>
                   </>
                 )}
+              </>
+            ) : isPreparingLegacy ? (
+              <>
+                {/* Legacy Preparation State - One-time backfill for older recordings */}
+                <motion.div
+                  className="relative"
+                  animate={{ scale: [1, 1.03, 1] }}
+                  transition={{ duration: 2.5, repeat: Infinity }}
+                >
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Clock className="h-8 w-8 text-primary" />
+                  </div>
+                  <motion.div
+                    className="absolute -top-1 -right-1"
+                    animate={{ 
+                      rotate: [0, 360],
+                    }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Loader2 className="h-5 w-5 text-primary" />
+                  </motion.div>
+                </motion.div>
+                
+                {/* Title + Subtitle - Friendly explanation */}
+                <div className="text-center max-w-xs">
+                  <p className="text-base font-semibold text-foreground">
+                    Preparing this recording for reels
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                    This is a one-time setup for older recordings. It only takes a few seconds.
+                  </p>
+                </div>
+                
+                {/* Spinner + Estimated time */}
+                <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20">
+                  <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                  <span className="text-sm text-muted-foreground">
+                    ~5–10 seconds
+                  </span>
+                </div>
+                
+                {/* Actions */}
+                <div className="flex flex-col items-center gap-3 mt-2">
+                  {/* Leave and notify */}
+                  {onLeaveAndNotify && (
+                    <Button
+                      variant="outline"
+                      onClick={onLeaveAndNotify}
+                      className="gap-2 min-w-[200px]"
+                      size="lg"
+                    >
+                      <Bell className="h-4 w-4" />
+                      Leave and notify me
+                    </Button>
+                  )}
+                  
+                  {/* Back to session */}
+                  {onCancel && (
+                    <button
+                      onClick={onCancel}
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                    >
+                      Back to session
+                    </button>
+                  )}
+                </div>
+                
+                {/* Reassurance text */}
+                <p className="text-xs text-muted-foreground/70 mt-3 text-center max-w-xs">
+                  Your reel will automatically continue once preparation completes.
+                </p>
               </>
             ) : (
               <>
