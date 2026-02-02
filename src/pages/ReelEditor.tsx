@@ -352,23 +352,23 @@ export default function ReelEditor() {
     }
     
     try {
-      // Update session status to trigger reprocessing
-      const { error } = await supabase
-        .from("capture_sessions")
-        .update({
-          status: "processing",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", reel.session_id);
+      // Use the dedicated retry function that properly resets session state
+      const { retrySessionVideoProcessing } = await import("@/lib/captures");
+      const result = await retrySessionVideoProcessing(reel.session_id);
       
-      if (error) throw error;
+      if (!result.success) {
+        toast.error("Failed to retry processing", {
+          description: result.error || "Please try again.",
+        });
+        return;
+      }
       
       toast.info("Retrying video processing...", {
-        description: "This may take a few moments.",
+        description: "We'll notify you when the reel is ready.",
         duration: 5000,
       });
       
-      // Retry assembly after triggering reprocessing
+      // Retry assembly - it will now wait for the processing to complete
       await assemblyState.retry();
     } catch (err) {
       console.error("Failed to retry processing:", err);
