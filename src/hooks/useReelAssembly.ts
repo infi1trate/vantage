@@ -50,6 +50,18 @@ const STEP_PROGRESS_RANGES: Record<AssemblyStep, { min: number; max: number; sta
   failed: { min: 0, max: 0, stage: 0 },
 };
 
+/**
+ * Status of each segment during collection
+ */
+export type SegmentStatus = "pending" | "resolving" | "resolved" | "failed" | "skipped";
+
+export interface SegmentProgress {
+  momentId: string;
+  label: string;
+  timestampSeconds: number;
+  status: SegmentStatus;
+}
+
 export interface AssemblyProgress {
   /** Current progress percentage (0-100) */
   percent: number;
@@ -59,6 +71,12 @@ export interface AssemblyProgress {
   step: AssemblyStep | null;
   /** When the current step started */
   stepStartedAt: string | null;
+  /** For collecting_clips: which segment is currently being resolved */
+  currentSegmentIndex?: number;
+  /** For collecting_clips: total number of segments */
+  totalSegments?: number;
+  /** For collecting_clips: status of each segment */
+  segments?: SegmentProgress[];
 }
 
 export interface ReelAssemblyState {
