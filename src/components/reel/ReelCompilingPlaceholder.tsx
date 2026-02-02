@@ -51,6 +51,8 @@ interface ReelCompilingPlaceholderProps {
   isRetrying?: boolean;
   /** Cancel handler - returns to session detail */
   onCancel?: () => void;
+  /** Check session video handler - navigates to session media panel */
+  onCheckSession?: () => void;
   /** Leave and notify handler - keeps job in background */
   onLeaveAndNotify?: () => void;
   /** Skip failing clip handler - removes the failing moment and retries */
@@ -117,6 +119,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   onRetry,
   isRetrying = false,
   onCancel,
+  onCheckSession,
   onLeaveAndNotify,
   onSkipClip,
   onAutoFix,
@@ -401,9 +404,9 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                     {/* Recovery CTAs from asset error content */}
                     <div className="flex flex-col items-center gap-3 mt-3">
                       {/* Primary CTA */}
-                      {assetErrorContent.primaryCta.action === "check_session" && onCancel && (
+                      {assetErrorContent.primaryCta.action === "check_session" && (onCheckSession || onCancel) && (
                         <Button
-                          onClick={onCancel}
+                          onClick={onCheckSession || onCancel}
                           className="gap-2 min-w-[200px]"
                           size="lg"
                         >
