@@ -53,11 +53,10 @@ interface ReelCompilingPlaceholderProps {
   };
 }
 
-// Assembly steps configuration - maps step IDs to display
+// Assembly steps configuration (MANIFEST-FIRST - only 2 steps!)
 const ASSEMBLY_STEPS = [
-  { id: "collecting_clips", label: "Collecting clips", range: [0, 20] },
-  { id: "stitching_sequence", label: "Stitching sequence", range: [20, 70] },
-  { id: "rendering_preview", label: "Preparing preview", range: [70, 100] },
+  { id: "collecting_clips", label: "Collecting clips", range: [0, 50] },
+  { id: "finalizing_manifest", label: "Creating timeline", range: [50, 100] },
 ] as const;
 
 /**
@@ -69,13 +68,10 @@ function getActiveStepFromStep(step: AssemblyStep | null): number {
   switch (step) {
     case "collecting_clips":
       return 0;
-    case "stitching_sequence":
-      return 1;
-    case "rendering_preview":
     case "finalizing_manifest":
-      return 2;
+      return 1;
     case "ready":
-      return 3; // All complete
+      return 2; // All complete
     default:
       return 0;
   }

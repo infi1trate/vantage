@@ -38,16 +38,15 @@ const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
 const MAX_RETRY_ATTEMPTS = 3;
 
 /**
- * Step-based progress configuration
- * Maps assembly_step to progress range [min, max]
- * Progress smoothly animates WITHIN the range but NEVER advances past it
+ * Step-based progress configuration (MANIFEST-FIRST)
+ * 
+ * Assembly success = collecting_clips → finalizing_manifest → ready
+ * Preview is a SEPARATE background job and doesn't block "ready"
  */
 const STEP_PROGRESS_RANGES: Record<AssemblyStep, { min: number; max: number; stage: number }> = {
-  collecting_clips: { min: 0, max: 20, stage: 0 },
-  stitching_sequence: { min: 20, max: 70, stage: 1 },
-  rendering_preview: { min: 70, max: 90, stage: 2 },
-  finalizing_manifest: { min: 90, max: 98, stage: 2 },
-  ready: { min: 100, max: 100, stage: 2 },
+  collecting_clips: { min: 0, max: 50, stage: 0 },      // Collect clips (half the work)
+  finalizing_manifest: { min: 50, max: 95, stage: 1 },  // Write manifest (almost done)
+  ready: { min: 100, max: 100, stage: 1 },              // SUCCESS
   failed: { min: 0, max: 0, stage: 0 },
 };
 
