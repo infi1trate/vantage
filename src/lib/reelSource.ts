@@ -19,6 +19,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { isBackfillAllowed, getGuardrailState } from "./backfillGuardrails";
 
 // ==================== Types ====================
 
@@ -561,6 +562,19 @@ export async function startLegacyBackfill(
 ): Promise<BackfillResult> {
   console.log(`[ReelSource] Starting legacy backfill for session ${sessionId}`);
   
+  // ============ PERFORMANCE GUARDRAIL CHECK ============
+  // Backfill must NEVER run during active capture or high system load
+  const guardrailState = getGuardrailState();
+  if (!guardrailState.isAllowed) {
+    console.warn(`[ReelSource] Backfill blocked by guardrails: ${guardrailState.blockedReason}`);
+    return {
+      success: false,
+      reelSource: null,
+      message: `Backfill deferred: ${guardrailState.blockedReason}`,
+      isPending: true,
+    };
+  }
+  
   try {
     // 1) Fetch session data
     const { data: session, error: sessionError } = await supabase
@@ -603,6 +617,18 @@ export async function startLegacyBackfill(
         success: false,
         reelSource: missingReelSource,
         message: "No video available for this session",
+      };
+    }
+    
+    // ============ RE-CHECK GUARDRAILS BEFORE HEAVY WORK ============
+    // Double-check in case capture started while we were fetching
+    if (!isBackfillAllowed()) {
+      console.warn(`[ReelSource] Backfill preempted for ${sessionId}`);
+      return {
+        success: false,
+        reelSource: null,
+        message: "Backfill preempted by higher priority task",
+        isPending: true,
       };
     }
     
