@@ -360,6 +360,16 @@ class ProcessingManager {
         completedAt: new Date().toISOString(),
       });
       if (updated) this.notifyUpdate(updated);
+      
+      // Also mark session as failed in database
+      await supabase
+        .from("capture_sessions")
+        .update({
+          status: "failed",
+          metadata: { last_error: "Processing was interrupted. The recording data was lost." },
+        })
+        .eq("id", job.sessionId);
+      
       return;
     }
     
@@ -388,6 +398,15 @@ class ProcessingManager {
         step: "Failed",
         completedAt: new Date().toISOString(),
       });
+      
+      // Also mark session as failed in database
+      await supabase
+        .from("capture_sessions")
+        .update({
+          status: "failed",
+          metadata: { last_error: "Cannot retry: recording data is no longer available." },
+        })
+        .eq("id", job.sessionId);
     }
   }
   
@@ -410,6 +429,7 @@ class ProcessingManager {
       
       console.error("[ProcessingManager] Job failed:", job.id, error);
       
+      // Update the processing job
       const updated = updateProcessingJob(job.id, {
         status: "failed",
         errorMessage: error.message || "Processing failed",
@@ -417,6 +437,24 @@ class ProcessingManager {
         completedAt: new Date().toISOString(),
       });
       if (updated) this.notifyUpdate(updated);
+      
+      // CRITICAL: Also update the session in the database to "failed" status
+      // This ensures assetReadiness knows this session permanently failed
+      try {
+        await supabase
+          .from("capture_sessions")
+          .update({
+            status: "failed",
+            metadata: { last_error: error.message || "Processing failed" },
+          })
+          .eq("id", job.sessionId);
+        
+        if (import.meta.env.DEV) {
+          console.log("[ProcessingManager] Session status set to failed:", job.sessionId);
+        }
+      } catch (dbError) {
+        console.error("[ProcessingManager] Failed to update session status:", dbError);
+      }
       
       trackJobCompleted(job.id, false);
     } finally {
@@ -583,7 +621,7 @@ class ProcessingManager {
               videoAssetId = assetData.id;
             }
             
-            // Update session status with audio mix metadata
+            // Update session status with video_url and audio mix metadata
             const metadata: Record<string, any> = {};
             if (job.audioMixSettings) {
               metadata.audio_mix = job.audioMixSettings;
@@ -592,10 +630,12 @@ class ProcessingManager {
               metadata.has_game_audio = job.hasGameAudio;
             }
             
+            // CRITICAL: Set video_url so assetReadiness knows the video exists
             await supabase
               .from("capture_sessions")
               .update({
                 status: "ready",
+                video_url: urlData.signedUrl,
                 duration_seconds: job.duration,
                 thumbnail_url: thumbnailDataUrl || null,
                 metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
@@ -711,7 +751,7 @@ class ProcessingManager {
     for (const job of interrupted) {
       // Check if blob is still available
       getProcessingBlob(job.blobKey || `blob_${job.id}`)
-        .then(blob => {
+        .then(async blob => {
           if (blob) {
             // Re-queue for processing
             if (import.meta.env.DEV) {
@@ -731,15 +771,33 @@ class ProcessingManager {
               step: "Failed",
               completedAt: new Date().toISOString(),
             });
+            
+            // Also mark session as failed in database
+            await supabase
+              .from("capture_sessions")
+              .update({
+                status: "failed",
+                metadata: { last_error: "Processing was interrupted. Recording data was lost." },
+              })
+              .eq("id", job.sessionId);
           }
         })
-        .catch(() => {
+        .catch(async () => {
           updateProcessingJob(job.id, {
             status: "failed",
             errorMessage: "Processing was interrupted. Please retry or record again.",
             step: "Failed",
             completedAt: new Date().toISOString(),
           });
+          
+          // Also mark session as failed in database
+          await supabase
+            .from("capture_sessions")
+            .update({
+              status: "failed",
+              metadata: { last_error: "Processing was interrupted." },
+            })
+            .eq("id", job.sessionId);
         });
     }
   }
