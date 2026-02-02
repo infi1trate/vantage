@@ -42,6 +42,8 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { EffectsModal, type EffectsConfig } from "./EffectsModal";
 import { SettingsModal, type SettingsConfig } from "./SettingsModal";
+import { useApplyDefaultFrame } from "@/hooks/useDefaultFrame";
+import { DEFAULT_FRAME_CONFIG, type FrameConfig } from "./frames/FramesTab";
 
 interface NewCaptureDialogProps {
   open: boolean;
@@ -82,15 +84,20 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   const [includeMicrophone, setIncludeMicrophone] = useState(true);
   const [includeGameAudio, setIncludeGameAudio] = useState(true);
 
-  // Effects config
-  const [effectsConfig, setEffectsConfig] = useState<EffectsConfig>({
+  // Default frame loader
+  const { getInitialFrameConfig, defaultFrameId } = useApplyDefaultFrame();
+
+  // Effects config - initialized with default frame if available
+  const [effectsConfig, setEffectsConfig] = useState<EffectsConfig>(() => ({
     includeFacecam: false,
     frameShape: "circle",
     cameraSize: "small",
     backgroundColor: "transparent",
     backgroundImage: null,
     flipCamera: true,
-  });
+    frameConfig: DEFAULT_FRAME_CONFIG,
+    frameLivePreview: true,
+  }));
 
   // Settings config
   const [settingsConfig, setSettingsConfig] = useState<SettingsConfig>({
@@ -115,6 +122,16 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
       } else {
         setView("not_supported");
       }
+
+      // Apply default frame if user has one set
+      const initialFrameConfig = getInitialFrameConfig();
+      if (initialFrameConfig.enabled) {
+        setEffectsConfig(prev => ({
+          ...prev,
+          frameConfig: initialFrameConfig,
+          frameLivePreview: true,
+        }));
+      }
     } else {
       // Reset state when dialog closes
       setView("preflight");
@@ -130,6 +147,8 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
         backgroundColor: "transparent",
         backgroundImage: null,
         flipCamera: true,
+        frameConfig: DEFAULT_FRAME_CONFIG,
+        frameLivePreview: true,
       });
       setSettingsConfig({
         videoQuality: "1080p60",
@@ -142,7 +161,7 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
         monoAudio: true,
       });
     }
-  }, [open]);
+  }, [open, getInitialFrameConfig]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,7 +213,8 @@ export function NewCaptureDialog({ open, onOpenChange }: NewCaptureDialogProps) 
   // Check if any effects have been customized from defaults
   const hasCustomEffects = effectsConfig.includeFacecam || 
     effectsConfig.backgroundColor !== "transparent" || 
-    effectsConfig.backgroundImage !== null;
+    effectsConfig.backgroundImage !== null ||
+    effectsConfig.frameConfig?.enabled;
 
   // Check if any settings have been customized from defaults
   const hasCustomSettings = 
