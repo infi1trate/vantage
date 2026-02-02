@@ -209,12 +209,19 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   <p className="text-lg font-semibold text-foreground">
                     Couldn't assemble this reel
                   </p>
-                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                    {displayErrorMessage}
-                  </p>
+                  
+                  {/* Show specific failing clip in highlighted format */}
                   {clipError && (
-                    <p className="text-xs text-muted-foreground/70 mt-1">
-                      Reason: {clipError.description}
+                    <div className="mt-3 px-4 py-2 rounded-lg bg-destructive/10 border border-destructive/20 inline-block">
+                      <p className="text-sm font-medium text-destructive">
+                        Can't access: {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {!clipError && displayErrorMessage && (
+                    <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                      {displayErrorMessage}
                     </p>
                   )}
                 </div>
@@ -298,15 +305,22 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                 <div className="text-center max-w-sm">
                   <p className="text-lg font-semibold text-foreground">
                     {clipError
-                      ? "Couldn't access a clip"
+                      ? "We hit an issue assembling one clip"
                       : "This is taking longer than expected"}
                   </p>
-                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                    {displayErrorMessage}
-                  </p>
+                  
+                  {/* Show specific failing clip in highlighted format */}
                   {clipError && (
-                    <p className="text-xs text-muted-foreground/70 mt-1">
-                      Reason: {clipError.description}
+                    <div className="mt-3 px-4 py-2 rounded-lg bg-vantage-warning/10 border border-vantage-warning/20 inline-block">
+                      <p className="text-sm font-medium text-vantage-warning">
+                        Can't access: {clipError.momentLabel} at {formatTimestamp(clipError.timestampSeconds)}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {!clipError && displayErrorMessage && (
+                    <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                      {displayErrorMessage}
                     </p>
                   )}
                 </div>
