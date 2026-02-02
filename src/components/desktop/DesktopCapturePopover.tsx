@@ -6,20 +6,13 @@
  */
 
 import { PopoverShell } from "./PopoverShell";
-import { SourceRow } from "./SourceRow";
-import { ToggleRow } from "./ToggleRow";
 import { PrimaryCTA } from "./PrimaryCTA";
 import { HUDMini } from "./HUDMini";
 import { PopoverToast } from "./PopoverToast";
 import { WindowPickerGrid } from "./WindowPickerGrid";
+import { IdleStateBody } from "./IdleStateBody";
 import { usePopoverState } from "./usePopoverState";
-import { 
-  MOCK_SOURCES, 
-  MOCK_WINDOWS, 
-  MOCK_MICS, 
-  MOCK_CAMERAS,
-  formatRecordingLimit,
-} from "./types";
+import { MOCK_WINDOWS } from "./types";
 import { Shield } from "lucide-react";
 
 interface DesktopCapturePopoverProps {
@@ -179,78 +172,20 @@ export function DesktopCapturePopover({ className, onClose, onHome }: DesktopCap
   return (
     <div className={className}>
       <PopoverShell onClose={onClose} onHome={onHome}>
-        <div className="space-y-4">
-          {/* Recording limit label */}
-          <div className="flex items-center justify-end">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              {formatRecordingLimit()}
-            </span>
-          </div>
-
-          {/* Source selection */}
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-              What to record
-            </p>
-            {MOCK_SOURCES.map((source) => (
-              <SourceRow
-                key={source.id}
-                source={source}
-                isSelected={popover.config.selectedSource?.id === source.id}
-                onSelect={() => popover.selectSource(source)}
-                onSelectWindow={source.type === "window" ? popover.openWindowPicker : undefined}
-                selectedWindowName={
-                  source.type === "window" && popover.selectedWindow 
-                    ? popover.selectedWindow.name 
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-
-          {/* Divider */}
-          <div className="h-px bg-white/10" />
-
-          {/* Audio/Video toggles */}
-          <div className="space-y-3">
-            <ToggleRow
-              type="mic"
-              enabled={popover.config.micEnabled}
-              onToggle={popover.setMicEnabled}
-              devices={MOCK_MICS}
-              selectedDeviceId={popover.config.selectedMicId}
-              onDeviceChange={popover.setMicDevice}
-              helperText="Voice will be recorded"
-            />
-            
-            <ToggleRow
-              type="camera"
-              enabled={popover.config.cameraEnabled}
-              onToggle={popover.setCameraEnabled}
-              devices={MOCK_CAMERAS}
-              selectedDeviceId={popover.config.selectedCameraId}
-              onDeviceChange={popover.setCameraDevice}
-              helperText="Facecam overlay in corner"
-            />
-          </div>
-
-          {/* Divider */}
-          <div className="h-px bg-white/10" />
-
-          {/* Start CTA */}
-          <PrimaryCTA
-            variant="start"
-            onClick={popover.startRecording}
-            disabled={
-              popover.config.selectedSource?.type === "window" && !popover.selectedWindow
-            }
-            helperText={
-              popover.config.selectedSource?.type === "window" && !popover.selectedWindow
-                ? "Select a window to continue"
-                : "Press ⌘⇧R to start/stop recording"
-            }
-          />
-        </div>
+        <IdleStateBody
+          selectedWindowName={popover.selectedWindow?.name}
+          onSelectWindow={popover.openWindowPicker}
+          cameraEnabled={popover.config.cameraEnabled}
+          onToggleCamera={() => popover.setCameraEnabled(!popover.config.cameraEnabled)}
+          micEnabled={popover.config.micEnabled}
+          onToggleMic={() => popover.setMicEnabled(!popover.config.micEnabled)}
+          selectedMicId={popover.config.selectedMicId}
+          onMicDeviceChange={popover.setMicDevice}
+          onStartRecording={popover.startRecording}
+          onEffectsClick={() => console.log("Effects clicked - stub")}
+          onNotesClick={() => console.log("Notes clicked - stub")}
+          onMoreClick={() => console.log("More clicked - stub")}
+        />
       </PopoverShell>
     </div>
   );
