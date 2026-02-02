@@ -369,6 +369,7 @@ export default function ReelEditor() {
                   errorMessage={assemblyState.error}
                   onRetry={assemblyState.canRetry ? handleRetryAssembly : undefined}
                   isRetrying={isRetrying}
+                  onCancel={goBack}
                 />
               ) : (
                 // Ready state - show player with effects

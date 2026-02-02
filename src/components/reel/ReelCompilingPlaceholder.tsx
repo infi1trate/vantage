@@ -1,16 +1,16 @@
 /**
  * Reel Compiling Placeholder
  * 
- * Shows a clear, friendly state when the reel is being assembled.
+ * Shows assembly progress with step-based indicators.
  * Also handles failed state with retry option.
  */
 
-import { memo } from "react";
+import { memo, useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Film, Sparkles, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { Film, Sparkles, AlertCircle, RefreshCw, Loader2, Check, X, ArrowLeft } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ReelCompilingPlaceholderProps {
   clipCount?: number;
@@ -24,6 +24,24 @@ interface ReelCompilingPlaceholderProps {
   onRetry?: () => Promise<void>;
   /** Whether retry is in progress */
   isRetrying?: boolean;
+  /** Cancel handler - returns to session detail */
+  onCancel?: () => void;
+}
+
+// Assembly steps configuration
+const ASSEMBLY_STEPS = [
+  { id: "collecting", label: "Collecting clips", range: [0, 20] },
+  { id: "stitching", label: "Stitching sequence", range: [20, 70] },
+  { id: "preparing", label: "Preparing preview", range: [70, 100] },
+] as const;
+
+function getActiveStep(progress: number): number {
+  for (let i = 0; i < ASSEMBLY_STEPS.length; i++) {
+    if (progress <= ASSEMBLY_STEPS[i].range[1]) {
+      return i;
+    }
+  }
+  return ASSEMBLY_STEPS.length - 1;
 }
 
 export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
@@ -34,7 +52,53 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
   errorMessage,
   onRetry,
   isRetrying = false,
+  onCancel,
 }: ReelCompilingPlaceholderProps) {
+  // Simulated progress: 0 → 85% over ~25 seconds, then holds
+  const [progress, setProgress] = useState(0);
+  const intervalRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number>(Date.now());
+  
+  // Progress simulation - smooth increase to 85%, then hold
+  useEffect(() => {
+    if (isFailed || isRetrying) {
+      // Reset on failure or retry
+      if (isRetrying) {
+        setProgress(0);
+        startTimeRef.current = Date.now();
+      }
+      return;
+    }
+    
+    // Target 85% over ~25 seconds with easing
+    const DURATION_MS = 25_000;
+    const MAX_PROGRESS = 85;
+    
+    intervalRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startTimeRef.current;
+      const t = Math.min(elapsed / DURATION_MS, 1);
+      
+      // Ease-out curve: starts fast, slows down
+      const eased = 1 - Math.pow(1 - t, 3);
+      const newProgress = Math.min(eased * MAX_PROGRESS, MAX_PROGRESS);
+      
+      setProgress(newProgress);
+      
+      // Stop interval once we hit max
+      if (newProgress >= MAX_PROGRESS && intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    }, 100);
+    
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [isFailed, isRetrying]);
+  
+  const activeStepIndex = getActiveStep(progress);
+  
   // Aspect ratio to padding-bottom percentage
   const aspectPadding = {
     "16:9": "56.25%",
@@ -76,7 +140,7 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
           )}
           
           {/* Content */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-6">
             {isFailed ? (
               <>
                 {/* Failed State */}
@@ -93,33 +157,41 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   </p>
                 </div>
                 
-                {onRetry && (
-                  <Button 
-                    onClick={onRetry}
-                    disabled={isRetrying}
-                    className="gap-2 mt-2"
-                  >
-                    {isRetrying ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Retrying...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4" />
-                        Retry Assembly
-                      </>
-                    )}
-                  </Button>
-                )}
+                <div className="flex items-center gap-3 mt-2">
+                  {onRetry && (
+                    <Button 
+                      onClick={onRetry}
+                      disabled={isRetrying}
+                      className="gap-2"
+                    >
+                      {isRetrying ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Retrying...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4" />
+                          Retry Assembly
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {onCancel && (
+                    <Button variant="outline" onClick={onCancel} className="gap-2">
+                      <ArrowLeft className="h-4 w-4" />
+                      Back to Session
+                    </Button>
+                  )}
+                </div>
               </>
             ) : (
               <>
                 {/* Assembling State */}
                 <motion.div
                   className="relative"
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
+                  animate={{ scale: [1, 1.03, 1] }}
+                  transition={{ duration: 2.5, repeat: Infinity }}
                 >
                   <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                     <Film className="h-8 w-8 text-primary" />
@@ -127,48 +199,99 @@ export const ReelCompilingPlaceholder = memo(function ReelCompilingPlaceholder({
                   <motion.div
                     className="absolute -top-1 -right-1"
                     animate={{ 
-                      rotate: [0, 15, -15, 0],
+                      rotate: [0, 10, -10, 0],
                       scale: [1, 1.1, 1],
                     }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
+                    transition={{ duration: 2, repeat: Infinity }}
                   >
                     <Sparkles className="h-5 w-5 text-vantage-warning" />
                   </motion.div>
                 </motion.div>
                 
+                {/* Title + Subtitle */}
                 <div className="text-center">
-                  <p className="text-base font-medium text-foreground">
+                  <p className="text-base font-semibold text-foreground">
                     Assembling your reel…
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Clips are being stitched together
+                    Stitching clips + preparing preview
                   </p>
                 </div>
                 
-                {/* Clip count indicator */}
-                {clipCount > 0 && (
-                  <div className="flex items-center gap-1.5 mt-2">
-                    {Array.from({ length: Math.min(clipCount, 6) }).map((_, i) => (
-                      <motion.div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-primary/40"
-                        animate={{
-                          opacity: [0.3, 1, 0.3],
-                          scale: [0.8, 1, 0.8],
-                        }}
-                        transition={{
-                          duration: 1.2,
-                          repeat: Infinity,
-                          delay: i * 0.15,
-                        }}
-                      />
-                    ))}
-                    {clipCount > 6 && (
-                      <span className="text-xs text-muted-foreground ml-1">
-                        +{clipCount - 6}
-                      </span>
-                    )}
+                {/* Step-based Progress */}
+                <div className="w-full max-w-xs space-y-3">
+                  {/* Progress bar */}
+                  <div className="relative h-2 bg-muted/50 rounded-full overflow-hidden">
+                    <motion.div
+                      className="absolute inset-y-0 left-0 bg-primary rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ duration: 0.3, ease: "easeOut" }}
+                    />
                   </div>
+                  
+                  {/* Step checklist */}
+                  <div className="space-y-2">
+                    {ASSEMBLY_STEPS.map((step, index) => {
+                      const isComplete = progress > step.range[1];
+                      const isActive = index === activeStepIndex && !isComplete;
+                      
+                      return (
+                        <div
+                          key={step.id}
+                          className={cn(
+                            "flex items-center gap-2.5 text-sm transition-opacity",
+                            isComplete ? "opacity-100" : isActive ? "opacity-100" : "opacity-40"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors",
+                            isComplete 
+                              ? "bg-vantage-success text-white" 
+                              : isActive 
+                                ? "bg-primary/20 border-2 border-primary"
+                                : "bg-muted/50 border border-border"
+                          )}>
+                            {isComplete ? (
+                              <Check className="h-3 w-3" />
+                            ) : isActive ? (
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                            ) : null}
+                          </div>
+                          <span className={cn(
+                            "font-medium",
+                            isComplete 
+                              ? "text-vantage-success" 
+                              : isActive 
+                                ? "text-foreground"
+                                : "text-muted-foreground"
+                          )}>
+                            {step.label}
+                          </span>
+                          {isActive && (
+                            <span className="text-xs text-muted-foreground ml-auto tabular-nums">
+                              {Math.round(progress)}%
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Background helper text */}
+                <p className="text-xs text-muted-foreground/70 text-center mt-2">
+                  Running in background — you can leave this page, we'll keep working.
+                </p>
+                
+                {/* Cancel option */}
+                {onCancel && (
+                  <button
+                    onClick={onCancel}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors mt-1 underline-offset-2 hover:underline"
+                  >
+                    Cancel
+                  </button>
                 )}
               </>
             )}
