@@ -32,6 +32,16 @@ export {
   type AssetReadinessResult,
 } from "./assetReadiness";
 
+// Re-export ReelSource for reel creation
+export {
+  checkReelSourceReadiness,
+  ensureReelSourceReady,
+  startLegacyBackfill,
+  type ReelSource,
+  type ReelSourceStatus,
+  type BackfillResult,
+} from "./reelSource";
+
 // NOTE: status is stored as text in the backend; we model the known states here.
 export type ReelStatus = "compiling" | "waiting_for_source" | "draft" | "rendering" | "ready" | "failed" | "needs_attention";
 export type AspectRatio = "16:9" | "9:16" | "1:1";
@@ -193,14 +203,56 @@ export function hasPlaybackAvailable(reel: Reel | null, sessionVideoUrl?: string
 }
 
 /**
+ * Error thrown when ReelSource is not ready for reel creation
+ */
+export class ReelSourceNotReadyError extends Error {
+  readonly userMessage: string;
+  readonly isRecoverable: boolean;
+  
+  constructor(message: string, isRecoverable: boolean = false) {
+    super(message);
+    this.name = "ReelSourceNotReadyError";
+    this.userMessage = message;
+    this.isRecoverable = isRecoverable;
+  }
+}
+
+/**
  * Create a new reel from selected moments
  * 
  * Reels are first-class persistent objects that exist independently
  * of Session Detail and are always edited via the Reel Editor.
+ * 
+ * IMPORTANT: This function now includes an automatic ReelSource backfill
+ * for legacy sessions. If the session lacks ReelSource, it will:
+ * 1. Trigger on-demand backfill
+ * 2. Wait for backfill to complete
+ * 3. Proceed with reel creation
+ * 
+ * If the session has no video at all, this throws ReelSourceNotReadyError.
  */
 export async function createReel(input: CreateReelInput): Promise<Reel> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
+  
+  // ============ REEL SOURCE GATE ============
+  // Ensure ReelSource is ready before creating reel
+  // This triggers on-demand backfill for legacy sessions
+  const { ensureReelSourceReady } = await import("./reelSource");
+  
+  console.log(`[createReel] Checking ReelSource readiness for session ${input.sessionId}`);
+  const reelSourceResult = await ensureReelSourceReady(input.sessionId);
+  
+  if (!reelSourceResult.ready) {
+    console.warn(`[createReel] ReelSource not ready: ${reelSourceResult.message}`);
+    throw new ReelSourceNotReadyError(
+      reelSourceResult.message,
+      false // Not recoverable at creation time
+    );
+  }
+  
+  console.log(`[createReel] ReelSource ready, creating reel for session ${input.sessionId}`);
+  // ============ END REEL SOURCE GATE ============
 
   // Create with "compiling" status and initial assembly step
   const now = new Date().toISOString();
