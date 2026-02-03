@@ -17,7 +17,6 @@ import { RecordingStateBody } from "./RecordingStateBody";
 import { UnauthorizedStateBody } from "./UnauthorizedStateBody";
 import { PostRecordingStateBody } from "./PostRecordingStateBody";
 import { usePopoverState, type UsePopoverStateReturn } from "./usePopoverState";
-import { MOCK_WINDOWS } from "./types";
 import { toast } from "sonner";
 
 interface DesktopCapturePopoverProps {
@@ -172,12 +171,19 @@ export function DesktopCapturePopover({
     return (
       <div className={className}>
         <PopoverShell onClose={onClose} onHome={onHome}>
-          <WindowPickerGrid
-            windows={MOCK_WINDOWS}
-            selectedWindowId={popover.selectedWindow?.id || null}
-            onSelect={popover.selectWindow}
-            onBack={popover.closeWindowPicker}
-          />
+          {popover.isLoadingSources ? (
+            <div className="py-8 text-center">
+              <div className="w-6 h-6 border-2 border-vantage-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Loading sources...</p>
+            </div>
+          ) : (
+            <WindowPickerGrid
+              windows={popover.availableSources}
+              selectedWindowId={popover.selectedWindow?.id || null}
+              onSelect={popover.selectWindow}
+              onBack={popover.closeWindowPicker}
+            />
+          )}
         </PopoverShell>
       </div>
     );
