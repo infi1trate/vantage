@@ -79,9 +79,27 @@ export function DesktopCapturePopover({
   if (popover.state === "processing" || popover.state === "uploading" || (popover.state === "error" && popover.postRecordingPhase !== null)) {
     const phase = popover.postRecordingPhase || "processing";
     
+    // Handle dismiss (X button or "Start new recording") - returns to idle state
+    const handleDismiss = () => {
+      popover.retry(); // This resets to idle state
+    };
+    
+    // Handle home button - opens Library page
+    const handleHome = () => {
+      const libraryUrl = "https://getvantage.lovable.app/library";
+      
+      // Check if running in Electron with openExternal
+      if (typeof window !== "undefined" && (window as any).vantage?.openExternal) {
+        (window as any).vantage.openExternal(libraryUrl);
+      } else {
+        // Browser fallback - open in new tab
+        window.open(libraryUrl, "_blank");
+      }
+    };
+    
     return (
       <div className={className}>
-        <PopoverShell onClose={onClose} onHome={onHome}>
+        <PopoverShell onClose={handleDismiss} onHome={handleHome}>
           <PostRecordingStateBody
             state={phase}
             uploadProgress={popover.uploadProgress}
@@ -106,6 +124,7 @@ export function DesktopCapturePopover({
               });
               popover.openRecordingsFolder();
             }}
+            onDismiss={handleDismiss}
           />
         </PopoverShell>
       </div>
