@@ -688,8 +688,14 @@ Remember: You are an ANALYST. Report facts and interpretations with evidence. Do
         });
       }
       const errorText = await response.text();
-      console.error("Coach gateway error:", response.status, errorText);
-      throw new Error(`Coach gateway error: ${response.status}`);
+      // Log detailed error server-side only
+      console.error("[Internal] Coach gateway error:", {
+        status: response.status,
+        error: errorText,
+        timestamp: new Date().toISOString(),
+      });
+      // Throw safe generic error - don't expose gateway status
+      throw new Error("Request failed. Please try again later.");
     }
 
     const data = await response.json();
@@ -1059,9 +1065,14 @@ Generate:
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Analysis error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    // Log full error server-side with context for debugging
+    console.error("[Internal] Analysis error:", {
+      error: error,
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    });
+    // Return generic safe message to client - never expose internal error details
+    return new Response(JSON.stringify({ error: "Request failed. Please try again later." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

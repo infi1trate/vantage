@@ -12,9 +12,22 @@ const DROPBOX_APP_SECRET = Deno.env.get("DROPBOX_APP_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-// Encryption key for token storage - in production this would come from vault
-// Using a deterministic key derived from service role key for simplicity
+// Encryption key for token storage
+// Use dedicated TOKEN_ENCRYPTION_KEY if available, fallback to service role key derived key
+const TOKEN_ENCRYPTION_KEY_B64 = Deno.env.get("TOKEN_ENCRYPTION_KEY");
 const ENCRYPTION_KEY = SUPABASE_SERVICE_ROLE_KEY?.substring(0, 32) || "default-encryption-key-32-chars!";
+
+// Helper to get encryption key bytes for AES-256-GCM
+function getEncryptionKeyBytes(): Uint8Array {
+  if (TOKEN_ENCRYPTION_KEY_B64) {
+    try {
+      return Uint8Array.from(atob(TOKEN_ENCRYPTION_KEY_B64), c => c.charCodeAt(0));
+    } catch {
+      console.warn("[DropboxSync] Invalid TOKEN_ENCRYPTION_KEY, falling back to XOR encryption");
+    }
+  }
+  return new Uint8Array(0); // Empty = use legacy XOR
+}
 
 // Dropbox API endpoints
 const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
@@ -288,10 +301,47 @@ async function validateVideoFile(
 }
 
 /**
- * Simple XOR-based encryption for tokens
- * In production, you'd use proper AES encryption with vault secrets
+ * Encrypt token using AES-256-GCM if TOKEN_ENCRYPTION_KEY is configured,
+ * otherwise fallback to XOR encryption for backward compatibility.
  */
-function encryptToken(token: string): string {
+async function encryptToken(token: string): Promise<string> {
+  const aesKey = getEncryptionKeyBytes();
+  
+  // Use AES-256-GCM if proper key is configured
+  if (aesKey.length === 32) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(token);
+    
+    // Generate random IV (12 bytes for GCM)
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    
+    // Import key for AES-GCM - use buffer property to get ArrayBuffer
+    const key = await crypto.subtle.importKey(
+      "raw",
+      aesKey.buffer as ArrayBuffer,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt"]
+    );
+    
+    // Encrypt with authenticated encryption
+    const encrypted = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      data
+    );
+    
+    // Combine IV + ciphertext and encode as base64 with prefix
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(encrypted), iv.length);
+    
+    // Prefix with "aes:" to identify encryption method
+    return "aes:" + btoa(String.fromCharCode(...combined));
+  }
+  
+  // Fallback to legacy XOR encryption
+  console.warn("[DropboxSync] Using legacy XOR encryption - configure TOKEN_ENCRYPTION_KEY for better security");
   const encoder = new TextEncoder();
   const tokenBytes = encoder.encode(token);
   const keyBytes = encoder.encode(ENCRYPTION_KEY);
@@ -301,16 +351,47 @@ function encryptToken(token: string): string {
     encrypted[i] = tokenBytes[i] ^ keyBytes[i % keyBytes.length];
   }
   
-  // Encode as base64
   return btoa(String.fromCharCode(...encrypted));
 }
 
 /**
- * Decrypt token
+ * Decrypt token - handles both AES-256-GCM and legacy XOR encryption
  */
-function decryptToken(encryptedToken: string): string {
+async function decryptToken(encryptedToken: string): Promise<string> {
   try {
-    // Decode from base64
+    // Check if this is AES encrypted (has "aes:" prefix)
+    if (encryptedToken.startsWith("aes:")) {
+      const aesKey = getEncryptionKeyBytes();
+      if (aesKey.length !== 32) {
+        throw new Error("TOKEN_ENCRYPTION_KEY not configured for AES decryption");
+      }
+      
+      const combined = Uint8Array.from(atob(encryptedToken.slice(4)), c => c.charCodeAt(0));
+      
+      // Extract IV and ciphertext
+      const iv = combined.slice(0, 12);
+      const ciphertext = combined.slice(12);
+      
+      // Import key - use buffer property to get ArrayBuffer
+      const key = await crypto.subtle.importKey(
+        "raw",
+        aesKey.buffer as ArrayBuffer,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+      );
+      
+      // Decrypt
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        ciphertext
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    }
+    
+    // Legacy XOR decryption for backward compatibility
     const encryptedStr = atob(encryptedToken);
     const encryptedBytes = new Uint8Array(encryptedStr.length);
     for (let i = 0; i < encryptedStr.length; i++) {
@@ -392,8 +473,8 @@ async function getValidAccessToken(
   }
 
   try {
-    const accessToken = decryptToken(account.encrypted_access_token);
-    const refreshToken = decryptToken(account.encrypted_refresh_token);
+    const accessToken = await decryptToken(account.encrypted_access_token);
+    const refreshToken = await decryptToken(account.encrypted_refresh_token);
     
     // Check if token is expired (with 5 minute buffer)
     const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : null;
@@ -420,7 +501,7 @@ async function getValidAccessToken(
       await supabase
         .from("connected_accounts")
         .update({
-          encrypted_access_token: encryptToken(refreshResult.accessToken),
+          encrypted_access_token: await encryptToken(refreshResult.accessToken),
           token_expires_at: newExpiresAt.toISOString(),
         })
         .eq("user_id", userId)
@@ -1028,8 +1109,8 @@ async function handleOAuthCallback(
   }
 
   // Encrypt tokens for secure storage
-  const encryptedAccessToken = encryptToken(tokens.access_token);
-  const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null;
+  const encryptedAccessToken = await encryptToken(tokens.access_token);
+  const encryptedRefreshToken = tokens.refresh_token ? await encryptToken(tokens.refresh_token) : null;
   const tokenExpiresAt = new Date(Date.now() + (tokens.expires_in || 14400) * 1000);
 
   // Store in connected_accounts with tokens and pending provisioning status
