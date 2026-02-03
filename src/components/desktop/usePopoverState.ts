@@ -33,9 +33,12 @@ import {
   selectSource as bridgeSelectSource,
   listSources as bridgeListSources,
   ping as bridgePing,
+  setCameraEnabled as bridgeSetCameraEnabled,
+  setMicEnabled as bridgeSetMicEnabled,
   type VantageState,
   type VantageSource,
 } from "@/lib/desktopBridge";
+import { toast } from "sonner";
 
 // Extended state to include source picker, authorizing, and post-recording states
 type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing" | "uploading" | "success";
@@ -222,6 +225,14 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
         
         // Update paused state
         setIsPaused(electronState.state === "paused");
+        
+        // Sync camera/mic state from Electron
+        if (electronState.cameraEnabled !== undefined) {
+          setConfig(prev => ({ ...prev, cameraEnabled: electronState.cameraEnabled! }));
+        }
+        if (electronState.micEnabled !== undefined) {
+          setConfig(prev => ({ ...prev, micEnabled: electronState.micEnabled! }));
+        }
         
         // Update post-recording phase
         if (["processing", "uploading", "success", "error"].includes(electronState.state)) {
@@ -589,14 +600,58 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
     });
   }, []);
 
-  // Config setters
-  const setMicEnabled = useCallback((enabled: boolean) => {
+  // Config setters - with Electron bridge integration
+  const setMicEnabled = useCallback(async (enabled: boolean) => {
+    // Optimistically update UI
     setConfig(prev => ({ ...prev, micEnabled: enabled }));
-  }, []);
+    
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      try {
+        await bridgeSetMicEnabled(enabled);
+      } catch (error: any) {
+        // Revert on error
+        setConfig(prev => ({ ...prev, micEnabled: !enabled }));
+        
+        // Check for permission error
+        if (error?.code === "permission_denied" || error?.message?.includes("permission")) {
+          toast.error("Microphone access denied", {
+            description: "Please grant microphone permission in System Preferences.",
+          });
+        } else {
+          toast.error("Failed to toggle microphone", {
+            description: error?.message || "An unexpected error occurred.",
+          });
+        }
+      }
+    }
+  }, [isElectron]);
 
-  const setCameraEnabled = useCallback((enabled: boolean) => {
+  const setCameraEnabled = useCallback(async (enabled: boolean) => {
+    // Optimistically update UI
     setConfig(prev => ({ ...prev, cameraEnabled: enabled }));
-  }, []);
+    
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      try {
+        await bridgeSetCameraEnabled(enabled);
+      } catch (error: any) {
+        // Revert on error
+        setConfig(prev => ({ ...prev, cameraEnabled: !enabled }));
+        
+        // Check for permission error
+        if (error?.code === "permission_denied" || error?.message?.includes("permission")) {
+          toast.error("Camera access denied", {
+            description: "Please grant camera permission in System Preferences.",
+          });
+        } else {
+          toast.error("Failed to toggle camera", {
+            description: error?.message || "An unexpected error occurred.",
+          });
+        }
+      }
+    }
+  }, [isElectron]);
 
   const setMicDevice = useCallback((deviceId: string) => {
     setConfig(prev => ({ ...prev, selectedMicId: deviceId }));
