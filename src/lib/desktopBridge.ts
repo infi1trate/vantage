@@ -6,6 +6,35 @@
  * wrapper functions that either call Electron or fall back to stubs.
  */
 
+/**
+ * Desktop Recordings API Configuration
+ * 
+ * The Electron app MUST call this Supabase Edge Function URL directly:
+ * - POST /init: Create session & get upload URL
+ * - POST /complete: Finalize upload
+ * 
+ * DO NOT call /api/desktop/recordings/* - that will return HTML from the React app.
+ */
+export const DESKTOP_RECORDINGS_API = {
+  /** Base URL for the desktop-recordings edge function */
+  baseUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/desktop-recordings`,
+  
+  /** 
+   * Get the init endpoint URL
+   * Electron should POST to this with x-custom-path: init header
+   */
+  initUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/desktop-recordings`,
+  
+  /** 
+   * Get the complete endpoint URL  
+   * Electron should POST to this with x-custom-path: complete header
+   */
+  completeUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/desktop-recordings`,
+  
+  /** Custom header name for sub-routing */
+  pathHeader: "x-custom-path",
+};
+
 // Types for the Electron bridge API
 export interface VantageSource {
   id: string;
