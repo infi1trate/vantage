@@ -4,12 +4,15 @@
  * Main container for the desktop capture popover.
  * Provides the cinematic Vantage styling with glass effect.
  * Includes header row with close, title, and home.
+ * 
+ * Layout: Fixed header, scrollable body, sticky footer area.
  */
 
 import { cn } from "@/lib/utils";
 import { ReactNode } from "react";
 import { X, Home, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface PopoverShellProps {
   children: ReactNode;
@@ -32,8 +35,8 @@ export function PopoverShell({
   return (
     <div
       className={cn(
-        // Base container
-        "relative overflow-hidden",
+        // Base container with fixed dimensions
+        "relative flex flex-col h-full",
         // Glassmorphism with Vantage theme
         "bg-background/95 backdrop-blur-xl",
         "border border-white/[0.08]",
@@ -41,7 +44,7 @@ export function PopoverShell({
         // Sizing - max 380px for popover
         isHUD ? "w-auto" : "w-full max-w-[380px]",
         // Rounded corners
-        "rounded-2xl",
+        "rounded-2xl overflow-hidden",
         // Subtle glow accent
         "ring-1 ring-vantage-green/10",
         className
@@ -49,13 +52,13 @@ export function PopoverShell({
     >
       {/* Subtle top gradient accent */}
       <div 
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-vantage-green/30 to-transparent" 
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-vantage-green/30 to-transparent z-10" 
         aria-hidden="true"
       />
       
-      {/* Header row - hidden for HUD mode */}
+      {/* Header row - sticky, hidden for HUD mode */}
       {!isHUD && (
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
+        <div className="flex-shrink-0 flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] bg-background/95 backdrop-blur-xl">
           {/* Close button */}
           <Button
             variant="ghost"
@@ -100,17 +103,19 @@ export function PopoverShell({
         </div>
       )}
       
-      {/* Content */}
-      <div className={cn(
-        "relative z-10",
-        isHUD ? "p-3" : "p-4"
-      )}>
-        {children}
-      </div>
+      {/* Content - scrollable body with safe-area padding */}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className={cn(
+          "relative",
+          isHUD ? "p-3" : "p-4 pb-6" // Extra bottom padding for safe area
+        )}>
+          {children}
+        </div>
+      </ScrollArea>
       
       {/* Bottom subtle reflection */}
       <div 
-        className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" 
+        className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent z-10" 
         aria-hidden="true"
       />
     </div>
