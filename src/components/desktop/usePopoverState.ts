@@ -20,6 +20,7 @@ import {
   MOCK_SOURCES,
   MOCK_MICS,
   MOCK_CAMERAS,
+  MOCK_WINDOWS,
   RECORDING_LIMIT_SECONDS,
 } from "./types";
 import {
@@ -30,8 +31,10 @@ import {
   resumeRecording as bridgeResumeRecording,
   stopRecording as bridgeStopRecording,
   selectSource as bridgeSelectSource,
+  listSources as bridgeListSources,
   ping as bridgePing,
   type VantageState,
+  type VantageSource,
 } from "@/lib/desktopBridge";
 
 // Extended state to include source picker, authorizing, and post-recording states
@@ -63,6 +66,10 @@ export interface UsePopoverStateReturn {
   
   // Selected window (for window capture)
   selectedWindow: MockWindow | null;
+  
+  // Available sources from Electron (or mock)
+  availableSources: MockWindow[];
+  isLoadingSources: boolean;
   
   // Auth
   username: string;
@@ -139,6 +146,10 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
   // Post-recording state
   const [postRecordingPhase, setPostRecordingPhase] = useState<PostRecordingPhase | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  
+  // Available sources (from Electron or mock)
+  const [availableSources, setAvailableSources] = useState<MockWindow[]>(MOCK_WINDOWS);
+  const [isLoadingSources, setIsLoadingSources] = useState(false);
   
   // Settings
   const [forceUploadError, setForceUploadError] = useState(false);
@@ -288,10 +299,36 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
     setState("idle");
   }, []);
 
-  // Open window picker
-  const openWindowPicker = useCallback(() => {
+  // Open window picker - fetch sources from Electron if available
+  const openWindowPicker = useCallback(async () => {
     setState("selecting_source");
-  }, []);
+    
+    // If in Electron, fetch real sources
+    if (isElectron) {
+      setIsLoadingSources(true);
+      console.log("[usePopoverState] Fetching sources from Electron");
+      
+      try {
+        const sources = await bridgeListSources();
+        console.log("[usePopoverState] Received sources:", sources);
+        
+        // Convert VantageSource to MockWindow format for UI compatibility
+        const adaptedSources: MockWindow[] = sources.map((source: VantageSource) => ({
+          id: source.id,
+          name: source.name,
+          appName: source.name.split(' – ')[0] || source.name, // Extract app name from window title
+          thumbnail: source.thumbnail || '',
+        }));
+        
+        setAvailableSources(adaptedSources);
+      } catch (error) {
+        console.error("[usePopoverState] Failed to fetch sources:", error);
+        // Keep existing sources on error
+      } finally {
+        setIsLoadingSources(false);
+      }
+    }
+  }, [isElectron]);
 
   // Close window picker
   const closeWindowPicker = useCallback(() => {
@@ -570,6 +607,8 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
     postRecordingPhase,
     uploadProgress,
     selectedWindow,
+    availableSources,
+    isLoadingSources,
     username: MOCK_USER.username,
     forceUploadError,
     setForceUploadError,
