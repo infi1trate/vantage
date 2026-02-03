@@ -35,30 +35,24 @@ export function PopoverShell({
   return (
     <div
       className={cn(
-        // Base container with fixed dimensions
-        "relative flex flex-col h-full",
-        // Glassmorphism with Vantage theme
-        "bg-background/95 backdrop-blur-xl",
-        "border border-white/[0.08]",
-        "shadow-2xl shadow-black/50",
-        // Sizing - max 380px for popover
-        isHUD ? "w-auto" : "w-full max-w-[380px]",
-        // Rounded corners
-        "rounded-2xl overflow-hidden",
-        // Subtle glow accent
-        "ring-1 ring-vantage-green/10",
+        // Base container - fills parent completely
+        "relative flex flex-col h-full w-full",
+        // Solid Vantage dark surface - no border, no outer frame
+        "bg-background",
+        // Overflow handling
+        "overflow-hidden",
         className
       )}
     >
-      {/* Subtle top gradient accent */}
+      {/* Subtle top accent line */}
       <div 
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-vantage-green/30 to-transparent z-10" 
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-vantage-green/20 to-transparent z-10" 
         aria-hidden="true"
       />
       
-      {/* Header row - sticky, hidden for HUD mode */}
+      {/* Header row - pinned to top, hidden for HUD mode */}
       {!isHUD && (
-        <div className="flex-shrink-0 flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] bg-background/95 backdrop-blur-xl">
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-background">
           {/* Close button */}
           <Button
             variant="ghost"
@@ -107,15 +101,15 @@ export function PopoverShell({
       <ScrollArea className="flex-1 min-h-0">
         <div className={cn(
           "relative",
-          isHUD ? "p-3" : "p-4 pb-6" // Extra bottom padding for safe area
+          isHUD ? "p-3" : "px-4 py-4 pb-6" // Consistent padding, extra bottom for safe area
         )}>
           {children}
         </div>
       </ScrollArea>
       
-      {/* Bottom subtle reflection */}
+      {/* Bottom subtle accent */}
       <div 
-        className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent z-10" 
+        className="absolute inset-x-0 bottom-0 h-px bg-white/[0.04] z-10" 
         aria-hidden="true"
       />
     </div>
