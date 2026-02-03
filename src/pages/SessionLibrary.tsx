@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
 import { Header } from "@/components/layout/Header";
@@ -37,16 +37,31 @@ import {
   SortDesc,
   Clock,
   Gamepad2,
-  Cloud
+  Cloud,
+  Monitor,
+  CheckCircle2
 } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "longest" | "shortest" | "name";
 type FilterStatus = "all" | "ready" | "recording" | "processing" | "failed";
 type FilterVisibility = "all" | "private" | "unlisted" | "public";
 
+// Desktop deep link states
+type DesktopLinkState = "checking" | "processing" | "found" | "fallback" | null;
+
 export default function SessionLibrary() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Desktop deep link handling
+  const fromDesktop = searchParams.get("from") === "desktop";
+  const recordingId = searchParams.get("recordingId");
+  const [desktopLinkState, setDesktopLinkState] = useState<DesktopLinkState>(
+    fromDesktop && recordingId ? "checking" : null
+  );
+  const pollCountRef = useRef(0);
+  const maxPolls = 30; // 30 polls × 2s = 60s max wait
   
   // Processing jobs from context
   const { activeJobs, cancelJob, retryJob } = useProcessing();
@@ -84,6 +99,59 @@ export default function SessionLibrary() {
       (job.status === "queued" || job.status === "processing" || job.status === "uploading" || job.status === "failed")
     );
   }, [activeJobs, localSessions]);
+
+  // Desktop deep link: check for recording and redirect or fallback
+  useEffect(() => {
+    if (!fromDesktop || !recordingId || desktopLinkState === "found" || desktopLinkState === "fallback") {
+      return;
+    }
+
+    const checkRecording = async () => {
+      try {
+        // Check if recording exists in the database
+        const { data, error } = await supabase
+          .from("capture_sessions")
+          .select("id, status")
+          .eq("id", recordingId)
+          .maybeSingle();
+
+        if (data) {
+          // Recording found - redirect to detail page
+          setDesktopLinkState("found");
+          // Clear query params and navigate
+          navigate(`/session/${recordingId}`, { replace: true });
+          return;
+        }
+
+        // Recording not found yet - check if we should keep polling
+        pollCountRef.current += 1;
+        
+        if (pollCountRef.current >= maxPolls) {
+          // Timed out - fall back to library
+          console.log(`[SessionLibrary] Desktop recording ${recordingId} not found after ${maxPolls} polls, falling back to library`);
+          setDesktopLinkState("fallback");
+          // Clear query params
+          setSearchParams({}, { replace: true });
+          return;
+        }
+
+        // Keep polling
+        setDesktopLinkState("processing");
+      } catch (err) {
+        console.error("[SessionLibrary] Error checking desktop recording:", err);
+        setDesktopLinkState("fallback");
+        setSearchParams({}, { replace: true });
+      }
+    };
+
+    // Initial check or polling
+    checkRecording();
+
+    // Set up polling interval
+    const pollInterval = setInterval(checkRecording, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [fromDesktop, recordingId, desktopLinkState, navigate, setSearchParams]);
 
   // Mark library rendered for telemetry (measures Stop -> Library time)
   useEffect(() => {
@@ -277,6 +345,33 @@ export default function SessionLibrary() {
     const mins = Math.floor((seconds % 3600) / 60);
     return `${hrs}h ${mins}m`;
   };
+
+  // Desktop recording processing overlay
+  if (desktopLinkState === "checking" || desktopLinkState === "processing") {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-8">
+          <div className="flex flex-col items-center justify-center py-24">
+            <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center mb-6">
+              <Monitor className="w-10 h-10 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Processing Upload</h2>
+            <p className="text-muted-foreground text-center max-w-md mb-6">
+              Your desktop recording is being processed. This usually takes just a moment...
+            </p>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Waiting for recording to appear...</span>
+            </div>
+            <p className="text-xs text-muted-foreground/60 mt-8">
+              Recording ID: {recordingId?.slice(0, 8)}...
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (authLoading) {
     return (
