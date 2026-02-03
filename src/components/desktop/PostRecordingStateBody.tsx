@@ -5,7 +5,7 @@
  */
 
 import { cn } from "@/lib/utils";
-import { Loader2, Check, AlertCircle, Upload, Folder, Copy, ExternalLink } from "lucide-react";
+import { Loader2, Check, AlertCircle, Upload, Folder, Copy, ExternalLink, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
@@ -18,6 +18,8 @@ interface PostRecordingStateBodyProps {
   onCopyLink: () => void;
   onRetryUpload: () => void;
   onOpenRecordingsFolder: () => void;
+  /** Called when user wants to dismiss error and start fresh */
+  onDismiss?: () => void;
 }
 
 export function PostRecordingStateBody({
@@ -27,6 +29,7 @@ export function PostRecordingStateBody({
   onCopyLink,
   onRetryUpload,
   onOpenRecordingsFolder,
+  onDismiss,
 }: PostRecordingStateBodyProps) {
   return (
     <div 
@@ -123,7 +126,7 @@ export function PostRecordingStateBody({
             Upload failed
           </h3>
           <p className="text-sm text-muted-foreground mb-5 max-w-[260px]">
-            Your recording is saved locally. Try again or open the recordings folder.
+            Your recording is saved locally. Try again or start a new recording.
           </p>
           <div className="flex flex-col gap-2 w-full max-w-[200px]">
             <Button
@@ -134,6 +137,17 @@ export function PostRecordingStateBody({
               )}
             >
               Retry upload
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={onDismiss}
+              className={cn(
+                "w-full text-muted-foreground hover:text-foreground hover:bg-white/[0.06]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Start new recording
             </Button>
             <Button
               variant="ghost"
