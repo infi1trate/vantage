@@ -66,13 +66,13 @@ export function PopoverShell({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             )}
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4" strokeWidth={2} />
           </Button>
 
-          {/* Center title with record indicator */}
+          {/* Center title with record indicator - uses app header style */}
           <div className="flex items-center gap-2">
-            <Circle className="w-2.5 h-2.5 fill-vantage-green text-vantage-green" aria-hidden="true" />
-            <span className="text-sm font-semibold text-foreground tracking-wide">
+            <Circle className="w-2 h-2 fill-vantage-green text-vantage-green" aria-hidden="true" />
+            <span className="font-barlow text-base font-semibold text-foreground uppercase tracking-wider">
               Record
             </span>
           </div>
@@ -91,7 +91,7 @@ export function PopoverShell({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             )}
           >
-            <Home className="w-4 h-4" />
+            <Home className="w-4 h-4" strokeWidth={2} />
           </Button>
         </div>
       )}
