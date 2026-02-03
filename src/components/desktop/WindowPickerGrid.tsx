@@ -73,32 +73,58 @@ export function WindowPickerGrid({
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             >
-              {/* Thumbnail placeholder with grid texture */}
+              {/* Thumbnail area */}
               <div className="aspect-[4/3] relative overflow-hidden">
-                {/* Gray gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] to-white/[0.03]" />
-                
-                {/* Subtle grid texture */}
-                <div 
-                  className="absolute inset-0 opacity-20"
-                  style={{
-                    backgroundImage: `
-                      linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)
-                    `,
-                    backgroundSize: '12px 12px'
-                  }}
-                  aria-hidden="true"
-                />
-                
-                {/* App icon placeholder */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center">
-                    <span className="text-lg font-bold text-white/40">
-                      {window.appName.charAt(0)}
-                    </span>
-                  </div>
-                </div>
+                {/* Real thumbnail when available */}
+                {window.thumbnail ? (
+                  <>
+                    <img
+                      src={window.thumbnail}
+                      alt={`Preview of ${window.name}`}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      draggable={false}
+                    />
+                    {/* Subtle grid texture overlay */}
+                    <div 
+                      className="absolute inset-0 opacity-10 pointer-events-none"
+                      style={{
+                        backgroundImage: `
+                          linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
+                          linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
+                        `,
+                        backgroundSize: '16px 16px'
+                      }}
+                      aria-hidden="true"
+                    />
+                  </>
+                ) : (
+                  <>
+                    {/* Gray gradient background fallback */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] to-white/[0.03]" />
+                    
+                    {/* Subtle grid texture */}
+                    <div 
+                      className="absolute inset-0 opacity-20"
+                      style={{
+                        backgroundImage: `
+                          linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
+                          linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)
+                        `,
+                        backgroundSize: '12px 12px'
+                      }}
+                      aria-hidden="true"
+                    />
+                    
+                    {/* App icon placeholder */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center">
+                        <span className="text-lg font-bold text-white/40">
+                          {window.appName.charAt(0)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
                 
                 {/* Hover overlay */}
                 <div className={cn(
