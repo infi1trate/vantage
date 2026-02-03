@@ -55,6 +55,10 @@ export function WindowPickerGrid({
         <h3 className="text-sm font-semibold text-foreground">
           Select a window
         </h3>
+        {/* Debug line - remove later */}
+        <span className="text-[10px] text-muted-foreground ml-auto">
+          Sources: {windows.length}, thumbs: {windows.filter(w => !!w.thumbnail).length}
+        </span>
       </div>
 
       {/* 2-column Window grid */}
