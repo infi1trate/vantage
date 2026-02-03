@@ -38,6 +38,7 @@ interface InitRecordingRequest {
 
 interface InitRecordingResponse {
   sessionId: string;
+  bucket: string;
   storageKey: string;
   upload: {
     method: "PUT" | "POST";
@@ -163,18 +164,23 @@ async function handleInitWithBody(
 
   // Validate required fields
   if (!filename || !mimeType || typeof sizeBytes !== "number" || typeof durationSeconds !== "number") {
+    console.error("[desktop-recordings] Init validation failed - missing required fields");
     return new Response(
       JSON.stringify({ error: "Missing required fields: filename, mimeType, sizeBytes, durationSeconds" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  console.log(`[desktop-recordings] Init request from user: ${userId}, file: ${filename}, source: ${sourceName}`);
+  console.log(`[desktop-recordings] Init request - user: ${userId}, file: ${filename}, size: ${sizeBytes}, duration: ${durationSeconds}s, source: ${sourceName || 'none'}`);
 
   // Generate session ID and storage key
+  // Format: <sessionId>/recording.webm (simpler, sessionId is already unique)
   const sessionId = crypto.randomUUID();
   const fileExt = mimeType.includes("mp4") ? "mp4" : "webm";
-  const storageKey = `sessions/${userId}/${sessionId}/recording.${fileExt}`;
+  const storageKey = `${sessionId}/recording.${fileExt}`;
+  const bucketName = "video-assets";
+  
+  console.log(`[desktop-recordings] Generated sessionId: ${sessionId}, storageKey: ${storageKey}`);
 
   // Create capture session with status="uploading"
   const sessionTitle = sourceName 
@@ -211,25 +217,28 @@ async function handleInitWithBody(
   }
 
   // Generate signed upload URL using service role
+  console.log(`[desktop-recordings] Creating signed upload URL for bucket: ${bucketName}, key: ${storageKey}`);
+  
   const { data: signedUrl, error: signedUrlError } = await supabaseAdmin.storage
-    .from("video-assets")
+    .from(bucketName)
     .createSignedUploadUrl(storageKey);
 
   if (signedUrlError || !signedUrl) {
-    console.error("[desktop-recordings] Failed to create signed URL:", signedUrlError);
+    console.error("[desktop-recordings] Failed to create signed URL:", signedUrlError?.message || "No signed URL returned");
     // Clean up the session
     await supabase.from("capture_sessions").delete().eq("id", sessionId);
     return new Response(
-      JSON.stringify({ error: "Failed to generate upload URL" }),
+      JSON.stringify({ error: "Failed to generate upload URL", details: signedUrlError?.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  console.log(`[desktop-recordings] Created session: ${sessionId}, storageKey: ${storageKey}`);
+  console.log(`[desktop-recordings] Init success - sessionId: ${sessionId}, uploadUrl generated`);
 
-  // Return the new response format
+  // Return the response with bucket included
   const response: InitRecordingResponse = {
     sessionId,
+    bucket: bucketName,
     storageKey,
     upload: {
       method: "PUT",
@@ -278,7 +287,7 @@ async function handleCompleteWithBody(
     );
   }
 
-  console.log(`[desktop-recordings] Complete request for: ${sessionId}, storageKey: ${inputStorageKey}, user: ${userId}`);
+  console.log(`[desktop-recordings] Complete request - sessionId: ${sessionId}, storageKey: ${inputStorageKey}, user: ${userId}`);
 
   // Get session record
   const { data: session, error: fetchError } = await supabase
@@ -327,34 +336,48 @@ async function handleCompleteWithBody(
   }
 
   const storageKey = inputStorageKey;
+  const bucketName = "video-assets";
 
   // Verify file exists in storage (best-effort)
-  const storageFolderPath = storageKey.split("/").slice(0, -1).join("/");
-  const storageFileName = storageKey.split("/").pop();
+  // For storageKey format: <sessionId>/recording.webm
+  const storageFolderPath = storageKey.split("/").slice(0, -1).join("/") || "";
+  const storageFileName = storageKey.split("/").pop() || "";
+  
+  console.log(`[desktop-recordings] Verifying file in bucket: ${bucketName}, folder: '${storageFolderPath}', file: '${storageFileName}'`);
   
   const { data: fileData, error: fileError } = await supabaseAdmin.storage
-    .from("video-assets")
+    .from(bucketName)
     .list(storageFolderPath, {
       search: storageFileName,
     });
 
+  if (fileError) {
+    console.error("[desktop-recordings] Storage list error:", fileError.message);
+  }
+
   const fileExists = fileData && fileData.length > 0;
   if (!fileExists) {
-    console.error("[desktop-recordings] File not found in storage:", storageKey);
+    console.error("[desktop-recordings] File not found in storage - bucket:", bucketName, "key:", storageKey);
     return new Response(
       JSON.stringify({ error: "Recording file not found. Please upload the file first." }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
+  
+  console.log(`[desktop-recordings] File verified in storage, size: ${fileData[0]?.metadata?.size || 'unknown'} bytes`);
 
   // Get file metadata
   const uploadedFile = fileData[0];
   const actualFileSize = uploadedFile.metadata?.size || metadata.file_size_bytes || 0;
 
   // Generate a stable signed URL for playback (long-lived, 7 days)
-  const { data: videoUrlData } = await supabaseAdmin.storage
-    .from("video-assets")
+  const { data: videoUrlData, error: videoUrlError } = await supabaseAdmin.storage
+    .from(bucketName)
     .createSignedUrl(storageKey, 7 * 24 * 60 * 60); // 7 days
+  
+  if (videoUrlError) {
+    console.error("[desktop-recordings] Failed to create playback URL:", videoUrlError.message);
+  }
 
   const videoUrl = videoUrlData?.signedUrl || "";
 
@@ -405,7 +428,7 @@ async function handleCompleteWithBody(
     );
   }
 
-  console.log(`[desktop-recordings] Completed session: ${sessionId}, asset: ${videoAsset?.id}`);
+  console.log(`[desktop-recordings] Complete success - sessionId: ${sessionId}, videoAssetId: ${videoAsset?.id || 'none'}, videoUrl: ${videoUrl ? 'generated' : 'missing'}`);
 
   // Trigger optional async processing (thumbnails, Dropbox sync, etc.)
   try {
