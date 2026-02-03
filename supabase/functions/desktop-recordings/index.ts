@@ -29,11 +29,22 @@ const UPLOAD_URL_TTL_SECONDS = 900;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 
 interface InitRecordingRequest {
-  filename?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  durationSeconds?: number;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds: number;
   sourceName?: string;
+}
+
+interface InitRecordingResponse {
+  sessionId: string;
+  storageKey: string;
+  upload: {
+    method: "PUT" | "POST";
+    url: string;
+    headers?: Record<string, string>;
+    fields?: Record<string, string>;
+  };
 }
 
 interface CompleteRecordingRequest {
@@ -138,19 +149,26 @@ async function handleInitWithBody(
 ) {
   const {
     filename,
-    mimeType = "video/webm",
+    mimeType,
     sizeBytes,
     durationSeconds,
     sourceName,
   } = body;
 
-  console.log(`[desktop-recordings] Init request from user: ${userId}, source: ${sourceName}`);
+  // Validate required fields
+  if (!filename || !mimeType || typeof sizeBytes !== "number" || typeof durationSeconds !== "number") {
+    return new Response(
+      JSON.stringify({ error: "Missing required fields: filename, mimeType, sizeBytes, durationSeconds" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 
-  // Generate session ID and storage path
+  console.log(`[desktop-recordings] Init request from user: ${userId}, file: ${filename}, source: ${sourceName}`);
+
+  // Generate session ID and storage key
   const sessionId = crypto.randomUUID();
   const fileExt = mimeType.includes("mp4") ? "mp4" : "webm";
-  const storagePath = `recordings/${userId}/${sessionId}.${fileExt}`;
-  const expiresAt = new Date(Date.now() + UPLOAD_URL_TTL_SECONDS * 1000);
+  const storageKey = `sessions/${userId}/${sessionId}/recording.${fileExt}`;
 
   // Create capture session with status="uploading"
   const sessionTitle = sourceName 
@@ -164,15 +182,14 @@ async function handleInitWithBody(
       user_id: userId,
       title: sessionTitle,
       status: "uploading",
-      duration_seconds: durationSeconds || 0,
+      duration_seconds: durationSeconds,
       metadata: {
-        source: "desktop",
-        client: "electron",
-        source_name: sourceName,
+        created_from: "desktop",
+        source_name: sourceName || null,
         original_filename: filename,
         mime_type: mimeType,
         file_size_bytes: sizeBytes,
-        storage_path: storagePath,
+        storage_key: storageKey,
         upload_started_at: new Date().toISOString(),
       },
     })
@@ -190,7 +207,7 @@ async function handleInitWithBody(
   // Generate signed upload URL using service role
   const { data: signedUrl, error: signedUrlError } = await supabaseAdmin.storage
     .from("video-assets")
-    .createSignedUploadUrl(storagePath);
+    .createSignedUploadUrl(storageKey);
 
   if (signedUrlError || !signedUrl) {
     console.error("[desktop-recordings] Failed to create signed URL:", signedUrlError);
@@ -202,20 +219,23 @@ async function handleInitWithBody(
     );
   }
 
-  console.log(`[desktop-recordings] Created session: ${sessionId}, path: ${storagePath}`);
+  console.log(`[desktop-recordings] Created session: ${sessionId}, storageKey: ${storageKey}`);
 
-  return new Response(
-    JSON.stringify({
-      sessionId,
-      uploadUrl: signedUrl.signedUrl,
-      uploadMethod: "PUT",
-      uploadHeaders: {
+  // Return the new response format
+  const response: InitRecordingResponse = {
+    sessionId,
+    storageKey,
+    upload: {
+      method: "PUT",
+      url: signedUrl.signedUrl,
+      headers: {
         "Content-Type": mimeType,
       },
-      expiresAt: expiresAt.toISOString(),
-      maxSizeBytes: MAX_FILE_SIZE_BYTES,
-      token: signedUrl.token,
-    }),
+    },
+  };
+
+  return new Response(
+    JSON.stringify(response),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 }
@@ -283,21 +303,21 @@ async function handleCompleteWithBody(
     );
   }
 
-  // Get storage path from metadata
+  // Get storage key from metadata (new format) or storage_path (legacy)
   const metadata = session.metadata as Record<string, unknown> || {};
-  const storagePath = metadata.storage_path as string;
+  const storageKey = (metadata.storage_key || metadata.storage_path) as string;
 
-  if (!storagePath) {
-    console.error("[desktop-recordings] No storage path in session metadata:", sessionId);
+  if (!storageKey) {
+    console.error("[desktop-recordings] No storage_key in session metadata:", sessionId);
     return new Response(
-      JSON.stringify({ error: "Invalid session - missing storage path" }),
+      JSON.stringify({ error: "Invalid session - missing storage key" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
   // Verify file exists in storage
-  const storageFolderPath = storagePath.split("/").slice(0, -1).join("/");
-  const storageFileName = storagePath.split("/").pop();
+  const storageFolderPath = storageKey.split("/").slice(0, -1).join("/");
+  const storageFileName = storageKey.split("/").pop();
   
   const { data: fileData, error: fileError } = await supabaseAdmin.storage
     .from("video-assets")
@@ -307,7 +327,7 @@ async function handleCompleteWithBody(
 
   const fileExists = fileData && fileData.length > 0;
   if (!fileExists) {
-    console.error("[desktop-recordings] File not found in storage:", storagePath);
+    console.error("[desktop-recordings] File not found in storage:", storageKey);
     return new Response(
       JSON.stringify({ error: "Recording file not found. Please upload the file first." }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -321,7 +341,7 @@ async function handleCompleteWithBody(
   // Generate signed URL for the video
   const { data: videoUrl } = await supabaseAdmin.storage
     .from("video-assets")
-    .createSignedUrl(storagePath, 86400); // 24 hour URL
+    .createSignedUrl(storageKey, 86400); // 24 hour URL
 
   // Create video asset record
   const { data: videoAsset, error: assetError } = await supabase
@@ -331,7 +351,7 @@ async function handleCompleteWithBody(
       user_id: userId,
       asset_type: "gameplay",
       storage_url: videoUrl?.signedUrl || "",
-      storage_path: storagePath,
+      storage_path: storageKey,
       duration_ms: (session.duration_seconds || 0) * 1000,
       status: "ready",
       processing_progress: 100,
@@ -373,7 +393,7 @@ async function handleCompleteWithBody(
   // Trigger optional async processing (thumbnails, Dropbox sync, etc.)
   try {
     EdgeRuntime.waitUntil(
-      processRecordingAsync(supabaseAdmin, sessionId, storagePath, userId)
+      processRecordingAsync(supabaseAdmin, sessionId, storageKey, userId)
     );
   } catch (e) {
     console.log("[desktop-recordings] EdgeRuntime not available, skipping async processing");
@@ -396,7 +416,7 @@ async function handleCompleteWithBody(
 async function processRecordingAsync(
   supabaseAdmin: AnySupabaseClient,
   sessionId: string,
-  storagePath: string,
+  storageKey: string,
   userId: string
 ) {
   try {
