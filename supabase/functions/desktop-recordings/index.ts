@@ -49,6 +49,12 @@ interface InitRecordingResponse {
 
 interface CompleteRecordingRequest {
   sessionId: string;
+  storageKey: string;
+}
+
+interface CompleteRecordingResponse {
+  sessionId: string;
+  editorUrl: string;
 }
 
 // Use any for Supabase client to avoid complex generic issues in Deno
@@ -256,7 +262,7 @@ async function handleCompleteWithBody(
   supabaseAdmin: AnySupabaseClient,
   userId: string
 ) {
-  const { sessionId } = body;
+  const { sessionId, storageKey: inputStorageKey } = body;
 
   if (!sessionId) {
     return new Response(
@@ -265,7 +271,14 @@ async function handleCompleteWithBody(
     );
   }
 
-  console.log(`[desktop-recordings] Complete request for: ${sessionId}, user: ${userId}`);
+  if (!inputStorageKey) {
+    return new Response(
+      JSON.stringify({ error: "Missing storageKey" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  console.log(`[desktop-recordings] Complete request for: ${sessionId}, storageKey: ${inputStorageKey}, user: ${userId}`);
 
   // Get session record
   const { data: session, error: fetchError } = await supabase
@@ -291,31 +304,31 @@ async function handleCompleteWithBody(
     );
   }
 
-  // Check if already completed
-  if (session.status === "ready") {
+  // Check if session is in uploading status
+  if (session.status !== "uploading") {
+    // Already completed - return success with editorUrl
+    const response: CompleteRecordingResponse = {
+      sessionId,
+      editorUrl: `https://getvantage.lovable.app/session/${sessionId}`,
+    };
     return new Response(
-      JSON.stringify({
-        sessionId,
-        sessionUrl: `/session/${sessionId}`,
-        status: "ready",
-      }),
+      JSON.stringify(response),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  // Get storage key from metadata (new format) or storage_path (legacy)
+  // Use the provided storageKey (verify it matches what we have in metadata)
   const metadata = session.metadata as Record<string, unknown> || {};
-  const storageKey = (metadata.storage_key || metadata.storage_path) as string;
-
-  if (!storageKey) {
-    console.error("[desktop-recordings] No storage_key in session metadata:", sessionId);
-    return new Response(
-      JSON.stringify({ error: "Invalid session - missing storage key" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  const expectedStorageKey = metadata.storage_key as string;
+  
+  if (expectedStorageKey && expectedStorageKey !== inputStorageKey) {
+    console.warn(`[desktop-recordings] Storage key mismatch: expected ${expectedStorageKey}, got ${inputStorageKey}`);
+    // Use the provided storageKey anyway - client knows what they uploaded
   }
 
-  // Verify file exists in storage
+  const storageKey = inputStorageKey;
+
+  // Verify file exists in storage (best-effort)
   const storageFolderPath = storageKey.split("/").slice(0, -1).join("/");
   const storageFileName = storageKey.split("/").pop();
   
@@ -338,10 +351,12 @@ async function handleCompleteWithBody(
   const uploadedFile = fileData[0];
   const actualFileSize = uploadedFile.metadata?.size || metadata.file_size_bytes || 0;
 
-  // Generate signed URL for the video
-  const { data: videoUrl } = await supabaseAdmin.storage
+  // Generate a stable signed URL for playback (long-lived, 7 days)
+  const { data: videoUrlData } = await supabaseAdmin.storage
     .from("video-assets")
-    .createSignedUrl(storageKey, 86400); // 24 hour URL
+    .createSignedUrl(storageKey, 7 * 24 * 60 * 60); // 7 days
+
+  const videoUrl = videoUrlData?.signedUrl || "";
 
   // Create video asset record
   const { data: videoAsset, error: assetError } = await supabase
@@ -350,7 +365,7 @@ async function handleCompleteWithBody(
       session_id: sessionId,
       user_id: userId,
       asset_type: "gameplay",
-      storage_url: videoUrl?.signedUrl || "",
+      storage_url: videoUrl,
       storage_path: storageKey,
       duration_ms: (session.duration_seconds || 0) * 1000,
       status: "ready",
@@ -366,14 +381,16 @@ async function handleCompleteWithBody(
     // Don't fail - session can still be marked ready
   }
 
-  // Update session to ready
+  // Update session to ready with videoStorageKey and videoUrl
   const { error: updateError } = await supabase
     .from("capture_sessions")
     .update({
       status: "ready",
-      video_url: videoUrl?.signedUrl || null,
+      video_url: videoUrl,
       metadata: {
         ...metadata,
+        storage_key: storageKey,
+        video_storage_key: storageKey,
         upload_completed_at: new Date().toISOString(),
         video_asset_id: videoAsset?.id,
       },
@@ -399,12 +416,14 @@ async function handleCompleteWithBody(
     console.log("[desktop-recordings] EdgeRuntime not available, skipping async processing");
   }
 
+  // Return new response format
+  const response: CompleteRecordingResponse = {
+    sessionId,
+    editorUrl: `https://getvantage.lovable.app/session/${sessionId}`,
+  };
+
   return new Response(
-    JSON.stringify({
-      sessionId,
-      sessionUrl: `/session/${sessionId}`,
-      status: "ready",
-    }),
+    JSON.stringify(response),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 }
