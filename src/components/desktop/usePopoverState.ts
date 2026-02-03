@@ -41,10 +41,12 @@ import {
 import { toast } from "sonner";
 
 // Extended state to include source picker, authorizing, and post-recording states
-type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing" | "uploading" | "success";
+// Note: "success" state removed - after upload, Electron opens web app automatically
+type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing" | "uploading";
 
 // Post-recording sub-state for more granular control
-export type PostRecordingPhase = "processing" | "uploading" | "success" | "error";
+// Note: "success" removed - we return to idle after upload completes
+export type PostRecordingPhase = "processing" | "uploading" | "error";
 
 // Mock user for account display
 export const MOCK_USER = {
@@ -235,8 +237,17 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
         }
         
         // Update post-recording phase
-        if (["processing", "uploading", "success", "error"].includes(electronState.state)) {
+        // Note: "success" state now returns to idle, so we don't track it
+        if (["processing", "uploading", "error"].includes(electronState.state)) {
           setPostRecordingPhase(electronState.state as PostRecordingPhase);
+        } else if (electronState.state === "success") {
+          // Success means Electron opened web app - return to idle
+          setPostRecordingPhase(null);
+          setState("idle");
+          setDuration(0);
+          setIsPaused(false);
+          setUploadProgress(0);
+          return; // Don't let the normal state mapping run
         } else {
           setPostRecordingPhase(null);
         }
@@ -502,8 +513,12 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
               setPostRecordingPhase("error");
               setState("error");
             } else {
-              setPostRecordingPhase("success");
-              setState("success");
+              // Success - return to idle (Electron opens web app automatically)
+              setPostRecordingPhase(null);
+              setState("idle");
+              setDuration(0);
+              setIsPaused(false);
+              setUploadProgress(0);
             }
           }, 300);
         } else {
@@ -566,8 +581,12 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
             setPostRecordingPhase("error");
             setState("error");
           } else {
-            setPostRecordingPhase("success");
-            setState("success");
+            // Success - return to idle (Electron opens web app automatically)
+            setPostRecordingPhase(null);
+            setState("idle");
+            setDuration(0);
+            setIsPaused(false);
+            setUploadProgress(0);
           }
         }, 300);
       } else {
