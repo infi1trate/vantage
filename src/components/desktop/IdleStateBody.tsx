@@ -50,7 +50,7 @@ function getSourceDisplay(type: CaptureSourceType, windowName?: string) {
       return { 
         icon: Monitor, 
         label: "Full screen",
-        sublabel: null,
+        sublabel: "Entire display",
       };
     case "window":
       return { 
@@ -62,11 +62,17 @@ function getSourceDisplay(type: CaptureSourceType, windowName?: string) {
       return { 
         icon: Video, 
         label: "Camera only",
-        sublabel: null,
+        sublabel: "No screen capture",
       };
     default:
-      return { icon: Monitor, label: "Select source", sublabel: null };
+      return { icon: AppWindow, label: "Specific window", sublabel: null };
   }
+}
+
+// Truncate window name with app prefix (e.g., "Slack – Jacob…")
+function formatWindowName(name: string, maxLen = 20) {
+  if (name.length <= maxLen) return name;
+  return name.slice(0, maxLen) + "…";
 }
 
 export function IdleStateBody({
@@ -155,15 +161,22 @@ export function IdleStateBody({
               {sourceDisplay.label}
             </div>
             {sourceDisplay.sublabel && (
-              <div className="text-xs text-vantage-green truncate mt-0.5 max-w-[180px]">
-                {sourceDisplay.sublabel}
+              <div className="text-xs text-muted-foreground truncate mt-0.5 max-w-[180px]">
+                {sourceType === "window" && selectedWindowName 
+                  ? formatWindowName(selectedWindowName)
+                  : sourceDisplay.sublabel
+                }
               </div>
             )}
           </div>
+          {/* Link-style Select button */}
           <span className={cn(
-            "text-xs font-semibold text-vantage-green px-3 py-1.5 rounded-full",
-            "bg-vantage-green/10",
-            "opacity-80 group-hover:opacity-100 transition-opacity"
+            "text-sm font-medium text-vantage-green",
+            "px-3 py-1.5 rounded-lg",
+            "bg-transparent hover:bg-vantage-green/10",
+            "transition-all duration-150",
+            "group-hover:underline underline-offset-2",
+            "active:scale-95"
           )}>
             Select
           </span>
