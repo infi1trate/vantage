@@ -104,7 +104,7 @@ export function IdleStateBody({
   };
 
   return (
-    <div className="flex flex-col relative">
+    <div className="flex flex-col h-full">
       {/* Effects Modal */}
       <EffectsModal
         isOpen={effectsOpen}
@@ -112,57 +112,107 @@ export function IdleStateBody({
         cameraEnabled={cameraEnabled}
       />
 
-      {/* Configuration Rows */}
-      <div className="space-y-0.5">
-        {/* Source Row */}
-        <button
-          onClick={onSourceRowClick}
-          aria-label={`Change capture source. Current: ${sourceDisplay.label}`}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl",
-            "transition-all duration-150",
-            "hover:bg-white/[0.04] active:bg-white/[0.06]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            "group"
-          )}
-        >
-          <div className={cn(
-            "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
-            "bg-white/[0.06] border border-white/[0.08]",
-            "group-hover:border-white/[0.12] transition-colors"
-          )}>
-            <SourceIcon className="w-5 h-5 text-muted-foreground" />
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-sm font-medium text-foreground leading-tight">
-              {sourceDisplay.label}
-            </div>
-            {sourceDisplay.sublabel && (
-              <div className="text-xs text-vantage-green truncate mt-0.5 max-w-[180px]">
-                {sourceDisplay.sublabel}
-              </div>
+      {/* Scrollable Configuration Area */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Configuration Rows */}
+        <div className="space-y-0.5">
+          {/* Source Row */}
+          <button
+            onClick={onSourceRowClick}
+            aria-label={`Change capture source. Current: ${sourceDisplay.label}`}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl",
+              "transition-all duration-150",
+              "hover:bg-white/[0.04] active:bg-white/[0.06]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              "group"
             )}
-          </div>
-          <span className={cn(
-            "text-xs font-medium text-vantage-green",
-            "opacity-70 group-hover:opacity-100 transition-opacity"
-          )}>
-            Select
-          </span>
-        </button>
+          >
+            <div className={cn(
+              "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
+              "bg-white/[0.06] border border-white/[0.08]",
+              "group-hover:border-white/[0.12] transition-colors"
+            )}>
+              <SourceIcon className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <div className="text-sm font-medium text-foreground leading-tight">
+                {sourceDisplay.label}
+              </div>
+              {sourceDisplay.sublabel && (
+                <div className="text-xs text-vantage-green truncate mt-0.5 max-w-[180px]">
+                  {sourceDisplay.sublabel}
+                </div>
+              )}
+            </div>
+            <span className={cn(
+              "text-xs font-medium text-vantage-green",
+              "opacity-70 group-hover:opacity-100 transition-opacity"
+            )}>
+              Select
+            </span>
+          </button>
 
-        {/* Divider */}
-        <div className="h-px bg-white/[0.06] mx-3" aria-hidden="true" />
+          {/* Divider */}
+          <div className="h-px bg-white/[0.06] mx-3" aria-hidden="true" />
 
-        {/* Camera Row - only show if source is not camera-only */}
-        {sourceType !== "camera" && (
-          <>
+          {/* Camera Row - only show if source is not camera-only */}
+          {sourceType !== "camera" && (
+            <>
+              <button
+                onClick={onToggleCamera}
+                aria-label={`Toggle camera. Currently ${cameraEnabled ? "on" : "off"}`}
+                aria-pressed={cameraEnabled}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl",
+                  "transition-all duration-150",
+                  "hover:bg-white/[0.04] active:bg-white/[0.06]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  "group"
+                )}
+              >
+                <div className={cn(
+                  "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
+                  "border transition-all duration-150",
+                  cameraEnabled 
+                    ? "bg-vantage-green/15 border-vantage-green/30" 
+                    : "bg-white/[0.06] border-white/[0.08] group-hover:border-white/[0.12]"
+                )}>
+                  {cameraEnabled ? (
+                    <Video className="w-5 h-5 text-vantage-green" />
+                  ) : (
+                    <VideoOff className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-sm font-medium text-foreground">
+                    Camera
+                  </div>
+                </div>
+                <div className={cn(
+                  "px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider",
+                  "transition-all duration-150",
+                  cameraEnabled 
+                    ? "bg-vantage-green/20 text-vantage-green" 
+                    : "bg-white/[0.08] text-muted-foreground"
+                )}>
+                  {cameraEnabled ? "On" : "Off"}
+                </div>
+              </button>
+
+              {/* Divider */}
+              <div className="h-px bg-white/[0.06] mx-3" aria-hidden="true" />
+            </>
+          )}
+
+          {/* Mic Row with Dropdown */}
+          <div className="flex items-center gap-1 px-3 py-1.5">
             <button
-              onClick={onToggleCamera}
-              aria-label={`Toggle camera. Currently ${cameraEnabled ? "on" : "off"}`}
-              aria-pressed={cameraEnabled}
+              onClick={onToggleMic}
+              aria-label={`Toggle microphone. Currently ${micEnabled ? "on" : "off"}`}
+              aria-pressed={micEnabled}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl",
+                "flex items-center gap-3 flex-1 py-1.5 px-0 rounded-xl",
                 "transition-all duration-150",
                 "hover:bg-white/[0.04] active:bg-white/[0.06]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -172,225 +222,173 @@ export function IdleStateBody({
               <div className={cn(
                 "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
                 "border transition-all duration-150",
-                cameraEnabled 
+                micEnabled 
                   ? "bg-vantage-green/15 border-vantage-green/30" 
                   : "bg-white/[0.06] border-white/[0.08] group-hover:border-white/[0.12]"
               )}>
-                {cameraEnabled ? (
-                  <Video className="w-5 h-5 text-vantage-green" />
+                {micEnabled ? (
+                  <Mic className="w-5 h-5 text-vantage-green" />
                 ) : (
-                  <VideoOff className="w-5 h-5 text-muted-foreground" />
+                  <MicOff className="w-5 h-5 text-muted-foreground" />
                 )}
               </div>
-              <div className="flex-1 text-left">
+              <div className="flex-1 text-left min-w-0">
                 <div className="text-sm font-medium text-foreground">
-                  Camera
+                  Microphone
                 </div>
+                {micEnabled && (
+                  <div className="text-[11px] text-muted-foreground truncate mt-0.5 max-w-[160px]">
+                    {formatMicName(selectedMic?.name || "Select device", selectedMic?.isDefault)}
+                  </div>
+                )}
               </div>
+            </button>
+            
+            {/* Status chip + dropdown */}
+            <div className="flex items-center gap-1.5 shrink-0">
               <div className={cn(
                 "px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider",
                 "transition-all duration-150",
-                cameraEnabled 
+                micEnabled 
                   ? "bg-vantage-green/20 text-vantage-green" 
                   : "bg-white/[0.08] text-muted-foreground"
               )}>
-                {cameraEnabled ? "On" : "Off"}
+                {micEnabled ? "On" : "Off"}
               </div>
-            </button>
-
-            {/* Divider */}
-            <div className="h-px bg-white/[0.06] mx-3" aria-hidden="true" />
-          </>
-        )}
-
-        {/* Mic Row with Dropdown */}
-        <div className="flex items-center gap-1 px-3 py-1.5">
-          <button
-            onClick={onToggleMic}
-            aria-label={`Toggle microphone. Currently ${micEnabled ? "on" : "off"}`}
-            aria-pressed={micEnabled}
-            className={cn(
-              "flex items-center gap-3 flex-1 py-1.5 px-0 rounded-xl",
-              "transition-all duration-150",
-              "hover:bg-white/[0.04] active:bg-white/[0.06]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              "group"
-            )}
-          >
-            <div className={cn(
-              "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
-              "border transition-all duration-150",
-              micEnabled 
-                ? "bg-vantage-green/15 border-vantage-green/30" 
-                : "bg-white/[0.06] border-white/[0.08] group-hover:border-white/[0.12]"
-            )}>
-              {micEnabled ? (
-                <Mic className="w-5 h-5 text-vantage-green" />
-              ) : (
-                <MicOff className="w-5 h-5 text-muted-foreground" />
-              )}
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <div className="text-sm font-medium text-foreground">
-                Microphone
-              </div>
+              
               {micEnabled && (
-                <div className="text-[11px] text-muted-foreground truncate mt-0.5 max-w-[160px]">
-                  {formatMicName(selectedMic?.name || "Select device", selectedMic?.isDefault)}
-                </div>
-              )}
-            </div>
-          </button>
-          
-          {/* Status chip + dropdown */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className={cn(
-              "px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider",
-              "transition-all duration-150",
-              micEnabled 
-                ? "bg-vantage-green/20 text-vantage-green" 
-                : "bg-white/[0.08] text-muted-foreground"
-            )}>
-              {micEnabled ? "On" : "Off"}
-            </div>
-            
-            {micEnabled && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Select microphone device"
-                    className={cn(
-                      "h-8 w-8 p-0 rounded-lg",
-                      "hover:bg-white/[0.08] active:bg-white/[0.12]",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    )}
-                  >
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  align="end" 
-                  sideOffset={4}
-                  className="w-56 bg-background/95 backdrop-blur-xl border-white/10 z-50"
-                >
-                  {MOCK_MICS.map((mic) => (
-                    <DropdownMenuItem
-                      key={mic.id}
-                      onClick={() => onMicDeviceChange(mic.id)}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Select microphone device"
                       className={cn(
-                        "text-xs cursor-pointer py-2.5",
-                        "focus:bg-vantage-green/10 focus:text-vantage-green",
-                        mic.id === selectedMicId && "bg-vantage-green/10 text-vantage-green"
+                        "h-8 w-8 p-0 rounded-lg",
+                        "hover:bg-white/[0.08] active:bg-white/[0.12]",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       )}
                     >
-                      <Mic className="w-3.5 h-3.5 mr-2 shrink-0" />
-                      <span className="truncate flex-1">{mic.name}</span>
-                      {mic.isDefault && (
-                        <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
-                          Default
-                        </span>
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    align="end" 
+                    sideOffset={4}
+                    className="w-56 bg-background/95 backdrop-blur-xl border-white/10 z-50"
+                  >
+                    {MOCK_MICS.map((mic) => (
+                      <DropdownMenuItem
+                        key={mic.id}
+                        onClick={() => onMicDeviceChange(mic.id)}
+                        className={cn(
+                          "text-xs cursor-pointer py-2.5",
+                          "focus:bg-vantage-green/10 focus:text-vantage-green",
+                          mic.id === selectedMicId && "bg-vantage-green/10 text-vantage-green"
+                        )}
+                      >
+                        <Mic className="w-3.5 h-3.5 mr-2 shrink-0" />
+                        <span className="truncate flex-1">{mic.name}</span>
+                        {mic.isDefault && (
+                          <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
+                            Default
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Divider before CTA */}
-      <div className="h-px bg-white/[0.08] my-4" aria-hidden="true" />
-
-      {/* Primary CTA */}
-      <div className="px-1">
+      {/* ============= PERSISTENT CTA DOCK ============= */}
+      <div className="flex-shrink-0 pt-4 mt-auto border-t border-white/[0.06]">
+        {/* Primary CTA Button - Loom-style prominent */}
         <Button
           onClick={onStartRecording}
           disabled={!canStartRecording}
           className={cn(
-            "w-full h-12 text-sm font-bold uppercase tracking-wider",
-            "bg-vantage-green hover:bg-vantage-green/90 text-background",
-            "shadow-lg shadow-vantage-green/25",
+            "w-full h-14 text-base font-bold tracking-wide",
+            "bg-vantage-green hover:bg-vantage-green-bright text-background",
+            "shadow-lg shadow-vantage-green/30",
             "rounded-xl",
-            "transition-all duration-150 active:scale-[0.98]",
-            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none",
+            "transition-all duration-150",
+            "hover:shadow-xl hover:shadow-vantage-green/40 hover:scale-[1.01]",
+            "active:scale-[0.98] active:shadow-md",
+            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           )}
         >
           Start Recording
         </Button>
-        <p className="text-center text-[10px] text-muted-foreground mt-2 uppercase tracking-wider">
+        
+        {/* Recording limit helper text */}
+        <p className="text-center text-[11px] text-muted-foreground mt-2">
           {formatRecordingLimit()}
         </p>
-      </div>
 
-      {/* Footer action bar */}
-      <div className="h-px bg-white/[0.06] mt-5 mb-3" aria-hidden="true" />
-      
-      <nav 
-        className="flex items-center justify-between px-2" 
-        aria-label="Quick actions"
-      >
-        {/* Effects button - left aligned */}
-        <button
-          onClick={() => setEffectsOpen(true)}
-          aria-label="Open effects settings"
-          aria-haspopup="dialog"
-          className={cn(
-            "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
-            "text-muted-foreground",
-            "transition-all duration-150 ease-out",
-            // Hover state
-            "hover:text-foreground hover:bg-white/[0.06]",
-            // Active/pressed state
-            "active:scale-[0.97] active:bg-white/[0.08]",
-            // Focus ring
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            // When effects modal is open
-            effectsOpen && "text-vantage-green bg-vantage-green/10"
-          )}
-        >
-          <Sparkles className={cn(
-            "w-4 h-4 transition-transform duration-150",
-            "group-hover:scale-110",
-            effectsOpen && "text-vantage-green"
-          )} />
-          <span className="text-xs font-medium">Effects</span>
-        </button>
+        {/* Footer action bar */}
+        <div className="h-px bg-white/[0.06] mt-4 mb-3" aria-hidden="true" />
         
-        {/* More button - right aligned */}
-        <MoreMenu
-          trigger={
-            <button
-              aria-label="Open more options menu"
-              aria-haspopup="menu"
-              className={cn(
-                "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
-                "text-muted-foreground",
-                "transition-all duration-150 ease-out",
-                // Hover state
-                "hover:text-foreground hover:bg-white/[0.06]",
-                // Active/pressed state
-                "active:scale-[0.97] active:bg-white/[0.08]",
-                // Focus ring
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              )}
-            >
-              <MoreHorizontal className={cn(
-                "w-4 h-4 transition-transform duration-150",
-                "group-hover:scale-110"
-              )} />
-              <span className="text-xs font-medium">More</span>
-            </button>
-          }
-          username={username}
-          onSignOut={onSignOut}
-          forceUploadError={forceUploadError}
-          onForceUploadErrorChange={onForceUploadErrorChange}
-        />
-      </nav>
+        <nav 
+          className="flex items-center justify-between" 
+          aria-label="Quick actions"
+        >
+          {/* Effects button - left aligned */}
+          <button
+            onClick={() => setEffectsOpen(true)}
+            aria-label="Open effects settings"
+            aria-haspopup="dialog"
+            className={cn(
+              "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
+              "text-muted-foreground",
+              "transition-all duration-150 ease-out",
+              "hover:text-foreground hover:bg-white/[0.06]",
+              "active:scale-[0.97] active:bg-white/[0.08]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              effectsOpen && "text-vantage-green bg-vantage-green/10"
+            )}
+          >
+            <Sparkles className={cn(
+              "w-4 h-4 transition-transform duration-150",
+              "group-hover:scale-110",
+              effectsOpen && "text-vantage-green"
+            )} />
+            <span className="text-xs font-medium">Effects</span>
+          </button>
+          
+          {/* More button - right aligned */}
+          <MoreMenu
+            trigger={
+              <button
+                aria-label="Open more options menu"
+                aria-haspopup="menu"
+                className={cn(
+                  "group flex items-center gap-2 px-4 py-2.5 rounded-xl",
+                  "text-muted-foreground",
+                  "transition-all duration-150 ease-out",
+                  "hover:text-foreground hover:bg-white/[0.06]",
+                  "active:scale-[0.97] active:bg-white/[0.08]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                )}
+              >
+                <MoreHorizontal className={cn(
+                  "w-4 h-4 transition-transform duration-150",
+                  "group-hover:scale-110"
+                )} />
+                <span className="text-xs font-medium">More</span>
+              </button>
+            }
+            username={username}
+            onSignOut={onSignOut}
+            forceUploadError={forceUploadError}
+            onForceUploadErrorChange={onForceUploadErrorChange}
+          />
+        </nav>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 import { ReactNode } from "react";
 import { X, Home, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface PopoverShellProps {
   children: ReactNode;
@@ -98,14 +97,13 @@ export function PopoverShell({
       )}
       
       {/* Content - scrollable body with safe-area padding */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className={cn(
-          "relative",
-          isHUD ? "p-3" : "px-4 py-4 pb-6" // Consistent padding, extra bottom for safe area
-        )}>
-          {children}
-        </div>
-      </ScrollArea>
+      {/* Content - fills available space */}
+      <div className={cn(
+        "flex-1 min-h-0 flex flex-col overflow-hidden",
+        isHUD ? "p-3" : "px-4 py-4"
+      )}>
+        {children}
+      </div>
       
       {/* Bottom subtle accent */}
       <div 

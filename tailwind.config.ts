@@ -70,6 +70,8 @@ export default {
         // VANTAGE custom colors
         vantage: {
           lime: "hsl(var(--vantage-lime))",
+          green: "hsl(var(--vantage-lime))",
+          "green-bright": "hsl(var(--vantage-lime-bright))",
           success: "hsl(var(--vantage-success))",
           warning: "hsl(var(--vantage-warning))",
           danger: "hsl(var(--vantage-danger))",
