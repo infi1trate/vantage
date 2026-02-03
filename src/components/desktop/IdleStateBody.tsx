@@ -109,27 +109,29 @@ export function IdleStateBody({
     return prefix + truncated;
   };
 
-  // Shared pill row styles
+  // Shared pill row styles - 16px horizontal padding, 12px vertical for ~64px height
   const pillRowBase = cn(
-    "w-full flex items-center gap-3 px-3 py-4 rounded-2xl",
+    "w-full flex items-center gap-3 px-4 py-3 rounded-2xl",
     "bg-white/[0.03]",
     "transition-all duration-150",
-    "hover:bg-white/[0.06] active:bg-white/[0.08] active:scale-[0.99]",
+    "hover:bg-white/[0.06] active:bg-white/[0.08] active:scale-[0.995]",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     "group cursor-pointer"
   );
 
+  // Icon container - 40px (10 * 4) for 8px grid alignment
   const iconContainerBase = cn(
-    "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center",
+    "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center",
     "transition-all duration-150"
   );
 
+  // Status chip with proper disabled state
   const statusChip = (isActive: boolean) => cn(
-    "px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-wide",
+    "px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wide",
     "transition-all duration-150",
     isActive 
-      ? "bg-vantage-green/20 text-vantage-green shadow-sm shadow-vantage-green/10" 
-      : "bg-white/[0.06] text-muted-foreground"
+      ? "bg-vantage-green/20 text-vantage-green" 
+      : "bg-white/[0.08] text-muted-foreground/80"
   );
 
   return (
@@ -141,7 +143,7 @@ export function IdleStateBody({
         cameraEnabled={cameraEnabled}
       />
 
-      {/* Configuration Rows - compact spacing */}
+      {/* Configuration Rows - 8px spacing rhythm */}
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
         {/* Source Row */}
         <button
@@ -154,7 +156,7 @@ export function IdleStateBody({
             "bg-white/[0.06] border border-white/[0.08]",
             "group-hover:border-white/[0.15] group-hover:bg-white/[0.08]"
           )}>
-            <SourceIcon className="w-5 h-5 text-foreground/80" />
+            <SourceIcon className="w-5 h-5 text-foreground/70" strokeWidth={1.75} />
           </div>
           <div className="flex-1 text-left min-w-0">
             <div className="text-sm font-medium text-foreground">
@@ -307,81 +309,75 @@ export function IdleStateBody({
       </div>
 
       {/* ============= PERSISTENT CTA DOCK ============= */}
-      <div className="flex-shrink-0 pt-3 mt-2">
-        {/* Primary CTA Button */}
+      <div className="flex-shrink-0 pt-4 mt-auto">
+        {/* Primary CTA Button - 56px height, prominent */}
         <Button
           onClick={onStartRecording}
           disabled={!canStartRecording}
           className={cn(
             "w-full h-14 text-base font-bold tracking-wide",
             "bg-vantage-green hover:bg-vantage-green-bright text-background",
-            "shadow-lg shadow-vantage-green/30",
+            "shadow-lg shadow-vantage-green/25",
             "rounded-xl",
             "transition-all duration-150",
-            "hover:shadow-xl hover:shadow-vantage-green/40 hover:scale-[1.01]",
+            "hover:shadow-xl hover:shadow-vantage-green/35 hover:scale-[1.01]",
             "active:scale-[0.98] active:shadow-md",
-            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100",
+            // Improved disabled state - visible but clearly inactive
+            "disabled:bg-vantage-green/40 disabled:text-background/70 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           )}
         >
           Start Recording
         </Button>
         
-        {/* Recording limit helper text */}
-        <p className="text-center text-[11px] text-muted-foreground mt-2">
+        {/* Recording limit helper text - 8px top margin */}
+        <p className="text-center text-[11px] text-muted-foreground/70 mt-2">
           {formatRecordingLimit()}
         </p>
 
-        {/* Footer action bar */}
-        <div className="h-px bg-white/[0.06] mt-3 mb-2" aria-hidden="true" />
+        {/* Footer action bar - subtle, secondary to CTA */}
+        <div className="h-px bg-white/[0.04] mt-4 mb-2" aria-hidden="true" />
         
         <nav 
-          className="flex items-center justify-between" 
+          className="flex items-center justify-between px-1" 
           aria-label="Quick actions"
         >
-          {/* Effects button */}
+          {/* Effects button - subtle tertiary style */}
           <button
             onClick={() => setEffectsOpen(true)}
             aria-label="Open effects settings"
             aria-haspopup="dialog"
             className={cn(
-              "group flex items-center gap-2 px-4 py-2 rounded-xl",
-              "text-muted-foreground",
+              "group flex items-center gap-1.5 px-3 py-2 rounded-lg",
+              "text-muted-foreground/70",
               "transition-all duration-150 ease-out",
-              "hover:text-foreground hover:bg-white/[0.06]",
-              "active:scale-[0.97] active:bg-white/[0.08]",
+              "hover:text-muted-foreground hover:bg-white/[0.04]",
+              "active:scale-[0.97]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              effectsOpen && "text-vantage-green bg-vantage-green/10"
+              effectsOpen && "text-vantage-green/80 bg-vantage-green/5"
             )}
           >
-            <Sparkles className={cn(
-              "w-4 h-4 transition-transform duration-150",
-              "group-hover:scale-110",
-              effectsOpen && "text-vantage-green"
-            )} />
-            <span className="text-xs font-medium">Effects</span>
+            <Sparkles className="w-3.5 h-3.5" strokeWidth={1.75} />
+            <span className="text-xs">Effects</span>
           </button>
           
-          {/* More button */}
+          {/* More button - subtle tertiary style */}
           <MoreMenu
             trigger={
               <button
                 aria-label="Open more options menu"
                 aria-haspopup="menu"
                 className={cn(
-                  "group flex items-center gap-2 px-4 py-2 rounded-xl",
-                  "text-muted-foreground",
+                  "group flex items-center gap-1.5 px-3 py-2 rounded-lg",
+                  "text-muted-foreground/70",
                   "transition-all duration-150 ease-out",
-                  "hover:text-foreground hover:bg-white/[0.06]",
-                  "active:scale-[0.97] active:bg-white/[0.08]",
+                  "hover:text-muted-foreground hover:bg-white/[0.04]",
+                  "active:scale-[0.97]",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vantage-green focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 )}
               >
-                <MoreHorizontal className={cn(
-                  "w-4 h-4 transition-transform duration-150",
-                  "group-hover:scale-110"
-                )} />
-                <span className="text-xs font-medium">More</span>
+                <MoreHorizontal className="w-3.5 h-3.5" strokeWidth={1.75} />
+                <span className="text-xs">More</span>
               </button>
             }
             username={username}
