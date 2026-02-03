@@ -15,7 +15,7 @@ export interface VantageSource {
 }
 
 export interface VantageState {
-  state: "idle" | "countdown" | "recording" | "paused" | "processing" | "uploading" | "success" | "error";
+  state: "idle" | "picking_source" | "countdown" | "recording" | "paused" | "processing" | "uploading" | "success" | "error";
   duration?: number;
   countdown?: number;
   uploadProgress?: number;
