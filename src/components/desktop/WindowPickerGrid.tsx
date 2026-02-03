@@ -5,6 +5,7 @@
  * Matches Loom's window picker UX with 2-column grid.
  */
 
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { MockWindow } from "./types";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,17 @@ export function WindowPickerGrid({
   onSelect,
   onBack,
 }: WindowPickerGridProps) {
+  // Track thumbnails that failed to load
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
+
+  const handleImageError = useCallback((windowId: string) => {
+    setFailedThumbnails(prev => new Set(prev).add(windowId));
+  }, []);
+
+  // Check if thumbnail should be shown (exists and hasn't failed)
+  const shouldShowThumbnail = (window: MockWindow) => 
+    window.thumbnail && !failedThumbnails.has(window.id);
+
   return (
     <div className="space-y-4">
       {/* Header with back button */}
@@ -75,25 +87,21 @@ export function WindowPickerGrid({
             >
               {/* Thumbnail area */}
               <div className="aspect-[4/3] relative overflow-hidden">
-                {/* Real thumbnail when available */}
-                {window.thumbnail ? (
+                {/* Real thumbnail when available and loaded successfully */}
+                {shouldShowThumbnail(window) ? (
                   <>
                     <img
                       src={window.thumbnail}
                       alt={`Preview of ${window.name}`}
                       className="absolute inset-0 w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
                       draggable={false}
+                      onError={() => handleImageError(window.id)}
                     />
-                    {/* Subtle grid texture overlay */}
+                    {/* Dark gradient overlay for label legibility */}
                     <div 
-                      className="absolute inset-0 opacity-10 pointer-events-none"
-                      style={{
-                        backgroundImage: `
-                          linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
-                          linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
-                        `,
-                        backgroundSize: '16px 16px'
-                      }}
+                      className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"
                       aria-hidden="true"
                     />
                   </>
