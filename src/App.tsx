@@ -17,6 +17,7 @@ import ExtensionAuth from "./pages/ExtensionAuth";
 // Eagerly load landing page for fast initial render
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import AuthDesktop from "./pages/AuthDesktop";
 import NotFound from "./pages/NotFound";
 
 // Lazy load heavy routes - only loaded when navigating to them
@@ -58,6 +59,7 @@ const queryClient = new QueryClient();
 const router = createBrowserRouter([
   { path: "/", element: <Index />, errorElement: <RouteErrorFallback /> },
   { path: "/auth", element: <Auth />, errorElement: <RouteErrorFallback /> },
+  { path: "/auth/desktop", element: <AuthDesktop />, errorElement: <RouteErrorFallback /> },
   { path: "/extension-auth", element: <ExtensionAuth />,},
   { path: "/dashboard", element: withSuspense(Dashboard), errorElement: <RouteErrorFallback /> },
   { path: "/library", element: withSuspense(SessionLibrary), errorElement: <RouteErrorFallback /> },
