@@ -89,9 +89,18 @@ export interface UsePopoverStateReturn {
   canStartRecording: boolean;
 }
 
-export function usePopoverState(): UsePopoverStateReturn {
-  // Core state
-  const [state, setState] = useState<ExtendedPopoverState>("unauthorized");
+interface UsePopoverStateOptions {
+  /** If true, start in idle state (authenticated context) instead of unauthorized */
+  startAuthenticated?: boolean;
+}
+
+export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopoverStateReturn {
+  const { startAuthenticated = false } = options;
+  
+  // Core state - start authenticated goes straight to idle
+  const [state, setState] = useState<ExtendedPopoverState>(
+    startAuthenticated ? "idle" : "unauthorized"
+  );
   const [error, setError] = useState<PopoverError | null>(null);
   
   // Config
