@@ -69,8 +69,12 @@ import { useSessionMediaStatus, useInvalidateSessions } from "@/hooks/useSession
 
 // Cloud session processing states that indicate ongoing work
 const CLOUD_PROCESSING_STATUSES = ["recording", "processing", "uploading"];
-// Polling interval for cloud processing status (5 seconds)
-const CLOUD_PROCESSING_POLL_INTERVAL = 5000;
+// Fast polling for upload status (2 seconds for quick feedback)
+const UPLOAD_POLL_INTERVAL = 2000;
+// Standard polling for other processing states
+const STANDARD_POLL_INTERVAL = 5000;
+// Max polling duration before giving up (30 seconds for uploads)
+const MAX_UPLOAD_POLL_DURATION = 30000;
 
 export default function SessionReview() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -176,16 +180,29 @@ export default function SessionReview() {
     }
   }, [sessionId, user]);
 
-  // Poll for cloud session status when processing
+  // Poll for cloud session status when processing (faster for uploads)
   useEffect(() => {
     if (!session || !sessionId) return;
     
-    const isCloudProcessing = CLOUD_PROCESSING_STATUSES.includes(session.status || "");
+    // Cast to string to handle statuses not in the type definition (e.g., "uploading" from desktop)
+    const currentStatus = String(session.status || "");
+    const isCloudProcessing = CLOUD_PROCESSING_STATUSES.includes(currentStatus);
     if (!isCloudProcessing) return;
 
-    console.log("[SessionReview] Cloud session is processing, starting poll...");
+    const isUploading = currentStatus === "uploading";
+    const pollInterval = isUploading ? UPLOAD_POLL_INTERVAL : STANDARD_POLL_INTERVAL;
+    const startTime = Date.now();
+
+    console.log(`[SessionReview] Cloud session is ${currentStatus}, starting poll every ${pollInterval}ms...`);
     
-    const pollInterval = setInterval(async () => {
+    const intervalId = setInterval(async () => {
+      // Check if we've exceeded max poll duration for uploads
+      if (isUploading && (Date.now() - startTime) > MAX_UPLOAD_POLL_DURATION) {
+        console.log("[SessionReview] Upload poll timeout reached, stopping poll");
+        clearInterval(intervalId);
+        return;
+      }
+
       try {
         const { data: updatedSession } = await supabase
           .from("capture_sessions")
@@ -193,17 +210,18 @@ export default function SessionReview() {
           .eq("id", sessionId)
           .single();
         
-        if (updatedSession && !CLOUD_PROCESSING_STATUSES.includes(updatedSession.status || "")) {
+        const newStatus = String(updatedSession?.status || "");
+        if (updatedSession && !CLOUD_PROCESSING_STATUSES.includes(newStatus)) {
           console.log("[SessionReview] Cloud session ready, reloading data...");
-          clearInterval(pollInterval);
+          clearInterval(intervalId);
           loadSessionData();
         }
       } catch (error) {
         console.warn("[SessionReview] Poll error:", error);
       }
-    }, CLOUD_PROCESSING_POLL_INTERVAL);
+    }, pollInterval);
 
-    return () => clearInterval(pollInterval);
+    return () => clearInterval(intervalId);
   }, [session?.status, sessionId]);
 
   // Scroll to media panel when opened from URL param
