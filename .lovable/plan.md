@@ -1,102 +1,84 @@
 
+# Window Picker Real Preview Thumbnails
 
-## Make Vantage Files Visible in Dropbox
+## Overview
+Update the WindowPickerGrid component to properly display real window preview thumbnails from Electron's `listSources` API while maintaining Vantage styling and adding performance optimizations.
 
-### Overview
-Update the Dropbox sync to use human-readable filenames that include the session title, making files easily identifiable in Dropbox.
+## Current Architecture
+- `WindowPickerGrid.tsx` already has conditional thumbnail rendering (line 79-98)
+- Electron provides `thumbnailDataUrl` (data:image/png;base64,...) via the bridge
+- Sources are adapted in `usePopoverState.ts` and passed as `MockWindow[]`
 
-### Current State
-Files upload to `/Apps/Vantage/Recordings/{session_id}.webm` where `session_id` is a UUID like `a1b2c3d4-e5f6-7890-abcd-ef1234567890.webm`. This makes files difficult to identify in Dropbox.
+## Implementation Changes
 
-### Changes Required
+### 1. Update WindowPickerGrid.tsx
 
-#### 1. Update Filename Format
+**Enhance thumbnail rendering (lines 79-98):**
+- Add `loading="lazy"` and `decoding="async"` attributes for performance
+- Add a dark gradient overlay for text legibility over the thumbnail
+- Implement error handling with `onError` to fall back to placeholder on load failure
+- Maintain `object-fit: cover` for proper scaling without stretch/overflow
 
-Generate user-friendly filenames using the session title:
+**Changes:**
+```text
+File: src/components/desktop/WindowPickerGrid.tsx
 
-```
-/Apps/Vantage/Recordings/{sanitized_title}_{short_id}.webm
-```
-
-**Example:**
-- Session title: "Ranked Match - Diamond"
-- Result: `Ranked_Match_-_Diamond_a1b2c3d4.webm`
-
-The short ID suffix ensures uniqueness if titles are duplicated.
-
-#### 2. Sanitize Filenames
-
-Add a helper function to create valid Dropbox filenames:
-- Replace spaces with underscores
-- Remove or replace special characters not allowed in filenames
-- Limit length to avoid path limits
-- Preserve readability
-
-#### 3. Update Both Sync Endpoints
-
-Modify the filename generation in:
-- `handleAutoSync` (background auto-sync after recording)
-- `handleSync` (manual sync trigger)
-
-Both already query the session title - just need to use it in the path.
-
----
-
-### File Changes
-
-| File | Changes |
-|------|---------|
-| `supabase/functions/dropbox-sync/index.ts` | Add filename sanitizer, update path generation to use title + short ID |
-
----
-
-### Technical Details
-
-#### Filename Sanitization Function
-
-```typescript
-function sanitizeFilename(title: string, sessionId: string): string {
-  // Sanitize title: replace invalid chars, limit length
-  const sanitized = title
-    .replace(/[<>:"/\\|?*]/g, "") // Remove invalid chars
-    .replace(/\s+/g, "_")         // Replace spaces with underscores
-    .slice(0, 80);                // Limit length
-  
-  // Use first 8 chars of UUID for uniqueness
-  const shortId = sessionId.split("-")[0];
-  
-  return `${sanitized}_${shortId}`;
-}
+- Add useState for tracking failed image loads
+- Update img element with:
+  - loading="lazy" 
+  - decoding="async"
+  - onError handler to mark as failed
+- Add dark gradient overlay (from transparent to ~40% black at bottom)
+- Fall back to placeholder UI when thumbnail fails to load
 ```
 
-#### Updated Path Generation
+### 2. Technical Details
 
-```typescript
-// Before
-const dropboxPath = `/Apps/Vantage/Recordings/${sessionId}.webm`;
-
-// After
-const filename = sanitizeFilename(session?.title || "Recording", sessionId);
-const dropboxPath = `/Apps/Vantage/Recordings/${filename}.webm`;
+**Image element improvements:**
+```tsx
+<img
+  src={window.thumbnail}
+  alt={`Preview of ${window.name}`}
+  className="absolute inset-0 w-full h-full object-cover"
+  loading="lazy"
+  decoding="async"
+  draggable={false}
+  onError={() => handleImageError(window.id)}
+/>
 ```
 
----
+**Dark gradient overlay for legibility:**
+```tsx
+{/* Dark gradient for label legibility */}
+<div 
+  className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"
+  aria-hidden="true"
+/>
+```
 
-### Result Examples
+**Error state tracking:**
+```tsx
+const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
 
-| Session Title | UUID | Dropbox Filename |
-|---------------|------|------------------|
-| "Ranked Match - Diamond" | `a1b2c3d4-...` | `Ranked_Match_-_Diamond_a1b2c3d4.webm` |
-| "Session 1/30/2026" | `b2c3d4e5-...` | `Session_1302026_b2c3d4e5.webm` |
-| "Quick Test" | `c3d4e5f6-...` | `Quick_Test_c3d4e5f6.webm` |
+const handleImageError = useCallback((windowId: string) => {
+  setFailedThumbnails(prev => new Set(prev).add(windowId));
+}, []);
 
----
+// In render: check !failedThumbnails.has(window.id) before showing thumbnail
+```
 
-### Behavior
+### 3. Preserved Styling
+- Rounded corners (`rounded-xl`)
+- Selection border + checkmark (vantage-green ring and Check icon)
+- Title label strip at bottom (`bg-white/[0.04]`)
+- Hover states
 
-- Files appear in: `Dropbox > Apps > Vantage > Recordings`
-- Filenames are human-readable with the session title
-- Short ID suffix ensures uniqueness
-- Files are not hidden or obfuscated
-- Files are not renamed post-upload (name is set once during initial sync)
+## Visual Outcome
+| State | Rendering |
+|-------|-----------|
+| Thumbnail exists + loads successfully | Real window preview with dark gradient overlay |
+| Thumbnail exists + fails to load | Placeholder tile (app initial) |
+| No thumbnail | Placeholder tile (app initial) |
 
+## Files Modified
+1. `src/components/desktop/WindowPickerGrid.tsx` - Enhanced thumbnail rendering with lazy loading, gradient overlay, and error handling
