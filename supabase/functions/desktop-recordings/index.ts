@@ -50,6 +50,7 @@ interface InitRecordingResponse {
 
 interface CompleteRecordingRequest {
   sessionId: string;
+  bucket: string;
   storageKey: string;
 }
 
@@ -271,7 +272,7 @@ async function handleCompleteWithBody(
   supabaseAdmin: AnySupabaseClient,
   userId: string
 ) {
-  const { sessionId, storageKey: inputStorageKey } = body;
+  const { sessionId, bucket: inputBucket, storageKey: inputStorageKey } = body;
 
   if (!sessionId) {
     return new Response(
@@ -286,6 +287,12 @@ async function handleCompleteWithBody(
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
+
+  // Use provided bucket or default to "video-assets"
+  const bucketName = inputBucket || "video-assets";
+  const storageKey = inputStorageKey;
+
+  console.log(`[desktop-recordings] Complete request - sessionId: ${sessionId}, bucket: ${bucketName}, storageKey: ${storageKey}, user: ${userId}`);
 
   console.log(`[desktop-recordings] Complete request - sessionId: ${sessionId}, storageKey: ${inputStorageKey}, user: ${userId}`);
 
@@ -330,13 +337,10 @@ async function handleCompleteWithBody(
   const metadata = session.metadata as Record<string, unknown> || {};
   const expectedStorageKey = metadata.storage_key as string;
   
-  if (expectedStorageKey && expectedStorageKey !== inputStorageKey) {
-    console.warn(`[desktop-recordings] Storage key mismatch: expected ${expectedStorageKey}, got ${inputStorageKey}`);
+  if (expectedStorageKey && expectedStorageKey !== storageKey) {
+    console.warn(`[desktop-recordings] Storage key mismatch: expected ${expectedStorageKey}, got ${storageKey}`);
     // Use the provided storageKey anyway - client knows what they uploaded
   }
-
-  const storageKey = inputStorageKey;
-  const bucketName = "video-assets";
 
   // Verify file exists in storage (best-effort)
   // For storageKey format: <sessionId>/recording.webm
@@ -404,7 +408,7 @@ async function handleCompleteWithBody(
     // Don't fail - session can still be marked ready
   }
 
-  // Update session to ready with videoStorageKey and videoUrl
+  // Update session to ready with videoBucket, videoKey, and videoUrl
   const { error: updateError } = await supabase
     .from("capture_sessions")
     .update({
@@ -413,6 +417,8 @@ async function handleCompleteWithBody(
       metadata: {
         ...metadata,
         storage_key: storageKey,
+        video_bucket: bucketName,
+        video_key: storageKey,
         video_storage_key: storageKey,
         upload_completed_at: new Date().toISOString(),
         video_asset_id: videoAsset?.id,
