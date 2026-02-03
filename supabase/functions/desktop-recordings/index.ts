@@ -163,16 +163,25 @@ async function handleInitWithBody(
     sourceName,
   } = body;
 
+  // Log incoming request for debugging
+  console.log(`[desktop-recordings] Init request body:`, JSON.stringify(body).slice(0, 200));
+  console.log(`[desktop-recordings] Init for user: ${userId}`);
+
   // Validate required fields
   if (!filename || !mimeType || typeof sizeBytes !== "number" || typeof durationSeconds !== "number") {
-    console.error("[desktop-recordings] Init validation failed - missing required fields");
+    console.error("[desktop-recordings] Init validation failed - missing required fields", { filename, mimeType, sizeBytes, durationSeconds });
     return new Response(
-      JSON.stringify({ error: "Missing required fields: filename, mimeType, sizeBytes, durationSeconds" }),
+      JSON.stringify({ 
+        error: { 
+          code: "VALIDATION_ERROR", 
+          message: "Missing required fields: filename, mimeType, sizeBytes, durationSeconds" 
+        } 
+      }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  console.log(`[desktop-recordings] Init request - user: ${userId}, file: ${filename}, size: ${sizeBytes}, duration: ${durationSeconds}s, source: ${sourceName || 'none'}`);
+  console.log(`[desktop-recordings] Init validated - user: ${userId}, file: ${filename}, size: ${sizeBytes}, duration: ${durationSeconds}s, source: ${sourceName || 'none'}`);
 
   // Generate session ID and storage key
   // Format: <sessionId>/recording.webm (simpler, sessionId is already unique)
@@ -211,11 +220,22 @@ async function handleInitWithBody(
 
   if (sessionError) {
     console.error("[desktop-recordings] Failed to create session:", sessionError);
+    // Return specific error code based on error type
+    const statusCode = sessionError.code === "23514" ? 400 : 500;
+    const errorCode = sessionError.code === "23514" ? "INVALID_STATUS" : "DB_ERROR";
     return new Response(
-      JSON.stringify({ error: "Failed to create session" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ 
+        error: { 
+          code: errorCode, 
+          message: `Failed to create session: ${sessionError.message}`,
+          details: sessionError.code
+        } 
+      }),
+      { status: statusCode, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
+
+  console.log(`[desktop-recordings] Session created: ${sessionId}`);
 
   // Generate signed upload URL using service role
   console.log(`[desktop-recordings] Creating signed upload URL for bucket: ${bucketName}, key: ${storageKey}`);
@@ -229,7 +249,13 @@ async function handleInitWithBody(
     // Clean up the session
     await supabase.from("capture_sessions").delete().eq("id", sessionId);
     return new Response(
-      JSON.stringify({ error: "Failed to generate upload URL", details: signedUrlError?.message }),
+      JSON.stringify({ 
+        error: { 
+          code: "STORAGE_ERROR", 
+          message: "Failed to generate upload URL",
+          details: signedUrlError?.message 
+        } 
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
