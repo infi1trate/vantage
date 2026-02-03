@@ -21,6 +21,8 @@ export interface VantageState {
   uploadProgress?: number;
   error?: { code: string; message: string };
   selectedSource?: VantageSource | null;
+  cameraEnabled?: boolean;
+  micEnabled?: boolean;
 }
 
 export interface VantageBridge {
@@ -31,6 +33,8 @@ export interface VantageBridge {
   pauseRecording: () => Promise<void>;
   resumeRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
+  setCameraEnabled: (enabled: boolean) => Promise<void>;
+  setMicEnabled: (enabled: boolean) => Promise<void>;
   onState: (callback: (state: VantageState) => void) => () => void;
 }
 
@@ -202,6 +206,48 @@ export async function stopRecording(): Promise<boolean> {
   } catch (error) {
     console.error("[DesktopBridge] stopRecording failed:", error);
     return false;
+  }
+}
+
+/**
+ * Set camera enabled state via Electron
+ * Returns false if not in Electron context
+ */
+export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
+  const bridge = getBridge();
+  if (!bridge) {
+    console.log("[DesktopBridge] No Electron context, setCameraEnabled skipped");
+    return false;
+  }
+  
+  try {
+    await bridge.setCameraEnabled(enabled);
+    console.log("[DesktopBridge] Camera enabled:", enabled);
+    return true;
+  } catch (error) {
+    console.error("[DesktopBridge] setCameraEnabled failed:", error);
+    throw error; // Re-throw to allow caller to handle permission errors
+  }
+}
+
+/**
+ * Set microphone enabled state via Electron
+ * Returns false if not in Electron context
+ */
+export async function setMicEnabled(enabled: boolean): Promise<boolean> {
+  const bridge = getBridge();
+  if (!bridge) {
+    console.log("[DesktopBridge] No Electron context, setMicEnabled skipped");
+    return false;
+  }
+  
+  try {
+    await bridge.setMicEnabled(enabled);
+    console.log("[DesktopBridge] Mic enabled:", enabled);
+    return true;
+  } catch (error) {
+    console.error("[DesktopBridge] setMicEnabled failed:", error);
+    throw error; // Re-throw to allow caller to handle permission errors
   }
 }
 
