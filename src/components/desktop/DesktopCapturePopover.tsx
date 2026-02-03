@@ -74,8 +74,9 @@ export function DesktopCapturePopover({
     );
   }
 
-  // ============= POST-RECORDING STATES (processing, uploading, success, error) =============
-  if (popover.state === "processing" || popover.state === "uploading" || popover.state === "success" || (popover.state === "error" && popover.postRecordingPhase !== null)) {
+  // ============= POST-RECORDING STATES (processing, uploading, error) =============
+  // Note: success state removed - Electron opens web app automatically after upload
+  if (popover.state === "processing" || popover.state === "uploading" || (popover.state === "error" && popover.postRecordingPhase !== null)) {
     const phase = popover.postRecordingPhase || "processing";
     
     return (
