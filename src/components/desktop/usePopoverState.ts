@@ -3,6 +3,10 @@
  * 
  * State machine hook for the desktop capture popover.
  * Manages all states and transitions with mock functionality.
+ * 
+ * When running in Electron (window.vantage exists), actions delegate
+ * to the bridge and state is driven from Electron via onState.
+ * In browser, falls back to existing stubbed behavior.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -18,6 +22,17 @@ import {
   MOCK_CAMERAS,
   RECORDING_LIMIT_SECONDS,
 } from "./types";
+import {
+  isElectronContext,
+  subscribeToState as bridgeSubscribe,
+  startRecording as bridgeStartRecording,
+  pauseRecording as bridgePauseRecording,
+  resumeRecording as bridgeResumeRecording,
+  stopRecording as bridgeStopRecording,
+  selectSource as bridgeSelectSource,
+  ping as bridgePing,
+  type VantageState,
+} from "@/lib/desktopBridge";
 
 // Extended state to include source picker, authorizing, and post-recording states
 type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizing" | "uploading" | "success";
@@ -97,6 +112,9 @@ interface UsePopoverStateOptions {
 export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopoverStateReturn {
   const { startAuthenticated = false } = options;
   
+  // Track if we're in Electron context
+  const [isElectron, setIsElectron] = useState(false);
+  
   // Core state - start authenticated goes straight to idle
   const [state, setState] = useState<ExtendedPopoverState>(
     startAuthenticated ? "idle" : "unauthorized"
@@ -129,6 +147,74 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const uploadIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check for Electron context on mount and subscribe to state
+  useEffect(() => {
+    const inElectron = isElectronContext();
+    setIsElectron(inElectron);
+    
+    if (inElectron) {
+      console.log("[usePopoverState] Running in Electron context");
+      
+      // Ping to verify connection
+      bridgePing().then((result) => {
+        if (result) {
+          console.log("[usePopoverState] Electron bridge version:", result.version);
+        }
+      });
+      
+      // Subscribe to state updates from Electron
+      const unsubscribe = bridgeSubscribe((electronState: VantageState) => {
+        console.log("[usePopoverState] Electron state update:", electronState);
+        
+        // Map Electron state to popover state
+        setState(electronState.state);
+        
+        if (electronState.duration !== undefined) {
+          setDuration(electronState.duration);
+        }
+        if (electronState.countdown !== undefined) {
+          setCountdown(electronState.countdown);
+        }
+        if (electronState.uploadProgress !== undefined) {
+          setUploadProgress(electronState.uploadProgress);
+        }
+        if (electronState.error) {
+          // Map Electron error codes to our known types, default to "unknown"
+          const knownCodes = ["permission_denied", "source_lost", "upload_failed", "unknown"] as const;
+          const errorCode = knownCodes.includes(electronState.error.code as typeof knownCodes[number])
+            ? (electronState.error.code as PopoverError["code"])
+            : "unknown";
+          
+          setError({
+            code: errorCode,
+            message: electronState.error.message,
+            recoverable: true,
+          });
+        } else {
+          setError(null);
+        }
+        
+        // Update paused state
+        setIsPaused(electronState.state === "paused");
+        
+        // Update post-recording phase
+        if (["processing", "uploading", "success", "error"].includes(electronState.state)) {
+          setPostRecordingPhase(electronState.state as PostRecordingPhase);
+        } else {
+          setPostRecordingPhase(null);
+        }
+      });
+      
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
+    } else {
+      console.log("[usePopoverState] Running in browser context (stubbed)");
+    }
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -213,7 +299,7 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
   }, []);
 
   // Select specific window
-  const selectWindow = useCallback((window: MockWindow) => {
+  const selectWindow = useCallback(async (window: MockWindow) => {
     setSelectedWindow(window);
     setConfig(prev => ({
       ...prev,
@@ -224,10 +310,24 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
       },
     }));
     setState("idle");
-  }, []);
+    
+    // If in Electron, also notify the bridge
+    if (isElectron) {
+      console.log("[usePopoverState] Calling bridge.selectSource:", window.id);
+      await bridgeSelectSource(window.id);
+    }
+  }, [isElectron]);
 
   // Start recording with countdown
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async () => {
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      console.log("[usePopoverState] Calling bridge.startRecording");
+      await bridgeStartRecording();
+      return;
+    }
+    
+    // Browser stub: local countdown and state machine
     setCountdown(3);
     setState("countdown");
     
@@ -253,27 +353,51 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
         return prev - 1;
       });
     }, 1000);
-  }, []);
+  }, [isElectron]);
 
   // Pause recording
-  const pauseRecording = useCallback(() => {
+  const pauseRecording = useCallback(async () => {
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      console.log("[usePopoverState] Calling bridge.pauseRecording");
+      await bridgePauseRecording();
+      return;
+    }
+    
+    // Browser stub
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
       durationIntervalRef.current = null;
     }
     setIsPaused(true);
-  }, []);
+  }, [isElectron]);
 
   // Resume recording
-  const resumeRecording = useCallback(() => {
+  const resumeRecording = useCallback(async () => {
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      console.log("[usePopoverState] Calling bridge.resumeRecording");
+      await bridgeResumeRecording();
+      return;
+    }
+    
+    // Browser stub
     setIsPaused(false);
     durationIntervalRef.current = setInterval(() => {
       setDuration(d => d + 1);
     }, 1000);
-  }, []);
+  }, [isElectron]);
 
   // Stop recording - starts post-recording flow
-  const stopRecording = useCallback(() => {
+  const stopRecording = useCallback(async () => {
+    // If in Electron, delegate to bridge
+    if (isElectron) {
+      console.log("[usePopoverState] Calling bridge.stopRecording");
+      await bridgeStopRecording();
+      return;
+    }
+    
+    // Browser stub: clean up intervals and start post-recording flow
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
       durationIntervalRef.current = null;
@@ -325,7 +449,7 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
         }
       }, 200);
     }, 1500);
-  }, [forceUploadError]);
+  }, [isElectron, forceUploadError]);
 
   // Retry after error
   const retry = useCallback(() => {
