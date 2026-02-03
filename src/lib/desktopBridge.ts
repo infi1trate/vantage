@@ -36,6 +36,8 @@ export interface VantageBridge {
   setCameraEnabled: (enabled: boolean) => Promise<void>;
   setMicEnabled: (enabled: boolean) => Promise<void>;
   onState: (callback: (state: VantageState) => void) => () => void;
+  quit?: () => Promise<void>;
+  openExternal?: (url: string) => Promise<void>;
 }
 
 // Extend Window interface for TypeScript
@@ -271,5 +273,50 @@ export function subscribeToState(
   } catch (error) {
     console.error("[DesktopBridge] subscribeToState failed:", error);
     return null;
+  }
+}
+
+/**
+ * Quit the Electron app
+ * Returns false if not in Electron context or quit not available
+ */
+export async function quit(): Promise<boolean> {
+  const bridge = getBridge();
+  if (!bridge?.quit) {
+    console.log("[DesktopBridge] No Electron context or quit not available");
+    return false;
+  }
+  
+  try {
+    await bridge.quit();
+    console.log("[DesktopBridge] Quit requested");
+    return true;
+  } catch (error) {
+    console.error("[DesktopBridge] quit failed:", error);
+    return false;
+  }
+}
+
+/**
+ * Open a URL in the system default browser
+ * Falls back to window.open if not in Electron context
+ */
+export async function openExternal(url: string): Promise<boolean> {
+  const bridge = getBridge();
+  if (!bridge?.openExternal) {
+    console.log("[DesktopBridge] No Electron context, using window.open");
+    window.open(url, "_blank", "noopener,noreferrer");
+    return true;
+  }
+  
+  try {
+    await bridge.openExternal(url);
+    console.log("[DesktopBridge] Opened external URL:", url);
+    return true;
+  } catch (error) {
+    console.error("[DesktopBridge] openExternal failed:", error);
+    // Fallback to window.open
+    window.open(url, "_blank", "noopener,noreferrer");
+    return true;
   }
 }

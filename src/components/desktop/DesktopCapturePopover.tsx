@@ -207,6 +207,7 @@ export function DesktopCapturePopover({
           onStartRecording={popover.startRecording}
           canStartRecording={popover.canStartRecording}
           username={popover.username}
+          email={popover.email}
           onSignOut={popover.signOut}
           forceUploadError={popover.forceUploadError}
           onForceUploadErrorChange={popover.setForceUploadError}

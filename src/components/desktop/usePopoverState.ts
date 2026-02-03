@@ -48,11 +48,11 @@ type ExtendedPopoverState = PopoverState | "selecting_source_type" | "authorizin
 // Note: "success" removed - we return to idle after upload completes
 export type PostRecordingPhase = "processing" | "uploading" | "error";
 
-// Mock user for account display
-export const MOCK_USER = {
-  username: "jacob.turner",
-  email: "jacob@vantage.gg",
-};
+// User info interface
+export interface DesktopUserInfo {
+  username: string;
+  email: string;
+}
 
 export interface UsePopoverStateReturn {
   // Current state
@@ -78,6 +78,7 @@ export interface UsePopoverStateReturn {
   
   // Auth
   username: string;
+  email: string;
   
   // Settings
   forceUploadError: boolean;
@@ -119,10 +120,14 @@ export interface UsePopoverStateReturn {
 interface UsePopoverStateOptions {
   /** If true, start in idle state (authenticated context) instead of unauthorized */
   startAuthenticated?: boolean;
+  /** User info from auth context */
+  user?: DesktopUserInfo;
+  /** Callback to sign out via auth context */
+  onSignOut?: () => Promise<void>;
 }
 
 export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopoverStateReturn {
-  const { startAuthenticated = false } = options;
+  const { startAuthenticated = false, user, onSignOut } = options;
   
   // Track if we're in Electron context
   const [isElectron, setIsElectron] = useState(false);
@@ -288,16 +293,22 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
     }, 1500);
   }, []);
 
-  // Sign out
-  const signOut = useCallback(() => {
+  // Sign out - calls provided callback and resets state
+  const signOut = useCallback(async () => {
     if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     
     setDuration(0);
     setIsPaused(false);
     setCountdown(null);
+    
+    // Call the provided sign out callback (which should handle Supabase signOut)
+    if (onSignOut) {
+      await onSignOut();
+    }
+    
     setState("unauthorized");
-  }, []);
+  }, [onSignOut]);
 
   // Select capture source
   const selectSource = useCallback((source: CaptureSource) => {
@@ -697,7 +708,8 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
     selectedWindow,
     availableSources,
     isLoadingSources,
-    username: MOCK_USER.username,
+    username: user?.username || user?.email?.split("@")[0] || "User",
+    email: user?.email || "",
     forceUploadError,
     setForceUploadError,
     authorize,

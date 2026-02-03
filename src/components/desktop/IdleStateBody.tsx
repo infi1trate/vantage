@@ -37,6 +37,7 @@ interface IdleStateBodyProps {
   canStartRecording: boolean;
   // Account
   username: string;
+  email?: string;
   onSignOut: () => void;
   // Settings
   forceUploadError: boolean;
@@ -88,6 +89,7 @@ export function IdleStateBody({
   onStartRecording,
   canStartRecording,
   username,
+  email,
   onSignOut,
   forceUploadError,
   onForceUploadErrorChange,
@@ -381,6 +383,7 @@ export function IdleStateBody({
               </button>
             }
             username={username}
+            email={email}
             onSignOut={onSignOut}
             forceUploadError={forceUploadError}
             onForceUploadErrorChange={onForceUploadErrorChange}
