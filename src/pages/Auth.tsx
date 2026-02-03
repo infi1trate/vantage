@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { signIn, signUp } from "@/lib/auth";
 import { lovable } from "@/integrations/lovable";
@@ -19,8 +19,12 @@ const authSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
+// Safe redirect destinations (prevent open redirects)
+const ALLOWED_RETURN_PATHS = ["/desktop", "/dashboard", "/library", "/settings", "/capture"];
+
 export default function Auth() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   
   const [email, setEmail] = useState("");
@@ -32,12 +36,21 @@ export default function Auth() {
   const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
   const [showPhoneSignIn, setShowPhoneSignIn] = useState(false);
 
+  // Get returnTo from query params with validation
+  const returnTo = useMemo(() => {
+    const param = searchParams.get("returnTo");
+    if (param && ALLOWED_RETURN_PATHS.some(path => param.startsWith(path))) {
+      return param;
+    }
+    return "/dashboard"; // Default fallback
+  }, [searchParams]);
+
   // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && user) {
-      navigate("/dashboard", { replace: true });
+      navigate(returnTo, { replace: true });
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, returnTo]);
 
   const validateForm = () => {
     const result = authSchema.safeParse({ email, password });
@@ -89,7 +102,7 @@ export default function Auth() {
     try {
       await signIn(email, password);
       toast.success("Welcome back!");
-      navigate("/dashboard");
+      navigate(returnTo);
     } catch (error: any) {
       console.error("Sign in error:", error);
       if (error.message?.includes("Invalid login credentials")) {
@@ -180,7 +193,7 @@ export default function Auth() {
                       ← Back to email
                     </button>
                     <PhoneSignIn 
-                      onSuccess={() => navigate("/dashboard")} 
+                      onSuccess={() => navigate(returnTo)} 
                       disabled={loading}
                     />
                   </div>
@@ -321,7 +334,7 @@ export default function Auth() {
                       ← Back to email
                     </button>
                     <PhoneSignIn 
-                      onSuccess={() => navigate("/dashboard")} 
+                      onSuccess={() => navigate(returnTo)} 
                       disabled={loading}
                     />
                   </div>

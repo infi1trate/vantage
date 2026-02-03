@@ -2,15 +2,54 @@
  * Desktop Capture Popover Page
  * 
  * Renders the desktop capture popover as a real menubar-style UI.
- * No preview wrapper — just the popover itself.
+ * Requires authentication — redirects to /auth if not logged in.
  */
 
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { DesktopCapturePopover, HUDMini, usePopoverState } from "@/components/desktop";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2 } from "lucide-react";
 
 export default function DesktopPage() {
-  const popover = usePopoverState();
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/auth?returnTo=/desktop", { replace: true });
+    }
+  }, [user, authLoading, navigate]);
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen bg-[#0a0a0b] flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Not authenticated — will redirect
+  if (!user) {
+    return (
+      <div className="h-screen w-screen bg-[#0a0a0b] flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Authenticated — render popover
+  return <AuthenticatedDesktopView />;
+}
+
+/** Separate component to ensure usePopoverState only runs when authenticated */
+function AuthenticatedDesktopView() {
+  // Start popover in idle state (authenticated context)
+  const popover = usePopoverState({ startAuthenticated: true });
   const isRecording = popover.state === "recording" || popover.state === "paused";
 
   return (
