@@ -179,7 +179,11 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
         console.log("[usePopoverState] Electron state update:", electronState);
         
         // Map Electron state to popover state
-        setState(electronState.state);
+        // "picking_source" from Electron maps to "selecting_source" in UI
+        const mappedState = electronState.state === "picking_source" 
+          ? "selecting_source" 
+          : electronState.state;
+        setState(mappedState as ExtendedPopoverState);
         
         if (electronState.duration !== undefined) {
           setDuration(electronState.duration);
@@ -204,6 +208,16 @@ export function usePopoverState(options: UsePopoverStateOptions = {}): UsePopove
           });
         } else {
           setError(null);
+        }
+        
+        // Update selected source from Electron
+        if (electronState.selectedSource) {
+          setSelectedWindow({
+            id: electronState.selectedSource.id,
+            name: electronState.selectedSource.name,
+            appName: electronState.selectedSource.name.split(' – ')[0] || electronState.selectedSource.name,
+            thumbnail: electronState.selectedSource.thumbnail || '',
+          });
         }
         
         // Update paused state
