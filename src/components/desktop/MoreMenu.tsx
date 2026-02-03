@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { 
   LogOut, 
@@ -12,9 +13,6 @@ import {
   HelpCircle, 
   User, 
   Video, 
-  Bell, 
-  Sparkles, 
-  Rocket, 
   Info, 
   Power 
 } from "lucide-react";
@@ -28,11 +26,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SettingsModal } from "./SettingsModal";
 import { QuitConfirmDialog } from "./QuitConfirmDialog";
-import { QuickStartSheet } from "./QuickStartSheet";
+import { AboutModal } from "./AboutModal";
+import { 
+  isElectronContext, 
+  openExternal as bridgeOpenExternal,
+  quit as bridgeQuit,
+} from "@/lib/desktopBridge";
 
 interface MoreMenuProps {
   trigger: React.ReactNode;
   username: string;
+  email?: string;
   onSignOut: () => void;
   forceUploadError: boolean;
   onForceUploadErrorChange: (value: boolean) => void;
@@ -41,17 +45,59 @@ interface MoreMenuProps {
 export function MoreMenu({
   trigger,
   username,
+  email,
   onSignOut,
   forceUploadError,
   onForceUploadErrorChange,
 }: MoreMenuProps) {
+  const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quitOpen, setQuitOpen] = useState(false);
-  const [quickStartOpen, setQuickStartOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Handle Settings click - open in system browser if Electron, otherwise navigate
+  const handleSettingsClick = () => {
+    setMenuOpen(false);
+    if (isElectronContext()) {
+      bridgeOpenExternal("https://getvantage.lovable.app/settings");
+    } else {
+      navigate("/settings");
+    }
+  };
+
+  // Handle Help click - always open in system browser
+  const handleHelpClick = () => {
+    setMenuOpen(false);
+    if (isElectronContext()) {
+      bridgeOpenExternal("https://getvantage.lovable.app/help");
+    } else {
+      window.open("https://getvantage.lovable.app/help", "_blank", "noopener,noreferrer");
+    }
+  };
+
+  // Handle About click
+  const handleAboutClick = () => {
+    setMenuOpen(false);
+    setAboutOpen(true);
+  };
+
+  // Handle Quit - if Electron quit exists, call it; otherwise just close menu
+  const handleQuitConfirm = async () => {
+    setQuitOpen(false);
+    const didQuit = await bridgeQuit();
+    if (!didQuit) {
+      // Not in Electron or quit not available - just close the menu
+      setMenuOpen(false);
+    }
+  };
+
+  // Display name: prefer username, fallback to email prefix
+  const displayName = username || (email ? email.split("@")[0] : "User");
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           {trigger}
         </DropdownMenuTrigger>
@@ -72,7 +118,7 @@ export function MoreMenu({
                   Connected as
                 </p>
                 <p className="text-sm font-medium text-foreground truncate">
-                  {username}
+                  {displayName}
                 </p>
               </div>
             </div>
@@ -94,45 +140,18 @@ export function MoreMenu({
           
           {/* Settings */}
           <DropdownMenuItem 
-            onClick={() => setSettingsOpen(true)}
+            onClick={handleSettingsClick}
             className="text-xs cursor-pointer"
           >
             <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
             Settings
           </DropdownMenuItem>
           
-          {/* Notifications */}
-          <DropdownMenuItem 
-            onClick={() => console.log("Notifications - stub")}
-            className="text-xs cursor-pointer"
-          >
-            <Bell className="w-4 h-4 mr-2 text-muted-foreground" />
-            Notifications
-          </DropdownMenuItem>
-          
-          {/* Updates */}
-          <DropdownMenuItem 
-            onClick={() => console.log("Updates - stub")}
-            className="text-xs cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4 mr-2 text-muted-foreground" />
-            Updates
-          </DropdownMenuItem>
-          
           <DropdownMenuSeparator className="bg-white/10" />
-          
-          {/* Quick start */}
-          <DropdownMenuItem 
-            onClick={() => setQuickStartOpen(true)}
-            className="text-xs cursor-pointer"
-          >
-            <Rocket className="w-4 h-4 mr-2 text-muted-foreground" />
-            Quick start
-          </DropdownMenuItem>
           
           {/* About */}
           <DropdownMenuItem 
-            onClick={() => console.log("About - stub")}
+            onClick={handleAboutClick}
             className="text-xs cursor-pointer"
           >
             <Info className="w-4 h-4 mr-2 text-muted-foreground" />
@@ -141,7 +160,7 @@ export function MoreMenu({
           
           {/* Help */}
           <DropdownMenuItem 
-            onClick={() => console.log("Help - stub")}
+            onClick={handleHelpClick}
             className="text-xs cursor-pointer"
           >
             <HelpCircle className="w-4 h-4 mr-2 text-muted-foreground" />
@@ -152,7 +171,10 @@ export function MoreMenu({
           
           {/* Quit */}
           <DropdownMenuItem 
-            onClick={() => setQuitOpen(true)}
+            onClick={() => {
+              setMenuOpen(false);
+              setQuitOpen(true);
+            }}
             className="text-xs cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
           >
             <Power className="w-4 h-4 mr-2" />
@@ -163,7 +185,10 @@ export function MoreMenu({
           
           {/* Sign out */}
           <DropdownMenuItem 
-            onClick={onSignOut}
+            onClick={() => {
+              setMenuOpen(false);
+              onSignOut();
+            }}
             className="text-xs cursor-pointer text-muted-foreground focus:text-foreground"
           >
             <LogOut className="w-4 h-4 mr-2" />
@@ -172,7 +197,7 @@ export function MoreMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Settings Modal */}
+      {/* Settings Modal - kept for potential future local settings */}
       <SettingsModal 
         isOpen={settingsOpen} 
         onClose={() => setSettingsOpen(false)}
@@ -184,16 +209,13 @@ export function MoreMenu({
       <QuitConfirmDialog
         open={quitOpen}
         onOpenChange={setQuitOpen}
-        onConfirm={() => {
-          console.log("Quit confirmed - stub");
-          setQuitOpen(false);
-        }}
+        onConfirm={handleQuitConfirm}
       />
 
-      {/* Quick Start Sheet */}
-      <QuickStartSheet
-        isOpen={quickStartOpen}
-        onClose={() => setQuickStartOpen(false)}
+      {/* About Modal */}
+      <AboutModal
+        isOpen={aboutOpen}
+        onClose={() => setAboutOpen(false)}
       />
     </>
   );

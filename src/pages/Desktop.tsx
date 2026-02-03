@@ -5,12 +5,13 @@
  * Requires authentication — redirects to /auth if not logged in.
  */
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { DesktopCapturePopover, HUDMini, usePopoverState } from "@/components/desktop";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function DesktopPage() {
   const navigate = useNavigate();
@@ -42,13 +43,35 @@ export default function DesktopPage() {
   }
 
   // Authenticated — render popover
-  return <AuthenticatedDesktopView />;
+  return <AuthenticatedDesktopView user={user} />;
+}
+
+interface AuthenticatedDesktopViewProps {
+  user: { id: string; email?: string };
 }
 
 /** Separate component to ensure usePopoverState only runs when authenticated */
-function AuthenticatedDesktopView() {
-  // Start popover in idle state (authenticated context)
-  const popover = usePopoverState({ startAuthenticated: true });
+function AuthenticatedDesktopView({ user }: AuthenticatedDesktopViewProps) {
+  const navigate = useNavigate();
+
+  // Sign out handler - signs out of Supabase and redirects to auth
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    navigate("/auth", { replace: true });
+  }, [navigate]);
+
+  // Extract username from email
+  const userInfo = {
+    username: user.email?.split("@")[0] || "User",
+    email: user.email || "",
+  };
+
+  // Start popover in idle state (authenticated context) with user info
+  const popover = usePopoverState({ 
+    startAuthenticated: true,
+    user: userInfo,
+    onSignOut: handleSignOut,
+  });
   const isRecording = popover.state === "recording" || popover.state === "paused";
 
   return (
