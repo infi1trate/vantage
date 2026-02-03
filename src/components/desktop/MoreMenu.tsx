@@ -12,7 +12,7 @@ import {
   Settings, 
   HelpCircle, 
   User, 
-  Video, 
+  Radio, 
   Info, 
   Power 
 } from "lucide-react";
@@ -126,13 +126,13 @@ export function MoreMenu({
           
           <DropdownMenuSeparator className="bg-white/10" />
           
-          {/* Meetings - disabled */}
+          {/* Live stream - disabled */}
           <DropdownMenuItem 
             disabled
             className="text-xs cursor-not-allowed opacity-50"
           >
-            <Video className="w-4 h-4 mr-2 text-muted-foreground" />
-            Meetings
+            <Radio className="w-4 h-4 mr-2 text-muted-foreground" />
+            Live stream
             <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">
               Soon
             </span>
