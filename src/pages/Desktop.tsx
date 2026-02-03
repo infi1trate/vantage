@@ -52,7 +52,7 @@ function AuthenticatedDesktopView() {
   const isRecording = popover.state === "recording" || popover.state === "paused";
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0a0a0b] flex justify-center pt-3 px-3 pb-3">
+    <div className="h-screen w-screen overflow-hidden bg-background flex justify-center items-start">
       {/* Container for popover + HUD - constrained to Electron dimensions */}
       <div className="relative flex">
         {/* Mini HUD - floating pill to the left during recording */}
@@ -72,12 +72,12 @@ function AuthenticatedDesktopView() {
           />
         </div>
 
-        {/* Popover - fixed Electron dimensions with internal scroll */}
+        {/* Popover - fills Electron window dimensions */}
         <div 
           className="w-[380px] max-w-[100vw]"
           style={{ 
-            height: 'min(560px, calc(100vh - 24px))',
-            maxHeight: 'calc(100vh - 24px)',
+            height: 'min(560px, 100vh)',
+            maxHeight: '100vh',
           }}
         >
           <DesktopCapturePopover externalState={popover} />
