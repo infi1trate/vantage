@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
 import { ProcessingProvider } from "@/contexts/ProcessingContext";
@@ -53,34 +53,50 @@ function withSuspense(Component: React.LazyExoticComponent<React.ComponentType<a
 
 const queryClient = new QueryClient();
 
-// Public routes (no auth required)
-// App routes (auth required - handled by individual pages)
-// Heavy routes are lazy-loaded for faster initial bundle
-const router = createBrowserRouter([
-  { path: "/", element: <Index />, errorElement: <RouteErrorFallback /> },
-  { path: "/auth", element: <Auth />, errorElement: <RouteErrorFallback /> },
-  { path: "/auth/desktop", element: <AuthDesktop />, errorElement: <RouteErrorFallback /> },
-  { path: "/extension-auth", element: <ExtensionAuth />,},
-  { path: "/dashboard", element: withSuspense(Dashboard), errorElement: <RouteErrorFallback /> },
-  { path: "/library", element: withSuspense(SessionLibrary), errorElement: <RouteErrorFallback /> },
-  { path: "/insights", element: withSuspense(Insights), errorElement: <RouteErrorFallback /> },
-  { path: "/community", element: withSuspense(Community), errorElement: <RouteErrorFallback /> },
-  { path: "/community/:postId", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
-  { path: "/community/p/:token", element: withSuspense(CommunityPost), errorElement: <RouteErrorFallback /> },
-  { path: "/capture/:sessionId", element: withSuspense(Capture), errorElement: <RouteErrorFallback /> },
-  // Canonical session route (read-only review)
-  { path: "/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
-  // Reel Editor route (editing tools)
-  { path: "/reel/:reelId", element: withSuspense(ReelEditor), errorElement: <RouteErrorFallback /> },
-  // Alias routes for extension compatibility - redirect to canonical
-  { path: "/library/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
-  { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview), errorElement: <RouteErrorFallback /> },
-  { path: "/settings", element: withSuspense(Settings), errorElement: <RouteErrorFallback /> },
-  // Desktop capture popover UI (auth-guarded, production-like)
-  { path: "/desktop", element: withSuspense(Desktop), errorElement: <RouteErrorFallback /> },
-  // Desktop capture popover preview (dev-only, no auth, with testing controls)
-  { path: "/desktop/preview", element: withSuspense(DesktopPreview), errorElement: <RouteErrorFallback /> },
-  { path: "*", element: <NotFound /> },
+// Note: Routes moved to routerWithLayout below
+
+// Layout wrapper that includes global footers within Router context
+function AppLayout() {
+  return (
+    <>
+      <Outlet />
+      {/* Background processing footer - shows active jobs */}
+      <ProcessingFooter />
+      {/* Render queue footer - shows reel assembly, export, and rendering jobs */}
+      <RenderQueueFooter />
+      {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
+      <DevPerfOverlay />
+    </>
+  );
+}
+
+// Create router with layout wrapper for global footers
+const routerWithLayout = createBrowserRouter([
+  {
+    element: <AppLayout />,
+    errorElement: <RouteErrorFallback />,
+    children: [
+      { path: "/", element: <Index /> },
+      { path: "/auth", element: <Auth /> },
+      { path: "/auth/desktop", element: <AuthDesktop /> },
+      { path: "/extension-auth", element: <ExtensionAuth /> },
+      { path: "/dashboard", element: withSuspense(Dashboard) },
+      { path: "/library", element: withSuspense(SessionLibrary) },
+      { path: "/insights", element: withSuspense(Insights) },
+      { path: "/community", element: withSuspense(Community) },
+      { path: "/community/:postId", element: withSuspense(CommunityPost) },
+      { path: "/community/p/:token", element: withSuspense(CommunityPost) },
+      { path: "/capture/:sessionId", element: withSuspense(Capture) },
+      { path: "/session/:sessionId", element: withSuspense(SessionReview) },
+      { path: "/reel/:reelId", element: withSuspense(ReelEditor) },
+      { path: "/library/session/:sessionId", element: withSuspense(SessionReview) },
+      { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview) },
+      { path: "/settings", element: withSuspense(Settings) },
+      { path: "/desktop", element: withSuspense(Desktop) },
+      { path: "/desktop/preview", element: withSuspense(DesktopPreview) },
+      { path: "*", element: <NotFound /> },
+    ],
+  },
 ]);
 
 const App = () => (
@@ -91,13 +107,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <RouterProvider router={router} />
-            {/* Background processing footer - shows active jobs */}
-            <ProcessingFooter />
-            {/* Render queue footer - shows reel assembly, export, and rendering jobs */}
-            <RenderQueueFooter />
-            {/* Dev-only performance overlay - hidden by default, toggle with Ctrl+Shift+P */}
-            <DevPerfOverlay />
+            <RouterProvider router={routerWithLayout} />
           </TooltipProvider>
         </ProcessingProvider>
       </JobsProvider>
