@@ -791,6 +791,12 @@ function ReelCreatorContent({
       return;
     }
 
+    console.log("[CreateReel] Starting reel generation", {
+      sessionId,
+      momentCount: selectedMoments.length,
+      aspectRatio,
+    });
+
     setIsGenerating(true);
     setPreparationError(null);
     
@@ -802,16 +808,20 @@ function ReelCreatorContent({
       console.log("[CreateReel] Fresh media status:", freshMediaStatus);
       
       // 1) Check current ReelSource readiness (will also see fresh data)
+      console.log("[CreateReel] Checking ReelSource readiness...");
       const readiness = await checkReelSourceReadiness(sessionId);
+      console.log("[CreateReel] Readiness result:", readiness);
       
       // 2) If ready, proceed directly
       if (readiness.isReady) {
+        console.log("[CreateReel] ReelSource ready, creating reel...");
         const reel = await createReel({
           sessionId,
           title: sessionTitle ? `${sessionTitle} Reel` : "Untitled Reel",
           aspectRatio: aspectRatio as AspectRatio,
           momentIds: Array.from(selectedIds),
         });
+        console.log("[CreateReel] Reel created successfully:", reel.id);
         onReelCreated(reel.id);
         return;
       }
@@ -842,6 +852,7 @@ function ReelCreatorContent({
           aspectRatio: aspectRatio as AspectRatio,
           momentIds: Array.from(selectedIds),
         });
+        console.log("[CreateReel] Reel created successfully after backfill:", reel.id);
         onReelCreated(reel.id);
         return;
       }
@@ -861,7 +872,16 @@ function ReelCreatorContent({
       setIsGenerating(false);
       
     } catch (error) {
-      console.error("Failed to create reel:", error);
+      console.error("[CreateReel] Failed to create reel:", error);
+      
+      // Log detailed error info for debugging
+      if (error instanceof Error) {
+        console.error("[CreateReel] Error details:", {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        });
+      }
       
       // Handle ReelSource not ready (legacy backfill failed or no video)
       if (error instanceof ReelSourceNotReadyError) {
@@ -1076,9 +1096,19 @@ export function CreateReelModal({
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
-      // No-op for now since we navigate away on create
+      // Reset transition state if modal closes unexpectedly
+      setIsTransitioning(false);
+      setPendingReelId(null);
     }
   }, [open]);
+
+  // Cleanup on unmount - ensure overlay doesn't stay stuck
+  useEffect(() => {
+    return () => {
+      setIsTransitioning(false);
+      setPendingReelId(null);
+    };
+  }, []);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
@@ -1089,6 +1119,7 @@ export function CreateReelModal({
   const [pendingReelId, setPendingReelId] = useState<string | null>(null);
 
   const handleReelCreated = useCallback((reelId: string) => {
+    console.log("[CreateReelModal] Reel created, starting transition to:", reelId);
     // Start transition overlay
     setPendingReelId(reelId);
     setIsTransitioning(true);
@@ -1098,9 +1129,20 @@ export function CreateReelModal({
 
   const handleTransitionComplete = useCallback(() => {
     if (pendingReelId) {
+      console.log("[CreateReelModal] Transition complete, navigating to:", pendingReelId);
       navigate(`/reel/${pendingReelId}`);
+    } else {
+      console.error("[CreateReelModal] Transition complete but no pending reel ID");
+      setIsTransitioning(false);
     }
   }, [pendingReelId, navigate]);
+
+  // Handle transition timeout - cleanup and let user recover
+  const handleTransitionTimeout = useCallback(() => {
+    console.error("[CreateReelModal] Transition timed out, cleaning up");
+    setIsTransitioning(false);
+    setPendingReelId(null);
+  }, []);
 
   const handleViewSessionMedia = useCallback(() => {
     onOpenChange(false);
@@ -1152,6 +1194,7 @@ export function CreateReelModal({
         <PageTransitionOverlay
           isActive={isTransitioning}
           onFadeInComplete={handleTransitionComplete}
+          onTimeout={handleTransitionTimeout}
         />
         <Drawer open={open} onOpenChange={onOpenChange}>
           <DrawerContent className="max-h-[90vh]">
@@ -1177,6 +1220,7 @@ export function CreateReelModal({
       <PageTransitionOverlay
         isActive={isTransitioning}
         onFadeInComplete={handleTransitionComplete}
+        onTimeout={handleTransitionTimeout}
       />
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-md p-0 gap-0">

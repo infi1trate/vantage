@@ -21,6 +21,7 @@ export { PreviewUnavailableBanner } from "./PreviewUnavailableBanner";
 export { ManifestPlayer } from "./ManifestPlayer";
 export { AssemblyDebugPanel } from "./AssemblyDebugPanel";
 export { CaptureTipsModal } from "./CaptureTipsModal";
+export { ReelErrorBoundary } from "./ReelErrorBoundary";
 
 // Re-export types
 export type { ReelStatus } from "./ReelEditorModeBanner";
