@@ -32,6 +32,7 @@ import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
 import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
 import { PreviewRenderingPill } from "@/components/reel/PreviewRenderingPill";
 import { ManifestPlayer } from "@/components/reel/ManifestPlayer";
+import { ReelErrorBoundary } from "@/components/reel/ReelErrorBoundary";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +49,7 @@ import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
 import { ReelStatus, PreviewStatus, retryPreviewGeneration, getEffectivePlaybackMode, hasPlaybackAvailable, GameplayVideoStatus } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
 
-export default function ReelEditor() {
+function ReelEditorContent() {
   const { reelId } = useParams<{ reelId: string }>();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -766,5 +767,16 @@ export default function ReelEditor() {
         onOpenChange={setShowCaptureTipsModal} 
       />
     </div>
+  );
+}
+
+// Default export wraps content in error boundary
+export default function ReelEditor() {
+  const { reelId } = useParams<{ reelId: string }>();
+  
+  return (
+    <ReelErrorBoundary fallbackUrl="/library">
+      <ReelEditorContent />
+    </ReelErrorBoundary>
   );
 }
