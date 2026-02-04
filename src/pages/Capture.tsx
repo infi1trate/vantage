@@ -15,6 +15,7 @@ import { CaptureErrorDisplay } from "@/components/capture/CaptureError";
 import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { StorageRecoveryScreen } from "@/components/capture/StorageRecoveryScreen";
 import { PerformanceModeBadge } from "@/components/capture/PerformanceModeBadge";
+import { CountdownOverlay } from "@/components/capture/CountdownOverlay";
 import { saveLocalSession, LocalSession, type SaveSessionResult, formatBytes } from "@/lib/localSessionStorage";
 import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
 import { markCaptureStop, setCameraPreviewActive, recordFrameTime } from "@/lib/processingTelemetry";
@@ -59,6 +60,9 @@ export default function CapturePage() {
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   
+  // Countdown overlay state
+  const [showCountdown, setShowCountdown] = useState(false);
+  
   // Preview-only mode: browser can preview but not record
   const [isPreviewOnly, setIsPreviewOnly] = useState(() => {
     return searchParams.get("mode") === "preview";
@@ -66,7 +70,6 @@ export default function CapturePage() {
   
   // Storage failure state for recovery screen
   const [storageFailure, setStorageFailure] = useState<StorageFailureState | null>(null);
-  
   // Check recording capability on mount
   const [recordingDisabledReason, setRecordingDisabledReason] = useState<string | null>(null);
   
@@ -201,12 +204,20 @@ export default function CapturePage() {
     await capture.selectSources(config);
   };
 
-  // User clicks "Start Recording" from preview_ready state
-  const handleStartRecording = async () => {
+  // User clicks "Start Recording" - show countdown overlay
+  const handleStartRecording = useCallback(() => {
     // Clear any previous inline error before attempting
     if (capture.error) {
       capture.retryFromError(); // This clears the error
     }
+    
+    // Show countdown overlay
+    setShowCountdown(true);
+  }, [capture.error, capture.retryFromError]);
+
+  // Countdown completed - actually start recording
+  const handleCountdownComplete = useCallback(async () => {
+    setShowCountdown(false);
     
     const success = await capture.startRecording();
     if (!success) {
@@ -219,7 +230,12 @@ export default function CapturePage() {
     // Request notification permission after user interaction (non-blocking)
     // This is a good moment because user has explicitly started recording
     requestNotifications().catch(() => {});
-  };
+  }, [capture.startRecording, requestNotifications]);
+
+  // Countdown cancelled
+  const handleCountdownCancel = useCallback(() => {
+    setShowCountdown(false);
+  }, []);
 
   // Dismiss inline recording error (stays in preview_ready state)
   const handleDismissInlineError = () => {
@@ -689,7 +705,14 @@ export default function CapturePage() {
             }}
           />
 
-          {/* Debug Panel - Dev mode only */}
+          {/* Countdown Overlay */}
+          <CountdownOverlay
+            isOpen={showCountdown}
+            onComplete={handleCountdownComplete}
+            onCancel={handleCountdownCancel}
+            startFrom={5}
+          />
+
           {IS_DEV && (
             <div className="mt-8">
               {!showDebug ? (
