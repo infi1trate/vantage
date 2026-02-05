@@ -308,6 +308,129 @@ export type Database = {
           },
         ]
       }
+      challenge_submissions: {
+        Row: {
+          admin_notes: string | null
+          challenge_id: string
+          clip_end_ms: number | null
+          clip_start_ms: number | null
+          created_at: string
+          description: string | null
+          id: string
+          proof_notes: string | null
+          rank: number | null
+          session_id: string | null
+          status: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          challenge_id: string
+          clip_end_ms?: number | null
+          clip_start_ms?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          proof_notes?: string | null
+          rank?: number | null
+          session_id?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          challenge_id?: string
+          clip_end_ms?: number | null
+          clip_start_ms?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          proof_notes?: string | null
+          rank?: number | null
+          session_id?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenge_submissions_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "challenges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "challenge_submissions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "capture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      challenges: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          ends_at: string | null
+          game_name: string | null
+          id: string
+          max_submissions_per_user: number | null
+          prize_description: string | null
+          rules: string | null
+          starts_at: string | null
+          status: string
+          tags: string[] | null
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          winner_announced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          ends_at?: string | null
+          game_name?: string | null
+          id?: string
+          max_submissions_per_user?: number | null
+          prize_description?: string | null
+          rules?: string | null
+          starts_at?: string | null
+          status?: string
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          winner_announced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          ends_at?: string | null
+          game_name?: string | null
+          id?: string
+          max_submissions_per_user?: number | null
+          prize_description?: string | null
+          rules?: string | null
+          starts_at?: string | null
+          status?: string
+          tags?: string[] | null
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          winner_announced_at?: string | null
+        }
+        Relationships: []
+      }
       comment_reactions: {
         Row: {
           comment_id: string
@@ -1551,6 +1674,27 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_sessions: {
         Row: {
           created_at: string
@@ -1738,10 +1882,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1868,6 +2018,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const
