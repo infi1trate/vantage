@@ -379,14 +379,21 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          difficulty: number | null
           ends_at: string | null
           game_name: string | null
           id: string
+          is_sponsored: boolean | null
           max_submissions_per_user: number | null
+          preview_video_url: string | null
+          prize_crypto: string | null
+          prize_crypto_amount: number | null
           prize_description: string | null
           rules: string | null
+          sponsor_name: string | null
           starts_at: string | null
           status: string
+          submission_count: number | null
           tags: string[] | null
           thumbnail_url: string | null
           title: string
@@ -397,14 +404,21 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          difficulty?: number | null
           ends_at?: string | null
           game_name?: string | null
           id?: string
+          is_sponsored?: boolean | null
           max_submissions_per_user?: number | null
+          preview_video_url?: string | null
+          prize_crypto?: string | null
+          prize_crypto_amount?: number | null
           prize_description?: string | null
           rules?: string | null
+          sponsor_name?: string | null
           starts_at?: string | null
           status?: string
+          submission_count?: number | null
           tags?: string[] | null
           thumbnail_url?: string | null
           title: string
@@ -415,14 +429,21 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          difficulty?: number | null
           ends_at?: string | null
           game_name?: string | null
           id?: string
+          is_sponsored?: boolean | null
           max_submissions_per_user?: number | null
+          preview_video_url?: string | null
+          prize_crypto?: string | null
+          prize_crypto_amount?: number | null
           prize_description?: string | null
           rules?: string | null
+          sponsor_name?: string | null
           starts_at?: string | null
           status?: string
+          submission_count?: number | null
           tags?: string[] | null
           thumbnail_url?: string | null
           title?: string
