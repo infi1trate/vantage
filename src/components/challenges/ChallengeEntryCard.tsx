@@ -11,7 +11,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Trophy,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ThumbsUp,
   MoreVertical,
   Flag,
@@ -20,11 +29,18 @@ import {
   Medal,
   Award,
   Clock,
+  Eye,
+  Ban,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLazyLoad } from "@/hooks/useLazyLoad";
+import { toast } from "sonner";
 
 type EntryRank = "winner" | "first" | "second" | "third" | number | null;
+type EntryStatus = "pending" | "approved" | "rejected" | "removed" | "winner";
 
 interface ChallengeEntryCardProps {
   id: string;
@@ -40,8 +56,11 @@ interface ChallengeEntryCardProps {
   voteCount: number;
   hasVoted?: boolean;
   isChallengeEnded?: boolean;
+  status?: EntryStatus;
+  isOwnEntry?: boolean;
+  rejectionReason?: string;
   onVote?: (entryId: string) => void;
-  onReport?: (entryId: string) => void;
+  onReport?: (entryId: string) => Promise<void> | void;
   onClick?: (entryId: string) => void;
 }
 
@@ -82,6 +101,35 @@ const getRankConfig = (rank: EntryRank) => {
   return null;
 };
 
+// Status configuration
+const getStatusConfig = (status: EntryStatus, isOwnEntry: boolean) => {
+  switch (status) {
+    case "pending":
+      return {
+        label: isOwnEntry ? "Pending Review" : null,
+        icon: Eye,
+        className: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 border-yellow-500/30",
+        showOverlay: false,
+      };
+    case "rejected":
+      return {
+        label: "Rejected",
+        icon: Ban,
+        className: "bg-destructive/20 text-destructive border-destructive/30",
+        showOverlay: true,
+      };
+    case "removed":
+      return {
+        label: "Removed",
+        icon: AlertTriangle,
+        className: "bg-destructive/20 text-destructive border-destructive/30",
+        showOverlay: true,
+      };
+    default:
+      return null;
+  }
+};
+
 // Format duration
 const formatDuration = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -105,6 +153,9 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
   voteCount,
   hasVoted = false,
   isChallengeEnded = false,
+  status = "approved",
+  isOwnEntry = false,
+  rejectionReason,
   onVote,
   onReport,
   onClick,
@@ -116,6 +167,8 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
   const [isHovering, setIsHovering] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [showReportDialog, setShowReportDialog] = useState(false);
+  const [isReporting, setIsReporting] = useState(false);
 
   // Lazy load video when card is in viewport
   const { ref: cardRef, isVisible, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
@@ -124,11 +177,13 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
   });
 
   const rankConfig = getRankConfig(rank);
+  const statusConfig = getStatusConfig(status, isOwnEntry);
   const isWinner = rank === "winner" || rank === "first" || rank === 1;
+  const isRejectedOrRemoved = status === "rejected" || status === "removed";
 
   // Handle video play on hover with debounce
   const handleMouseEnter = useCallback(() => {
-    if (!videoUrl || !hasBeenVisible) return;
+    if (!videoUrl || !hasBeenVisible || isRejectedOrRemoved) return;
 
     hoverTimeoutRef.current = setTimeout(() => {
       setIsHovering(true);
@@ -140,7 +195,7 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
         setIsVideoPlaying(true);
       }
     }, 200); // 200ms debounce to prevent flickering during scroll
-  }, [videoUrl, hasBeenVisible, isVideoLoaded]);
+  }, [videoUrl, hasBeenVisible, isVideoLoaded, isRejectedOrRemoved]);
 
   const handleMouseLeave = useCallback(() => {
     if (hoverTimeoutRef.current) {
@@ -175,191 +230,285 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
     if ((e.target as HTMLElement).closest("button, [role='menuitem']")) {
       return;
     }
+    // Don't allow clicking on rejected/removed entries
+    if (isRejectedOrRemoved) return;
     onClick?.(id);
   };
 
   // Handle vote
   const handleVote = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isChallengeEnded) {
+    if (!isChallengeEnded && !isRejectedOrRemoved) {
       onVote?.(id);
     }
   };
 
-  // Handle report
-  const handleReport = () => {
-    onReport?.(id);
+  // Handle report confirmation
+  const handleReportConfirm = async () => {
+    setIsReporting(true);
+    try {
+      await onReport?.(id);
+      setShowReportDialog(false);
+      toast.success("Report submitted", {
+        description: "Thank you for helping keep our community safe. We'll review this entry.",
+        icon: <CheckCircle2 className="h-4 w-4" />,
+      });
+    } catch (error) {
+      toast.error("Failed to submit report", {
+        description: "Please try again later.",
+      });
+    } finally {
+      setIsReporting(false);
+    }
   };
 
   return (
-    <div
-      ref={cardRef}
-      className={cn(
-        "group relative rounded-lg overflow-hidden border bg-card transition-all duration-200",
-        "hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5",
-        isWinner && "ring-2 ring-yellow-500/30"
-      )}
-      onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onClick?.(id)}
-    >
-      {/* Video/Thumbnail Container */}
-      <AspectRatio ratio={16 / 9} className="bg-muted">
-        {/* Thumbnail (always rendered as fallback) */}
-        {thumbnailUrl && (
-          <img
-            src={thumbnailUrl}
-            alt={title}
-            className={cn(
-              "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-              isVideoPlaying ? "opacity-0" : "opacity-100"
-            )}
-            loading="lazy"
-            decoding="async"
-          />
+    <>
+      <div
+        ref={cardRef}
+        className={cn(
+          "group relative rounded-lg overflow-hidden border bg-card transition-all duration-200",
+          !isRejectedOrRemoved && "hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5",
+          isWinner && !isRejectedOrRemoved && "ring-2 ring-yellow-500/30",
+          isRejectedOrRemoved && "opacity-60 cursor-default"
         )}
+        onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        role={isRejectedOrRemoved ? undefined : "button"}
+        tabIndex={isRejectedOrRemoved ? -1 : 0}
+        onKeyDown={(e) => e.key === "Enter" && !isRejectedOrRemoved && onClick?.(id)}
+      >
+        {/* Video/Thumbnail Container */}
+        <AspectRatio ratio={16 / 9} className="bg-muted">
+          {/* Thumbnail (always rendered as fallback) */}
+          {thumbnailUrl && (
+            <img
+              src={thumbnailUrl}
+              alt={title}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                isVideoPlaying ? "opacity-0" : "opacity-100",
+                isRejectedOrRemoved && "grayscale"
+              )}
+              loading="lazy"
+              decoding="async"
+            />
+          )}
 
-        {/* Video (lazy loaded, only when visible) */}
-        {videoUrl && hasBeenVisible && (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            className={cn(
-              "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-              isVideoPlaying ? "opacity-100" : "opacity-0"
-            )}
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            onLoadedData={handleVideoLoaded}
-          />
-        )}
+          {/* Video (lazy loaded, only when visible) */}
+          {videoUrl && hasBeenVisible && !isRejectedOrRemoved && (
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                isVideoPlaying ? "opacity-100" : "opacity-0"
+              )}
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              onLoadedData={handleVideoLoaded}
+            />
+          )}
 
-        {/* Placeholder when no thumbnail */}
-        {!thumbnailUrl && !videoUrl && (
-          <div className="absolute inset-0 flex items-center justify-center bg-muted">
-            <Play className="h-8 w-8 text-muted-foreground" />
-          </div>
-        )}
+          {/* Placeholder when no thumbnail */}
+          {!thumbnailUrl && !videoUrl && (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted">
+              <Play className="h-8 w-8 text-muted-foreground" />
+            </div>
+          )}
 
-        {/* Play indicator on hover */}
-        {isHovering && !isVideoPlaying && videoUrl && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/20">
-            <div className="h-12 w-12 rounded-full bg-background/80 flex items-center justify-center">
-              <Play className="h-5 w-5 text-foreground" fill="currentColor" />
+          {/* Play indicator on hover */}
+          {isHovering && !isVideoPlaying && videoUrl && !isRejectedOrRemoved && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/20">
+              <div className="h-12 w-12 rounded-full bg-background/80 flex items-center justify-center">
+                <Play className="h-5 w-5 text-foreground" fill="currentColor" />
+              </div>
+            </div>
+          )}
+
+          {/* Rejected/Removed overlay */}
+          {statusConfig?.showOverlay && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
+              <div className="text-center p-4">
+                <div className="h-12 w-12 mx-auto mb-2 rounded-full bg-destructive/20 flex items-center justify-center">
+                  {statusConfig.icon && <statusConfig.icon className="h-6 w-6 text-destructive" />}
+                </div>
+                <p className="text-sm font-medium text-destructive">
+                  {statusConfig.label}
+                </p>
+                {isOwnEntry && rejectionReason && (
+                  <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+                    {rejectionReason}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Rank Badge */}
+          {rankConfig && !isRejectedOrRemoved && (
+            <Badge
+              className={cn(
+                "absolute top-2 left-2 border font-semibold",
+                rankConfig.className
+              )}
+            >
+              {rankConfig.icon && (
+                <rankConfig.icon className="h-3 w-3 mr-1" />
+              )}
+              {rankConfig.label}
+            </Badge>
+          )}
+
+          {/* Status Badge (pending review) */}
+          {statusConfig && !statusConfig.showOverlay && statusConfig.label && (
+            <Badge
+              className={cn(
+                "absolute top-2 left-2 border font-medium",
+                statusConfig.className
+              )}
+            >
+              {statusConfig.icon && (
+                <statusConfig.icon className="h-3 w-3 mr-1" />
+              )}
+              {statusConfig.label}
+            </Badge>
+          )}
+
+          {/* Duration Badge */}
+          {clipDurationMs && !isRejectedOrRemoved && (
+            <Badge
+              variant="secondary"
+              className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm text-xs font-mono"
+            >
+              <Clock className="h-3 w-3 mr-1" />
+              {formatDuration(clipDurationMs)}
+            </Badge>
+          )}
+
+          {/* Gradient overlay for text readability */}
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/80 to-transparent pointer-events-none" />
+        </AspectRatio>
+
+        {/* Content */}
+        <div className="p-3 space-y-2">
+          {/* Title */}
+          <h4 className={cn(
+            "font-medium text-sm line-clamp-1 transition-colors",
+            !isRejectedOrRemoved && "group-hover:text-primary",
+            isRejectedOrRemoved && "text-muted-foreground"
+          )}>
+            {title}
+          </h4>
+
+          {/* Creator & Actions Row */}
+          <div className="flex items-center justify-between gap-2">
+            {/* Creator */}
+            <div className="flex items-center gap-2 min-w-0">
+              <Avatar className="h-6 w-6">
+                <AvatarImage src={creatorAvatarUrl || undefined} />
+                <AvatarFallback className="text-xs">
+                  {creatorUsername?.charAt(0).toUpperCase() || "U"}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-sm text-muted-foreground truncate">
+                {creatorUsername || "Anonymous"}
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Vote Button - hidden for rejected/removed */}
+              {!isRejectedOrRemoved && (
+                <Button
+                  variant={hasVoted ? "default" : "ghost"}
+                  size="sm"
+                  className={cn(
+                    "h-8 px-2 gap-1.5",
+                    hasVoted && "bg-primary/20 text-primary hover:bg-primary/30",
+                    isChallengeEnded && "opacity-50 cursor-not-allowed"
+                  )}
+                  onClick={handleVote}
+                  disabled={isChallengeEnded}
+                  title={isChallengeEnded ? "Voting has ended" : "Vote for this entry"}
+                >
+                  <ThumbsUp
+                    className={cn("h-4 w-4", hasVoted && "fill-current")}
+                  />
+                  <span className="text-xs font-medium">{voteCount}</span>
+                </Button>
+              )}
+
+              {/* More Options */}
+              {!isRejectedOrRemoved && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => setShowReportDialog(true)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Flag className="h-4 w-4 mr-2" />
+                      Report
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Rank Badge */}
-        {rankConfig && (
-          <Badge
-            className={cn(
-              "absolute top-2 left-2 border font-semibold",
-              rankConfig.className
-            )}
-          >
-            {rankConfig.icon && (
-              <rankConfig.icon className="h-3 w-3 mr-1" />
-            )}
-            {rankConfig.label}
-          </Badge>
-        )}
-
-        {/* Duration Badge */}
-        {clipDurationMs && (
-          <Badge
-            variant="secondary"
-            className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm text-xs font-mono"
-          >
-            <Clock className="h-3 w-3 mr-1" />
-            {formatDuration(clipDurationMs)}
-          </Badge>
-        )}
-
-        {/* Gradient overlay for text readability */}
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/80 to-transparent pointer-events-none" />
-      </AspectRatio>
-
-      {/* Content */}
-      <div className="p-3 space-y-2">
-        {/* Title */}
-        <h4 className="font-medium text-sm line-clamp-1 group-hover:text-primary transition-colors">
-          {title}
-        </h4>
-
-        {/* Creator & Actions Row */}
-        <div className="flex items-center justify-between gap-2">
-          {/* Creator */}
-          <div className="flex items-center gap-2 min-w-0">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={creatorAvatarUrl || undefined} />
-              <AvatarFallback className="text-xs">
-                {creatorUsername?.charAt(0).toUpperCase() || "U"}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-sm text-muted-foreground truncate">
-              {creatorUsername || "Anonymous"}
-            </span>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1 shrink-0">
-            {/* Vote Button */}
-            <Button
-              variant={hasVoted ? "default" : "ghost"}
-              size="sm"
-              className={cn(
-                "h-8 px-2 gap-1.5",
-                hasVoted && "bg-primary/20 text-primary hover:bg-primary/30",
-                isChallengeEnded && "opacity-50 cursor-not-allowed"
-              )}
-              onClick={handleVote}
-              disabled={isChallengeEnded}
-              title={isChallengeEnded ? "Voting has ended" : "Vote for this entry"}
-            >
-              <ThumbsUp
-                className={cn("h-4 w-4", hasVoted && "fill-current")}
-              />
-              <span className="text-xs font-medium">{voteCount}</span>
-            </Button>
-
-            {/* More Options */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={handleReport}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Flag className="h-4 w-4 mr-2" />
-                  Report
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
         </div>
+
+        {/* Winner glow effect */}
+        {isWinner && !isRejectedOrRemoved && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-t from-yellow-500/10 to-transparent" />
+          </div>
+        )}
       </div>
 
-      {/* Winner glow effect */}
-      {isWinner && (
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-t from-yellow-500/10 to-transparent" />
-        </div>
-      )}
-    </div>
+      {/* Report Confirmation Dialog */}
+      <AlertDialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Flag className="h-5 w-5 text-destructive" />
+              Report Entry
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to report this entry? Our moderation team will review it and take appropriate action if it violates our community guidelines.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isReporting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReportConfirm}
+              disabled={isReporting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isReporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                "Submit Report"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 });
