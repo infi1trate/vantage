@@ -8,6 +8,7 @@ export interface Challenge {
   rules: string | null;
   game_name: string | null;
   thumbnail_url: string | null;
+  preview_video_url: string | null;
   status: 'draft' | 'active' | 'judging' | 'completed' | 'cancelled';
   starts_at: string | null;
   ends_at: string | null;
@@ -15,6 +16,12 @@ export interface Challenge {
   max_submissions_per_user: number;
   tags: string[];
   prize_description: string | null;
+  prize_crypto: string | null;
+  prize_crypto_amount: number | null;
+  difficulty: number;
+  is_sponsored: boolean;
+  sponsor_name: string | null;
+  submission_count: number;
   created_at: string;
   updated_at: string;
 }
