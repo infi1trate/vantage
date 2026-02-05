@@ -1,20 +1,19 @@
 import { useState } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChallengeHero } from "@/components/challenges/ChallengeHero";
+import { ChallengeRulesSection } from "@/components/challenges/ChallengeRulesSection";
+import { HowToParticipate } from "@/components/challenges/HowToParticipate";
+import { SubmissionFeed } from "@/components/challenges/SubmissionFeed";
 import { 
-  ChallengeHeader, 
-  ChallengeRules, 
-  SubmissionCard,
   SubmissionEntrySheet,
   SubmissionModal,
+  SessionPickerModal,
 } from "@/components/challenges";
-import { SessionPickerModal } from "@/components/challenges/SessionPickerModal";
 import { useChallenge, useChallengeSubmissions, useUserSubmissions } from "@/hooks/useChallenges";
 import { useAuth } from "@/contexts/AuthContext";
 import { getChallengeStatus } from "@/lib/challenges";
-import { Trophy, Users } from "lucide-react";
 
 interface SelectedSession {
   id: string;
@@ -48,7 +47,7 @@ export default function ChallengeDetail() {
     return (
       <div className="min-h-screen bg-background">
         <Header />
-        <div className="px-4 md:px-6 py-8 space-y-6">
+        <div className="px-4 md:px-6 py-8 space-y-6 max-w-7xl mx-auto">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="aspect-video w-full max-w-xl rounded-xl" />
           <Skeleton className="h-12 w-96" />
@@ -68,10 +67,6 @@ export default function ChallengeDetail() {
     (!challenge.max_submissions_per_user || 
      (userSubmissions?.length || 0) < challenge.max_submissions_per_user);
 
-  // Filter submissions by status
-  const approvedSubmissions = allSubmissions?.filter(s => s.status === 'approved' || s.status === 'winner') || [];
-  const winnerSubmissions = allSubmissions?.filter(s => s.status === 'winner') || [];
-
   const handleSelectFromLibrary = () => {
     setShowSessionPicker(true);
   };
@@ -86,12 +81,17 @@ export default function ChallengeDetail() {
     setShowSubmissionModal(false);
   };
 
+  const handleVote = (submissionId: string) => {
+    // Voting logic would go here - typically an API call
+    console.log("Vote for submission:", submissionId);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
 
-      {/* Challenge Header */}
-      <ChallengeHeader
+      {/* Hero Section */}
+      <ChallengeHero
         challenge={challenge}
         onSubmit={() => setShowEntrySheet(true)}
         canSubmit={canSubmit}
@@ -99,74 +99,29 @@ export default function ChallengeDetail() {
       />
 
       {/* Content */}
-      <main className="px-4 md:px-6 py-8 space-y-8">
-        {/* Rules */}
-        <ChallengeRules rules={challenge.rules} />
+      <main className="px-4 md:px-6 py-8 space-y-8 max-w-7xl mx-auto">
+        {/* Rules Section (Expandable) */}
+        <ChallengeRulesSection 
+          rules={challenge.rules}
+          // These would come from challenge metadata in real implementation
+          clipDurationMin={5}
+          clipDurationMax={60}
+        />
 
-        {/* Submissions */}
-        <div className="space-y-6">
-          <Tabs defaultValue="submissions">
-            <TabsList>
-              <TabsTrigger value="submissions" className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Submissions
-                {approvedSubmissions.length > 0 && (
-                  <span className="ml-1 text-xs">({approvedSubmissions.length})</span>
-                )}
-              </TabsTrigger>
-              {winnerSubmissions.length > 0 && (
-                <TabsTrigger value="winners" className="flex items-center gap-2">
-                  <Trophy className="h-4 w-4" />
-                  Winners
-                </TabsTrigger>
-              )}
-            </TabsList>
+        {/* How to Participate (Collapsible) */}
+        <HowToParticipate />
 
-            <TabsContent value="submissions" className="mt-6">
-              {loadingSubmissions ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="space-y-3">
-                      <Skeleton className="aspect-video w-full rounded-lg" />
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-4 w-1/2" />
-                    </div>
-                  ))}
-                </div>
-              ) : approvedSubmissions.length === 0 ? (
-                <div className="text-center py-12">
-                  <Trophy className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
-                  <p className="text-muted-foreground">No submissions yet. Be the first!</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {approvedSubmissions.map((submission) => (
-                    <SubmissionCard
-                      key={submission.id}
-                      submission={submission}
-                      isOwn={submission.user_id === user?.id}
-                    />
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="winners" className="mt-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {winnerSubmissions.map((submission) => (
-                  <SubmissionCard
-                    key={submission.id}
-                    submission={submission}
-                    isOwn={submission.user_id === user?.id}
-                  />
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
+        {/* Submissions Feed */}
+        <SubmissionFeed
+          submissions={allSubmissions || []}
+          isLoading={loadingSubmissions}
+          isEnded={!status.isOpen}
+          currentUserId={user?.id}
+          onVote={handleVote}
+        />
       </main>
 
-      {/* Entry Sheet */}
+      {/* Entry Sheet (Decision point) */}
       <SubmissionEntrySheet
         open={showEntrySheet}
         onOpenChange={setShowEntrySheet}
