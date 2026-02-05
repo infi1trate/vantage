@@ -1,15 +1,33 @@
+/**
+ * FloatingFacecamBubble - Camera preview bubble during recording
+ * 
+ * Displays camera stream in a draggable bubble with snap-to-corner behavior.
+ * Supports Picture-in-Picture pop-out mode.
+ * 
+ * IMPORTANT: This component should receive stream and PiP controls from parent
+ * to ensure single camera stream instance across the app.
+ */
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Camera, ExternalLink, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/hooks/use-toast";
 
 interface FloatingFacecamBubbleProps {
+  /** Camera stream to display */
   stream: MediaStream | null;
+  /** Whether the bubble should be visible */
   isVisible: boolean;
+  /** Whether PiP mode is currently active */
+  isPiPActive: boolean;
+  /** Whether PiP is supported in this browser */
+  isPiPSupported: boolean;
+  /** Callback to request PiP mode */
+  onRequestPiP: () => void;
+  /** Callback to exit PiP and return to page */
+  onExitPiP: () => void;
+  /** Optional className */
   className?: string;
-  /** When true, shows pop-out to PiP control */
-  allowPiP?: boolean;
 }
 
 const STORAGE_KEY = "vantage-facecam-position-corner";
@@ -72,20 +90,14 @@ const findNearestCorner = (
   }
 };
 
-// Check if PiP is supported
-const isPiPSupported = (): boolean => {
-  return (
-    typeof document !== "undefined" &&
-    "pictureInPictureEnabled" in document &&
-    document.pictureInPictureEnabled
-  );
-};
-
 export function FloatingFacecamBubble({
   stream,
   isVisible,
+  isPiPActive,
+  isPiPSupported,
+  onRequestPiP,
+  onExitPiP,
   className,
-  allowPiP = true,
 }: FloatingFacecamBubbleProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -94,8 +106,6 @@ export function FloatingFacecamBubble({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-  const [isPiPActive, setIsPiPActive] = useState(false);
-  const [pipSupported, setPipSupported] = useState(true);
 
   // Create or find portal root on mount
   useEffect(() => {
@@ -106,113 +116,19 @@ export function FloatingFacecamBubble({
       document.body.appendChild(root);
     }
     setPortalRoot(root);
-
-    // Check PiP support
-    setPipSupported(isPiPSupported());
-
-    return () => {
-      // Don't remove on unmount - other instances might use it
-    };
   }, []);
 
-  // Attach stream to video element
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
-
-  // Handle PiP events
+  // Attach stream to video element when stream changes
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-
-    const handleEnterPiP = () => {
-      console.log("[Facecam] Entered Picture-in-Picture mode");
-      setIsPiPActive(true);
-    };
-
-    const handleLeavePiP = () => {
-      console.log("[Facecam] Left Picture-in-Picture mode");
-      setIsPiPActive(false);
-    };
-
-    video.addEventListener("enterpictureinpicture", handleEnterPiP);
-    video.addEventListener("leavepictureinpicture", handleLeavePiP);
-
-    return () => {
-      video.removeEventListener("enterpictureinpicture", handleEnterPiP);
-      video.removeEventListener("leavepictureinpicture", handleLeavePiP);
-    };
-  }, []);
-
-  // Exit PiP when stream stops or visibility changes
-  useEffect(() => {
-    if (!isVisible || !stream) {
-      exitPiP();
-    }
-  }, [isVisible, stream]);
-
-  // Cleanup PiP on unmount
-  useEffect(() => {
-    return () => {
-      exitPiP();
-    };
-  }, []);
-
-  const exitPiP = useCallback(async () => {
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        console.log("[Facecam] Exited PiP on cleanup");
-      }
-    } catch (err) {
-      console.warn("[Facecam] Failed to exit PiP:", err);
-    }
-  }, []);
-
-  const requestPiP = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || !stream) return;
-
-    if (!isPiPSupported()) {
-      toast({
-        title: "Camera pop-out not supported",
-        description: "Your browser doesn't support Picture-in-Picture.",
-        variant: "destructive",
+    if (video && stream) {
+      video.srcObject = stream;
+      // Ensure video plays
+      video.play().catch(err => {
+        console.warn("[FacecamBubble] Video play failed:", err);
       });
-      setPipSupported(false);
-      return;
-    }
-
-    try {
-      // Ensure video is playing (required for PiP)
-      await video.play();
-      await video.requestPictureInPicture();
-      console.log("[Facecam] PiP requested successfully");
-    } catch (err: any) {
-      console.error("[Facecam] Failed to enter PiP:", err);
-      
-      // Show user-friendly error
-      if (err.name === "NotAllowedError") {
-        toast({
-          title: "Camera pop-out blocked",
-          description: "Please click the pop-out button again.",
-        });
-      } else {
-        toast({
-          title: "Camera pop-out not available",
-          description: "Falling back to in-page camera.",
-          variant: "destructive",
-        });
-        setPipSupported(false);
-      }
     }
   }, [stream]);
-
-  const returnToPage = useCallback(async () => {
-    await exitPiP();
-  }, [exitPiP]);
 
   // Get current padding based on viewport
   const getPadding = useCallback(() => {
@@ -326,6 +242,7 @@ export function FloatingFacecamBubble({
     };
   }, [isDragging, handleDragMove, handleDragEnd]);
 
+  // Don't render if not visible, no stream, or portal not ready
   if (!isVisible || !stream || !portalRoot) {
     return null;
   }
@@ -343,7 +260,8 @@ export function FloatingFacecamBubble({
       }
     : cornerStyles;
 
-  // If PiP is active, render a minimal "return to page" control instead of the full bubble
+  // If PiP is active, render only a minimal "return to page" control
+  // The in-page bubble should be completely hidden to avoid duplicates
   if (isPiPActive) {
     const returnControl = (
       <div
@@ -361,7 +279,7 @@ export function FloatingFacecamBubble({
       >
         <Camera className="h-4 w-4 text-muted-foreground" />
         <button
-          onClick={returnToPage}
+          onClick={onExitPiP}
           className="flex items-center gap-1.5 text-sm text-foreground hover:text-primary transition-colors"
         >
           <CornerDownLeft className="h-3.5 w-3.5" />
@@ -373,6 +291,7 @@ export function FloatingFacecamBubble({
     return createPortal(returnControl, portalRoot);
   }
 
+  // Render the full camera bubble with preview
   const bubbleContent = (
     <div
       ref={bubbleRef}
@@ -390,11 +309,11 @@ export function FloatingFacecamBubble({
       )}
       style={{
         ...positionStyles,
-        // Ensure no parent transforms affect this
         transform: "none",
         willChange: isDragging ? "left, top" : "auto",
       }}
     >
+      {/* Single video element for in-page preview */}
       <video
         ref={videoRef}
         autoPlay
@@ -409,10 +328,10 @@ export function FloatingFacecamBubble({
         <Camera className="h-2.5 w-2.5 text-foreground" />
       </div>
 
-      {/* Pop-out to PiP button (only shown when PiP is supported and allowed) */}
-      {allowPiP && pipSupported && (
+      {/* Pop-out to PiP button */}
+      {isPiPSupported && (
         <button
-          onClick={requestPiP}
+          onClick={onRequestPiP}
           className={cn(
             "absolute bottom-1.5 right-1.5",
             "flex items-center gap-1 px-2 py-1",
