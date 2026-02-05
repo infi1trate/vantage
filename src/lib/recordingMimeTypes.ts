@@ -4,6 +4,15 @@
  */
 
 import { mark, measure, recordMetric } from "@/lib/performanceMetrics";
+import { 
+  logStreamInfo, 
+  logMimeTypeSelection, 
+  logRecorderStateTransition,
+  logDataAvailable,
+  logRecorderError,
+  logTrackEnded,
+} from "@/lib/recordingDebugLogger";
+
 export interface RecordingMimeTypeInfo {
   mimeType: string;
   fileExt: "mp4" | "webm";
@@ -13,18 +22,18 @@ export interface RecordingMimeTypeInfo {
 
 /**
  * Priority order for MIME type selection (robust fallback order):
- * 1. video/webm;codecs=vp8,opus (most widely supported)
- * 2. video/webm (basic webm fallback)
- * 3. video/mp4;codecs=h264,aac (if supported - Safari, some Chrome)
- * 4. video/mp4 (fallback mp4)
- * 5. video/webm;codecs=vp9,opus (high quality but less encoder support)
+ * 1. video/webm;codecs=vp9,opus (best quality, widely supported in modern browsers)
+ * 2. video/webm;codecs=vp8,opus (fallback for older browsers)
+ * 3. video/webm (basic webm fallback)
+ * 4. video/mp4;codecs=h264,aac (Safari fallback)
+ * 5. video/mp4 (basic mp4 fallback)
  */
 export const MIME_TYPE_CANDIDATES: Array<{ mime: string; ext: "mp4" | "webm"; codecs: string }> = [
+  { mime: "video/webm;codecs=vp9,opus", ext: "webm", codecs: "VP9 + Opus" },
   { mime: "video/webm;codecs=vp8,opus", ext: "webm", codecs: "VP8 + Opus" },
   { mime: "video/webm", ext: "webm", codecs: "WebM (default)" },
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", codecs: "H.264 + AAC" },
   { mime: "video/mp4", ext: "mp4", codecs: "MP4 (default)" },
-  { mime: "video/webm;codecs=vp9,opus", ext: "webm", codecs: "VP9 + Opus" },
 ];
 
 /**
@@ -159,98 +168,163 @@ export async function tryRecordWithFallback(
   const browserLabel = getBrowserLabel();
   const triedFormats: string[] = [];
   
+  // Log stream info for debugging
+  logStreamInfo("Recording stream", stream);
+  
   console.log("[MimeType] Starting robust MIME type fallback...");
   console.log(`[MimeType] Browser: ${browserLabel}`);
   console.log(`[MimeType] Stream tracks: ${stream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", ")}`);
   
-  for (const { mime, ext, codecs } of MIME_TYPE_CANDIDATES) {
-    // Quick pre-check: skip if isTypeSupported returns false
-    // This saves time on formats that definitely won't work
-    if (!isRecordingSupported(mime)) {
-      console.log(`[MimeType] ${mime}: skipped (isTypeSupported=false)`);
-      continue;
-    }
-    
-    console.log(`[MimeType] Trying ${mime}...`);
-    triedFormats.push(mime);
-    
-    try {
-      const recorder = new MediaRecorder(stream, {
-        mimeType: mime,
-        videoBitsPerSecond: options.videoBitsPerSecond,
-        audioBitsPerSecond: options.audioBitsPerSecond,
-      });
-      
-      // Mark recorder start for timing first data
-      mark(`recorder:start:${mime}`);
-      
-      // Try to start the recorder
-      recorder.start(1000);
-      
-      // Wait 250ms and check if it's actually recording
-      const isRecording = await new Promise<boolean>((resolve) => {
-        const checkTimeout = setTimeout(() => {
-          resolve(recorder.state === "recording");
-        }, 250);
-        
-        // Also listen for immediate errors
-        recorder.onerror = () => {
-          clearTimeout(checkTimeout);
-          resolve(false);
-        };
-        
-        // Listen for first data to measure startup time
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            measure(
-              `recorder:first-data:${mime}`,
-              `recorder:start:${mime}`,
-              undefined,
-              "capture:recorder:first-data"
-            );
-          }
-        };
-      });
-      
-      if (isRecording) {
-        console.log(`[MimeType] SUCCESS: ${mime} is working`);
-        
-        // Record the successful recorder start time
-        recordMetric("capture:recorder", 250, { mimeType: mime, success: true });
-        
-        // Clear the error handler we set (but keep ondataavailable for timing)
-        recorder.onerror = null;
-        
+  // Validate stream has live video track before trying any MIME types
+  const videoTracks = stream.getVideoTracks();
+  if (videoTracks.length === 0) {
+    console.error("[MimeType] No video track found in stream");
+    return {
+      success: false,
+      error: "No video track found in capture stream. Screen capture may have ended.",
+      triedFormats: [],
+      isSafariCodecFailure: false,
+    };
+  }
+  
+  const videoTrack = videoTracks[0];
+  if (videoTrack.readyState !== "live") {
+    console.error(`[MimeType] Video track not live: ${videoTrack.readyState}`);
+    return {
+      success: false,
+      error: `Video track is not live (state: ${videoTrack.readyState}). Re-select screen.`,
+      triedFormats: [],
+      isSafariCodecFailure: false,
+    };
+  }
+  
+  // Log video dimensions
+  const settings = videoTrack.getSettings();
+  if (settings.width && settings.height) {
+    console.log(`[MimeType] Video dimensions: ${settings.width}x${settings.height}`);
+  }
+  
+  // Listen for track ending during MIME type probing
+  let trackEnded = false;
+  const trackEndedHandler = () => {
+    trackEnded = true;
+    logTrackEnded(videoTrack.kind, videoTrack.label);
+  };
+  videoTrack.addEventListener("ended", trackEndedHandler);
+  
+  try {
+    for (const { mime, ext, codecs } of MIME_TYPE_CANDIDATES) {
+      // Check if track ended while we were trying
+      if (trackEnded) {
+        console.error("[MimeType] Video track ended during MIME probe");
         return {
-          success: true,
-          recorder,
-          mimeTypeInfo: {
-            mimeType: mime,
-            fileExt: ext,
-            codecsLabel: codecs,
-            browserLabel,
-          },
+          success: false,
+          error: "Screen capture ended. Re-select screen.",
+          triedFormats,
+          isSafariCodecFailure: false,
         };
-      } else {
-        console.log(`[MimeType] ${mime}: started but not recording after 250ms (state: ${recorder.state})`);
-        
-        // Stop the failed recorder
-        try {
-          if (recorder.state !== "inactive") {
-            recorder.stop();
-          }
-        } catch (e) {
-          // Ignore cleanup errors
-        }
       }
-    } catch (err) {
-      console.log(`[MimeType] ${mime}: failed to create/start - ${err}`);
+      
+      // Quick pre-check: skip if isTypeSupported returns false
+      // This saves time on formats that definitely won't work
+      if (!isRecordingSupported(mime)) {
+        console.log(`[MimeType] ${mime}: skipped (isTypeSupported=false)`);
+        continue;
+      }
+      
+      console.log(`[MimeType] Trying ${mime}...`);
+      triedFormats.push(mime);
+      
+      try {
+        const recorder = new MediaRecorder(stream, {
+          mimeType: mime,
+          videoBitsPerSecond: options.videoBitsPerSecond,
+          audioBitsPerSecond: options.audioBitsPerSecond,
+        });
+        
+        // Mark recorder start for timing first data
+        mark(`recorder:start:${mime}`);
+        
+        // Try to start the recorder with timeslice of 1000ms
+        // This ensures dataavailable fires every second
+        recorder.start(1000);
+        logRecorderStateTransition("start", recorder.state, Date.now());
+        
+        // Wait 350ms (slightly longer) and check if it's actually recording
+        const isRecording = await new Promise<boolean>((resolve) => {
+          const checkTimeout = setTimeout(() => {
+            resolve(recorder.state === "recording");
+          }, 350);
+          
+          // Also listen for immediate errors
+          recorder.onerror = (event) => {
+            const err = (event as any).error;
+            logRecorderError(err?.name || "Error", err?.message || "Unknown", mime);
+            clearTimeout(checkTimeout);
+            resolve(false);
+          };
+          
+          // Listen for first data to measure startup time
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              logDataAvailable(1, e.data.size, e.data.size, Date.now());
+              measure(
+                `recorder:first-data:${mime}`,
+                `recorder:start:${mime}`,
+                undefined,
+                "capture:recorder:first-data"
+              );
+            }
+          };
+        });
+        
+        if (isRecording) {
+          console.log(`[MimeType] SUCCESS: ${mime} is working`);
+          logMimeTypeSelection(mime, triedFormats, true);
+          
+          // Record the successful recorder start time
+          recordMetric("capture:recorder", 350, { mimeType: mime, success: true });
+          
+          // Clear the error handler we set (but keep ondataavailable for timing)
+          recorder.onerror = null;
+          
+          return {
+            success: true,
+            recorder,
+            mimeTypeInfo: {
+              mimeType: mime,
+              fileExt: ext,
+              codecsLabel: codecs,
+              browserLabel,
+            },
+          };
+        } else {
+          console.log(`[MimeType] ${mime}: started but not recording after 350ms (state: ${recorder.state})`);
+          logRecorderStateTransition("failed-check", recorder.state, Date.now());
+          
+          // Stop the failed recorder
+          try {
+            if (recorder.state !== "inactive") {
+              recorder.stop();
+            }
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }
+      } catch (err) {
+        console.log(`[MimeType] ${mime}: failed to create/start - ${err}`);
+        logRecorderError("CreateError", String(err), mime);
+      }
     }
+  } finally {
+    // Clean up track listener
+    videoTrack.removeEventListener("ended", trackEndedHandler);
   }
   
   // None succeeded
   const isSafari = isSafariBrowser();
   console.error("[MimeType] All MIME type candidates failed!");
+  logMimeTypeSelection("none", triedFormats, false);
   
   if (isSafari) {
     console.error("[MimeType] Safari detected - recording not supported");

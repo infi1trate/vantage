@@ -338,6 +338,48 @@ export function useCaptureManager(): UseCaptureManagerReturn {
   ): Promise<boolean> => {
     console.log(`[Capture] Attempting recording with profile: ${profile.frameRate}fps, ${profile.videoBitsPerSecond / 1_000_000}Mbps video`);
     
+    // STEP 1: Validate source screen stream BEFORE compositing
+    // This catches cases where screen share was stopped/ended before recording started
+    if (!screen.stream || !screen.stream.active) {
+      throw {
+        code: "STREAM_ENDED" as const,
+        message: "Screen capture ended or unavailable. Re-select screen.",
+        recoverable: true,
+        details: `Screen stream: ${screen.stream ? 'exists' : 'null'}, active: ${screen.stream?.active}`,
+      };
+    }
+    
+    const sourceVideoTracks = screen.stream.getVideoTracks();
+    if (sourceVideoTracks.length === 0) {
+      throw {
+        code: "STREAM_NOT_READY" as const,
+        message: "No video track found in screen capture. Re-select screen.",
+        recoverable: true,
+      };
+    }
+    
+    const sourceVideoTrack = sourceVideoTracks[0];
+    if (sourceVideoTrack.readyState !== "live") {
+      throw {
+        code: "STREAM_ENDED" as const,
+        message: `Screen capture track is not live (state: ${sourceVideoTrack.readyState}). Re-select screen.`,
+        recoverable: true,
+        details: `Track readyState: ${sourceVideoTrack.readyState}, label: ${sourceVideoTrack.label}`,
+      };
+    }
+    
+    // Log source video dimensions for debugging
+    const sourceSettings = sourceVideoTrack.getSettings();
+    if (import.meta.env.DEV) {
+      console.log(`[Capture] Source screen: ${sourceSettings.width}x${sourceSettings.height} @ ${sourceSettings.frameRate}fps`);
+      console.log(`[Capture] Source tracks:`, screen.stream.getTracks().map(t => ({
+        kind: t.kind,
+        label: t.label,
+        enabled: t.enabled,
+        readyState: t.readyState,
+      })));
+    }
+    
     // Start canvas compositing with conservative framerate
     const compositeStream = composite.startCompositing({
       screenStream: screen.stream!,
@@ -472,13 +514,15 @@ export function useCaptureManager(): UseCaptureManagerReturn {
     // Promise that resolves when we get the first valid chunk
     const waitForFirstChunk = new Promise<boolean>((resolve, reject) => {
       let firstChunkReceived = false;
+      let watchdogChunksCount = 0;
       const startTime = Date.now();
-      const TIMEOUT_MS = 2500; // 2.5 second timeout
+      const TIMEOUT_MS = 5000; // 5 second timeout (increased from 2.5s)
+      const WATCHDOG_INTERVAL_MS = 3000; // Check for data every 3 seconds
       
-      // Check for timeout
+      // Primary timeout - if no data at all after 5 seconds
       const timeoutId = setTimeout(() => {
         if (!firstChunkReceived) {
-          console.error("[Capture] Timeout: No data received within 2.5 seconds");
+          console.error("[Capture] Timeout: No data received within 5 seconds");
           reject({
             code: "NO_DATA_CAPTURED" as const,
             message: "Recording failed to produce data. Your browser may not support this recording format.",
@@ -492,6 +536,26 @@ export function useCaptureManager(): UseCaptureManagerReturn {
           });
         }
       }, TIMEOUT_MS);
+      
+      // Watchdog - if we're recording but no chunks after 3 seconds, something is wrong
+      const watchdogId = setTimeout(() => {
+        if (recorder.state === "recording" && watchdogChunksCount === 0) {
+          console.warn("[Capture] Watchdog: Recorder state is 'recording' but no chunks after 3 seconds");
+          // Don't reject yet - wait for the main timeout
+          // But log detailed diagnostics
+          const tracks = compositeStream.getTracks();
+          console.warn("[Capture] Watchdog diagnostics:", {
+            recorderState: recorder.state,
+            mimeType: selectedMimeType.mimeType,
+            tracks: tracks.map(t => ({
+              kind: t.kind,
+              label: t.label,
+              enabled: t.enabled,
+              readyState: t.readyState,
+            })),
+          });
+        }
+      }, WATCHDOG_INTERVAL_MS);
       
       // Batch debug state updates to reduce re-renders during recording
       let pendingChunksCount = 0;
@@ -517,7 +581,14 @@ export function useCaptureManager(): UseCaptureManagerReturn {
           // Non-blocking chunk storage
           compositeChunksRef.current.push(event.data);
           pendingChunksCount++;
+          watchdogChunksCount++;
           pendingTotalBytes += event.data.size;
+          
+          // Log chunk info in dev mode
+          if (import.meta.env.DEV) {
+            const totalBytes = compositeChunksRef.current.reduce((acc, b) => acc + b.size, 0);
+            console.log(`[Capture] Data chunk #${compositeChunksRef.current.length}: ${event.data.size} bytes (total: ${totalBytes})`);
+          }
           
           // Schedule batched debug update (non-blocking)
           scheduleDebugUpdate();
@@ -526,6 +597,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
           if (!firstChunkReceived) {
             firstChunkReceived = true;
             clearTimeout(timeoutId);
+            clearTimeout(watchdogId);
             console.log(`[Capture] First chunk received after ${Date.now() - startTime}ms`);
             resolve(true);
           }
@@ -542,6 +614,7 @@ export function useCaptureManager(): UseCaptureManagerReturn {
         setLastRecorderError(fullErrorMessage);
         logStateTransition("error");
         clearTimeout(timeoutId);
+        clearTimeout(watchdogId);
         reject({
           code: "RECORDER_ERROR" as const,
           message: "MediaRecorder encountered an error.",

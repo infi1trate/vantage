@@ -70,6 +70,7 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
   const fpsCounterRef = useRef(createFPSCounter("CompositeRecorder"));
 
   // Create hidden video element for a stream
+  // Video starts loading immediately; drawFrame will skip if not ready
   const createVideoElement = useCallback((stream: MediaStream): HTMLVideoElement => {
     const video = document.createElement("video");
     video.srcObject = stream;
@@ -77,8 +78,20 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     video.playsInline = true;
     video.autoplay = true;
     
-    // Need to play to get video frames
-    video.play().catch(console.error);
+    // Log when video becomes ready
+    video.addEventListener("canplay", () => {
+      console.log(`[Composite] Video canplay: ${video.videoWidth}x${video.videoHeight}, readyState=${video.readyState}`);
+    }, { once: true });
+    
+    video.addEventListener("loadedmetadata", () => {
+      console.log(`[Composite] Video loadedmetadata: ${video.videoWidth}x${video.videoHeight}`);
+    }, { once: true });
+    
+    // Start playing - this triggers the stream to flow
+    video.play().catch(err => {
+      console.warn("[Composite] Video.play() rejected:", err);
+      // Some browsers reject play() but still work - don't fail
+    });
     
     return video;
   }, []);
@@ -100,23 +113,35 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
     lastFacecamHeight: 0,
   });
 
+  // Frame counter for debugging
+  const frameCountRef = useRef(0);
+  const lastFrameLogRef = useRef(0);
+
   // Draw a single frame to canvas - optimized for minimal per-frame computation
   const drawFrame = useCallback(() => {
     if (!isCompositingRef.current || !ctxRef.current || !canvasRef.current) {
       return;
     }
+    
+    frameCountRef.current++;
 
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
     const config = configRef.current;
     const cache = layoutCacheRef.current;
+    const screenVideo = screenVideoRef.current;
+    
+    // Log video readyState periodically in dev mode
+    if (import.meta.env.DEV && frameCountRef.current - lastFrameLogRef.current >= 60) {
+      lastFrameLogRef.current = frameCountRef.current;
+      console.log(`[Composite] Frame #${frameCountRef.current}, screen video readyState=${screenVideo?.readyState}, videoSize=${screenVideo?.videoWidth}x${screenVideo?.videoHeight}`);
+    }
 
-    // Clear canvas
+    // Clear canvas - always do this even if video not ready
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw screen video as base layer (full canvas)
-    const screenVideo = screenVideoRef.current;
     if (screenVideo && screenVideo.readyState >= 2) {
       const vw = screenVideo.videoWidth;
       const vh = screenVideo.videoHeight;
@@ -219,13 +244,36 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
       const capturedWidth = settings?.width || 1920;
       const capturedHeight = settings?.height || 1080;
       
-      // Use captured resolution or config, but never upscale
+      // Cap maximum resolution to prevent performance issues
+      // Very large canvases (>4K) can cause encoder to stall and produce no data
+      const MAX_WIDTH = 1920;
+      const MAX_HEIGHT = 1080;
+      
+      // Calculate scaling to fit within max dimensions while preserving aspect ratio
+      const aspectRatio = capturedWidth / capturedHeight;
+      let targetWidth = capturedWidth;
+      let targetHeight = capturedHeight;
+      
+      if (capturedWidth > MAX_WIDTH || capturedHeight > MAX_HEIGHT) {
+        if (aspectRatio > MAX_WIDTH / MAX_HEIGHT) {
+          // Width-constrained
+          targetWidth = MAX_WIDTH;
+          targetHeight = Math.round(MAX_WIDTH / aspectRatio);
+        } else {
+          // Height-constrained
+          targetHeight = MAX_HEIGHT;
+          targetWidth = Math.round(MAX_HEIGHT * aspectRatio);
+        }
+        console.log(`[Composite] Scaling down from ${capturedWidth}x${capturedHeight} to ${targetWidth}x${targetHeight} for encoder stability`);
+      }
+      
+      // Use config override if provided, but don't exceed our calculated target
       const width = config.canvasWidth 
-        ? Math.min(config.canvasWidth, capturedWidth) 
-        : capturedWidth;
+        ? Math.min(config.canvasWidth, targetWidth) 
+        : targetWidth;
       const height = config.canvasHeight 
-        ? Math.min(config.canvasHeight, capturedHeight) 
-        : capturedHeight;
+        ? Math.min(config.canvasHeight, targetHeight) 
+        : targetHeight;
       
       // Default to 30fps for reliability (was 60fps)
       const frameRate = config.frameRate || 30;
@@ -233,7 +281,7 @@ export function useCompositeRecorder(): CompositeRecorderReturn {
       console.log(`[Composite] Screen captured at: ${capturedWidth}x${capturedHeight}`);
       console.log(`[Composite] Canvas size: ${width}x${height}, frameRate: ${frameRate}fps`);
       
-      // Create canvas at captured resolution (no upscaling)
+      // Create canvas at target resolution
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
