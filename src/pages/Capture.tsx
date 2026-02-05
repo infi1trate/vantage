@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCaptureManager } from "@/hooks/useCaptureManager";
 import { usePreflightChecks } from "@/hooks/usePreflightChecks";
 import { useCaptureHealth } from "@/hooks/useCaptureHealth";
+import { usePictureInPicture } from "@/hooks/usePictureInPicture";
 import { CapturePreview } from "@/components/capture/CapturePreview";
 import { CaptureControls } from "@/components/capture/CaptureControls";
 import { CaptureWizard } from "@/components/capture/CaptureWizard";
@@ -87,6 +88,14 @@ export default function CapturePage() {
   }, []);
   
   const capture = useCaptureManager();
+  
+  // PiP management for facecam
+  const pip = usePictureInPicture();
+  
+  // Attach/detach facecam stream to PiP when it changes
+  useEffect(() => {
+    pip.attachStream(capture.facecamStream);
+  }, [capture.facecamStream, pip.attachStream]);
   
   // Capture health monitoring for performance mode
   const captureHealth = useCaptureHealth(false, true);
@@ -733,6 +742,10 @@ export default function CapturePage() {
           <FloatingFacecamBubble
             stream={capture.facecamStream}
             isVisible={isActiveRecording && capture.captureConfig.hasCam}
+            isPiPActive={pip.isPiPActive}
+            isPiPSupported={pip.isPiPSupported}
+            onRequestPiP={pip.requestPiP}
+            onExitPiP={pip.exitPiP}
           />
 
           {IS_DEV && (
