@@ -12,3 +12,6 @@ export { SubmissionCard } from "./SubmissionCard";
 export { SubmissionEntrySheet } from "./SubmissionEntrySheet";
 export { SubmissionFeed } from "./SubmissionFeed";
 export { SubmissionModal } from "./SubmissionModal";
+
+// Submission subcomponents
+export * from "./submission";
