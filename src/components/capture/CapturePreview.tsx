@@ -225,18 +225,18 @@ export const CapturePreview = memo(function CapturePreview({
         </div>
       )}
 
-      {/* Facecam overlay */}
+      {/* Facecam overlay - positioned in card for preview, FloatingFacecamBubble handles full-screen */}
       {facecamStream && (
-        <div className="absolute bottom-4 right-4 w-48 aspect-video rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg">
+        <div className="absolute bottom-4 right-4 w-32 md:w-48 aspect-video rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg bg-black">
           <video
             ref={facecamVideoRef}
             autoPlay
             muted
             playsInline
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover scale-x-[-1]"
           />
           {/* Camera active indicator */}
-          <div className="absolute top-1 right-1 flex items-center gap-1 bg-background/80 rounded-full px-1.5 py-0.5">
+          <div className="absolute top-1 right-1 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-full px-1.5 py-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-vantage-success" />
             <span className="text-[10px] text-foreground uppercase tracking-wider">Cam</span>
           </div>

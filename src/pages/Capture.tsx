@@ -16,6 +16,7 @@ import { CaptureDiagnostics } from "@/components/capture/CaptureDiagnostics";
 import { StorageRecoveryScreen } from "@/components/capture/StorageRecoveryScreen";
 import { PerformanceModeBadge } from "@/components/capture/PerformanceModeBadge";
 import { CountdownOverlay } from "@/components/capture/CountdownOverlay";
+import { FloatingFacecamBubble } from "@/components/capture/FloatingFacecamBubble";
 import { saveLocalSession, LocalSession, type SaveSessionResult, formatBytes } from "@/lib/localSessionStorage";
 import { runCapturePreflightGate } from "@/lib/capturePreflightGate";
 import { markCaptureStop, setCameraPreviewActive, recordFrameTime } from "@/lib/processingTelemetry";
@@ -726,6 +727,12 @@ export default function CapturePage() {
             onComplete={handleCountdownComplete}
             onCancel={handleCountdownCancel}
             startFrom={5}
+          />
+
+          {/* Floating Facecam Bubble - fixed position during active recording */}
+          <FloatingFacecamBubble
+            stream={capture.facecamStream}
+            isVisible={isActiveRecording && capture.captureConfig.hasCam}
           />
 
           {IS_DEV && (
