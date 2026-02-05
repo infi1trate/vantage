@@ -1,5 +1,6 @@
 export { ChallengeCard } from "./ChallengeCard";
 export { ChallengeEmptyState } from "./ChallengeEmptyState";
+export { ChallengeEntryCard } from "./ChallengeEntryCard";
 export { ChallengeGrid } from "./ChallengeGrid";
 export { ChallengeHeader } from "./ChallengeHeader";
 export { ChallengeHero } from "./ChallengeHero";
