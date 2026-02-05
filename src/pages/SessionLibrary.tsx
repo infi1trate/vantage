@@ -2,11 +2,14 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
+import { useChallengeSession } from "@/contexts/ChallengeSessionContext";
 import { Header } from "@/components/layout/Header";
 import { SessionCard, UnifiedSession } from "@/components/library/SessionCard";
 import { ProcessingSessionCard } from "@/components/library/ProcessingSessionCard";
 import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
 import { DropboxPromoBanner } from "@/components/library/DropboxPromoBanner";
+import { ChallengeSubmitPrompt } from "@/components/challenges/ChallengeSubmitPrompt";
+import { SubmissionModal } from "@/components/challenges/SubmissionModal";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
 import { supabase } from "@/integrations/supabase/client";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
@@ -53,6 +56,27 @@ export default function SessionLibrary() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Challenge submission prompt handling
+  const { 
+    challengeContext, 
+    completedSessionId, 
+    clearChallengeContext, 
+    clearCompletedSession 
+  } = useChallengeSession();
+  const [showChallengePrompt, setShowChallengePrompt] = useState(false);
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  
+  // Show challenge prompt when returning from a challenge-initiated recording
+  useEffect(() => {
+    if (challengeContext && completedSessionId) {
+      // Slight delay to let the page settle
+      const timeout = setTimeout(() => {
+        setShowChallengePrompt(true);
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [challengeContext, completedSessionId]);
   
   // Desktop deep link handling
   const fromDesktop = searchParams.get("from") === "desktop";
@@ -665,6 +689,62 @@ export default function SessionLibrary() {
       </main>
 
       <NewCaptureDialog open={showNewCapture} onOpenChange={setShowNewCapture} />
+      
+      {/* Challenge Submit Prompt - shown after recording from a challenge */}
+      {challengeContext && completedSessionId && (
+        <ChallengeSubmitPrompt
+          open={showChallengePrompt}
+          onOpenChange={setShowChallengePrompt}
+          challengeId={challengeContext.id}
+          challengeTitle={challengeContext.title}
+          sessionId={completedSessionId}
+          onSubmitNow={() => {
+            setShowChallengePrompt(false);
+            setShowSubmissionModal(true);
+          }}
+          onLater={() => {
+            setShowChallengePrompt(false);
+            clearChallengeContext();
+            clearCompletedSession();
+          }}
+        />
+      )}
+      
+      {/* Submission Modal - for submitting to the challenge */}
+      {challengeContext && completedSessionId && (
+        <SubmissionModal
+          open={showSubmissionModal}
+          onOpenChange={(open) => {
+            setShowSubmissionModal(open);
+            if (!open) {
+              // Clear challenge context after modal closes
+              clearChallengeContext();
+              clearCompletedSession();
+            }
+          }}
+          challenge={{
+            id: challengeContext.id,
+            title: challengeContext.title,
+          } as any}
+          selectedSession={{
+            id: completedSessionId,
+            title: "Recent Recording",
+          }}
+          onSuccess={() => {
+            setShowSubmissionModal(false);
+            clearChallengeContext();
+            clearCompletedSession();
+            navigate(`/challenges/${challengeContext.id}`);
+          }}
+          onChangeSession={() => {
+            // Navigate to challenge detail to pick a different session
+            setShowSubmissionModal(false);
+            clearChallengeContext();
+            clearCompletedSession();
+            navigate(`/challenges/${challengeContext.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }

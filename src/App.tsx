@@ -7,6 +7,7 @@ import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { JobsProvider } from "@/contexts/JobsContext";
 import { ProcessingProvider } from "@/contexts/ProcessingContext";
+import { ChallengeSessionProvider } from "@/contexts/ChallengeSessionContext";
 import { RouteErrorFallback } from "@/components/ErrorBoundary";
 import { DevPerfOverlay } from "@/components/dev/DevPerfOverlay";
 import { ProcessingFooter } from "@/components/processing/ProcessingFooter";
@@ -108,11 +109,13 @@ const App = () => (
     <AuthProvider>
       <JobsProvider>
         <ProcessingProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <RouterProvider router={routerWithLayout} />
-          </TooltipProvider>
+          <ChallengeSessionProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <RouterProvider router={routerWithLayout} />
+            </TooltipProvider>
+          </ChallengeSessionProvider>
         </ProcessingProvider>
       </JobsProvider>
     </AuthProvider>

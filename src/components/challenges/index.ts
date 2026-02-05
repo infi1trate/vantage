@@ -5,6 +5,7 @@ export { ChallengeHeader } from "./ChallengeHeader";
 export { ChallengeHero } from "./ChallengeHero";
 export { ChallengeRules } from "./ChallengeRules";
 export { ChallengeRulesSection } from "./ChallengeRulesSection";
+export { ChallengeSubmitPrompt } from "./ChallengeSubmitPrompt";
 export { HowToParticipate } from "./HowToParticipate";
 export { SessionPickerModal } from "./SessionPickerModal";
 export { SubmissionCard } from "./SubmissionCard";

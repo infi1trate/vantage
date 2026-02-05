@@ -18,6 +18,7 @@ import {
   Ban,
 } from "lucide-react";
 import { type Challenge, getChallengeStatus } from "@/lib/challenges";
+import { useChallengeSession } from "@/contexts/ChallengeSessionContext";
 import { cn } from "@/lib/utils";
 
 interface SubmissionEntrySheetProps {
@@ -68,20 +69,21 @@ export function SubmissionEntrySheet({
   onSelectFromLibrary,
 }: SubmissionEntrySheetProps) {
   const navigate = useNavigate();
+  const { setChallengeContext } = useChallengeSession();
   const [showEndingSoonWarning, setShowEndingSoonWarning] = useState(false);
   
   const status = getChallengeStatus(challenge);
   const urgency = useMemo(() => getTimeUrgency(challenge.ends_at), [challenge.ends_at]);
   const isEnded = !status.isOpen;
 
-  const handleRecordNew = () => {
-    // If ending soon, show warning first
-    if (urgency.isEndingSoon && !showEndingSoonWarning) {
-      setShowEndingSoonWarning(true);
-      return;
-    }
+  const navigateToRecord = () => {
+    // Set challenge context so we can prompt after recording
+    setChallengeContext({
+      id: challenge.id,
+      title: challenge.title,
+    });
     
-    // Navigate to capture with challenge context
+    // Navigate to dashboard to start recording
     onOpenChange(false);
     setShowEndingSoonWarning(false);
     navigate("/dashboard", { 
@@ -90,6 +92,16 @@ export function SubmissionEntrySheet({
         challengeTitle: challenge.title 
       } 
     });
+  };
+
+  const handleRecordNew = () => {
+    // If ending soon, show warning first
+    if (urgency.isEndingSoon && !showEndingSoonWarning) {
+      setShowEndingSoonWarning(true);
+      return;
+    }
+    
+    navigateToRecord();
   };
 
   const handleSelectFromLibrary = () => {
@@ -141,16 +153,7 @@ export function SubmissionEntrySheet({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    onOpenChange(false);
-                    setShowEndingSoonWarning(false);
-                    navigate("/dashboard", { 
-                      state: { 
-                        challengeId: challenge.id,
-                        challengeTitle: challenge.title 
-                      } 
-                    });
-                  }}
+                  onClick={navigateToRecord}
                 >
                   Record Anyway
                 </Button>
