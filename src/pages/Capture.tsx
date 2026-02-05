@@ -217,19 +217,34 @@ export default function CapturePage() {
 
   // Countdown completed - actually start recording
   const handleCountdownComplete = useCallback(async () => {
-    setShowCountdown(false);
+    console.log("[record] handleCountdownComplete called");
     
-    const success = await capture.startRecording();
-    if (!success) {
-      // Error is already set in capture.error for inline display
-      // Don't show toast - the inline error is more informative
-      console.log("[Capture] Start recording failed - showing inline error");
-      return;
+    try {
+      const success = await capture.startRecording();
+      
+      if (!success) {
+        // Error is already set in capture.error for inline display
+        console.error("[record] startRecording returned false - showing inline error");
+        toast.error("Recording failed to start", {
+          description: "Please check your browser permissions and try again.",
+        });
+        setShowCountdown(false);
+        return;
+      }
+      
+      console.log("[record] startRecording success - closing overlay");
+      setShowCountdown(false);
+      
+      // Request notification permission after user interaction (non-blocking)
+      // This is a good moment because user has explicitly started recording
+      requestNotifications().catch(() => {});
+    } catch (error) {
+      console.error("[record] startRecording threw error:", error);
+      toast.error("Recording failed to start", {
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+      setShowCountdown(false);
     }
-    
-    // Request notification permission after user interaction (non-blocking)
-    // This is a good moment because user has explicitly started recording
-    requestNotifications().catch(() => {});
   }, [capture.startRecording, requestNotifications]);
 
   // Countdown cancelled

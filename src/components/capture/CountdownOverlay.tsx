@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { X, Pause, Play } from "lucide-react";
 
 interface CountdownOverlayProps {
   isOpen: boolean;
-  onComplete: () => void;
+  onComplete: () => Promise<void> | void;
   onCancel: () => void;
   startFrom?: number;
 }
+
+const HARD_TIMEOUT_MS = 10000; // 10 second failsafe
 
 export function CountdownOverlay({
   isOpen,
@@ -16,32 +18,133 @@ export function CountdownOverlay({
   onCancel,
   startFrom = 5,
 }: CountdownOverlayProps) {
-  const [count, setCount] = useState(startFrom);
+  const [displayCount, setDisplayCount] = useState(startFrom);
   const [isPaused, setIsPaused] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
-  // Reset count when overlay opens
+  // Refs to avoid stale closure issues
+  const remainingRef = useRef(startFrom);
+  const pausedRef = useRef(false);
+  const canceledRef = useRef(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openedAtRef = useRef<number | null>(null);
+
+  // Clear interval helper
+  const clearCountdownInterval = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  // Clear hard timeout helper
+  const clearHardTimeout = useCallback(() => {
+    if (hardTimeoutRef.current) {
+      clearTimeout(hardTimeoutRef.current);
+      hardTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Start the countdown interval
+  const startCountdownInterval = useCallback(() => {
+    clearCountdownInterval();
+    
+    intervalRef.current = setInterval(() => {
+      // Check if canceled
+      if (canceledRef.current) {
+        clearCountdownInterval();
+        return;
+      }
+
+      // Check if paused
+      if (pausedRef.current) {
+        return; // Don't tick while paused
+      }
+
+      // Decrement
+      remainingRef.current -= 1;
+      const newCount = remainingRef.current;
+      
+      console.log(`[countdown] tick n=${newCount}`);
+      setDisplayCount(newCount);
+
+      // Check if complete
+      if (newCount <= 0) {
+        console.log("[countdown] complete -> startRecording");
+        clearCountdownInterval();
+      }
+    }, 1000);
+  }, [clearCountdownInterval]);
+
+  // Handle countdown completion
+  const handleComplete = useCallback(async () => {
+    if (isCompleting || canceledRef.current) return;
+    
+    setIsCompleting(true);
+    clearHardTimeout();
+    
+    console.log("[record] startRecording called");
+    
+    try {
+      await onComplete();
+      console.log("[record] startRecording success");
+    } catch (error) {
+      console.error("[record] startRecording failed", error);
+      // onComplete should handle its own error display
+    }
+    
+    // Always reset completing state (overlay closure is handled by parent)
+    setIsCompleting(false);
+  }, [onComplete, isCompleting, clearHardTimeout]);
+
+  // Watch for countdown reaching zero
+  useEffect(() => {
+    if (displayCount <= 0 && isOpen && !canceledRef.current && !isCompleting) {
+      handleComplete();
+    }
+  }, [displayCount, isOpen, isCompleting, handleComplete]);
+
+  // Initialize/reset when overlay opens
   useEffect(() => {
     if (isOpen) {
-      setCount(startFrom);
+      console.log(`[countdown] start at ${startFrom}`);
+      
+      // Reset all refs
+      remainingRef.current = startFrom;
+      pausedRef.current = false;
+      canceledRef.current = false;
+      openedAtRef.current = Date.now();
+      
+      // Reset state
+      setDisplayCount(startFrom);
       setIsPaused(false);
+      setIsCompleting(false);
+      
+      // Start countdown
+      startCountdownInterval();
+      
+      // Set hard timeout failsafe
+      clearHardTimeout();
+      hardTimeoutRef.current = setTimeout(() => {
+        if (!canceledRef.current && remainingRef.current > 0) {
+          console.error("[countdown] HARD TIMEOUT - auto-canceling after 10s");
+          canceledRef.current = true;
+          clearCountdownInterval();
+          onCancel();
+        }
+      }, HARD_TIMEOUT_MS);
+    } else {
+      // Cleanup when closing
+      clearCountdownInterval();
+      clearHardTimeout();
     }
-  }, [isOpen, startFrom]);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!isOpen || isPaused) return;
-
-    if (count <= 0) {
-      onComplete();
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setCount((prev) => prev - 1);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, count, isPaused, onComplete]);
+    return () => {
+      clearCountdownInterval();
+      clearHardTimeout();
+    };
+  }, [isOpen, startFrom, startCountdownInterval, clearCountdownInterval, clearHardTimeout, onCancel]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -50,20 +153,50 @@ export function CountdownOverlay({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
         e.preventDefault();
+        console.log("[countdown] canceled=true (ESC)");
+        canceledRef.current = true;
+        clearCountdownInterval();
+        clearHardTimeout();
         onCancel();
       } else if (e.code === "Space") {
         e.preventDefault();
-        setIsPaused((prev) => !prev);
+        togglePause();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onCancel]);
+  }, [isOpen, onCancel, clearCountdownInterval, clearHardTimeout]);
 
+  // Toggle pause
   const togglePause = useCallback(() => {
-    setIsPaused((prev) => !prev);
-  }, []);
+    if (canceledRef.current || isCompleting) return;
+    
+    const newPaused = !pausedRef.current;
+    pausedRef.current = newPaused;
+    setIsPaused(newPaused);
+    
+    console.log(`[countdown] paused=${newPaused}`);
+    
+    if (newPaused) {
+      // Pause: stop interval but keep refs
+      clearCountdownInterval();
+    } else {
+      // Resume: restart interval only if not canceled
+      if (!canceledRef.current) {
+        startCountdownInterval();
+      }
+    }
+  }, [clearCountdownInterval, startCountdownInterval, isCompleting]);
+
+  // Cancel button handler
+  const handleCancel = useCallback(() => {
+    console.log("[countdown] canceled=true (button)");
+    canceledRef.current = true;
+    clearCountdownInterval();
+    clearHardTimeout();
+    onCancel();
+  }, [onCancel, clearCountdownInterval, clearHardTimeout]);
 
   return (
     <AnimatePresence>
@@ -91,7 +224,7 @@ export function CountdownOverlay({
           <div className="relative z-10 flex flex-col items-center gap-8">
             <AnimatePresence mode="wait">
               <motion.div
-                key={count}
+                key={displayCount}
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 1.5, opacity: 0 }}
@@ -122,7 +255,7 @@ export function CountdownOverlay({
                     `,
                   }}
                 >
-                  {count}
+                  {displayCount > 0 ? displayCount : "GO"}
                 </span>
               </motion.div>
             </AnimatePresence>
@@ -145,6 +278,25 @@ export function CountdownOverlay({
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Completing indicator */}
+            <AnimatePresence>
+              {isCompleting && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-full mt-4"
+                >
+                  <span 
+                    className="font-barlow text-2xl font-semibold uppercase tracking-widest"
+                    style={{ color: "hsl(var(--vantage-lime))" }}
+                  >
+                    Starting...
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Controls */}
@@ -157,7 +309,8 @@ export function CountdownOverlay({
             <Button
               variant="outline"
               size="lg"
-              onClick={onCancel}
+              onClick={handleCancel}
+              disabled={isCompleting}
               className="min-w-32 border-muted-foreground/30 bg-background/50 backdrop-blur-sm uppercase tracking-wider text-xs hover:bg-background/70"
             >
               <X className="mr-2 h-4 w-4" />
@@ -168,6 +321,7 @@ export function CountdownOverlay({
               variant="outline"
               size="lg"
               onClick={togglePause}
+              disabled={isCompleting || displayCount <= 0}
               className="min-w-32 border-muted-foreground/30 bg-background/50 backdrop-blur-sm uppercase tracking-wider text-xs hover:bg-background/70"
             >
               {isPaused ? (
