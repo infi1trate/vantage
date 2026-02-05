@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useBlocker, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
+import { useChallengeSession } from "@/contexts/ChallengeSessionContext";
 import { Header } from "@/components/layout/Header";
 import { updateCaptureSession, getCaptureSession, CaptureSession, createVideoAsset, createPlaceholderVideoAsset } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,6 +56,7 @@ export default function CapturePage() {
   const [searchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const { queueProcessing, setCapturing, requestNotifications } = useProcessing();
+  const { challengeContext, markSessionCompleted } = useChallengeSession();
   const navigate = useNavigate();
   
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -381,6 +383,11 @@ export default function CapturePage() {
       });
 
       toast.success("Recording complete! Processing in background...");
+      
+      // If recording was started from a challenge, mark session as completed for prompt
+      if (challengeContext) {
+        markSessionCompleted(session.id);
+      }
       
       // Navigate to library immediately - don't wait for blob storage or processing
       navigate("/library", { state: { highlightSession: session.id } });
