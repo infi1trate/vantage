@@ -30,18 +30,19 @@ interface SubmissionEntrySheetProps {
 
 function getTimeUrgency(endsAt: string | null): {
   isEndingSoon: boolean;
+  isCritical: boolean;
   timeLeft: string | null;
-  hoursLeft: number;
+  minutesLeft: number;
 } {
-  if (!endsAt) return { isEndingSoon: false, timeLeft: null, hoursLeft: Infinity };
+  if (!endsAt) return { isEndingSoon: false, isCritical: false, timeLeft: null, minutesLeft: Infinity };
   
   const now = new Date();
   const end = new Date(endsAt);
   const diff = end.getTime() - now.getTime();
   
-  if (diff <= 0) return { isEndingSoon: false, timeLeft: null, hoursLeft: 0 };
+  if (diff <= 0) return { isEndingSoon: false, isCritical: false, timeLeft: null, minutesLeft: 0 };
   
-  const hoursLeft = diff / (1000 * 60 * 60);
+  const minutesLeft = diff / (1000 * 60);
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -56,9 +57,10 @@ function getTimeUrgency(endsAt: string | null): {
   }
   
   return {
-    isEndingSoon: hoursLeft <= 2, // 2 hours or less
+    isEndingSoon: minutesLeft <= 15, // 15 minutes or less - require confirmation for "Record Now"
+    isCritical: minutesLeft <= 5, // 5 minutes or less - strongly discourage recording
     timeLeft,
-    hoursLeft,
+    minutesLeft,
   };
 }
 
@@ -134,14 +136,31 @@ export function SubmissionEntrySheet({
 
         {/* Ending Soon Warning Banner */}
         {showEndingSoonWarning && urgency.isEndingSoon && (
-          <div className="mb-4 p-4 rounded-lg border border-orange-500/30 bg-orange-500/10 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0 mt-0.5" />
+          <div className={cn(
+            "mb-4 p-4 rounded-lg border flex items-start gap-3",
+            urgency.isCritical 
+              ? "border-destructive/30 bg-destructive/10" 
+              : "border-orange-500/30 bg-orange-500/10"
+          )}>
+            <AlertTriangle className={cn(
+              "h-5 w-5 shrink-0 mt-0.5",
+              urgency.isCritical ? "text-destructive" : "text-orange-400"
+            )} />
             <div className="flex-1">
-              <p className="font-medium text-orange-400">
-                Challenge ends in {urgency.timeLeft}
+              <p className={cn(
+                "font-medium",
+                urgency.isCritical ? "text-destructive" : "text-orange-400"
+              )}>
+                {urgency.isCritical 
+                  ? `Challenge ends in ${urgency.timeLeft}!`
+                  : `Challenge ends in ${urgency.timeLeft}`
+                }
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                You may not have enough time to record, edit, and submit. Consider using an existing clip instead.
+                {urgency.isCritical
+                  ? "There's not enough time to record and submit. Please choose an existing clip from your library instead."
+                  : "You may not have enough time to record, edit, and submit. Consider using an existing clip instead."
+                }
               </p>
               <div className="flex gap-2 mt-3">
                 <Button
@@ -151,11 +170,20 @@ export function SubmissionEntrySheet({
                 >
                   Cancel
                 </Button>
+                {!urgency.isCritical && (
+                  <Button
+                    size="sm"
+                    onClick={navigateToRecord}
+                  >
+                    Record Anyway
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  onClick={navigateToRecord}
+                  variant={urgency.isCritical ? "default" : "secondary"}
+                  onClick={handleSelectFromLibrary}
                 >
-                  Record Anyway
+                  Choose from Library
                 </Button>
               </div>
             </div>
@@ -222,8 +250,11 @@ export function SubmissionEntrySheet({
               </div>
 
               {/* Time warning indicator */}
-              {!isEnded && urgency.isEndingSoon && (
-                <div className="flex items-center gap-1.5 text-xs text-orange-400 mt-1">
+              {!isEnded && urgency.minutesLeft <= 60 && (
+                <div className={cn(
+                  "flex items-center gap-1.5 text-xs mt-1",
+                  urgency.isCritical ? "text-destructive" : urgency.isEndingSoon ? "text-orange-400" : "text-muted-foreground"
+                )}>
                   <Clock className="h-3 w-3" />
                   <span>Only {urgency.timeLeft} left</span>
                 </div>
