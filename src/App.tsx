@@ -32,6 +32,7 @@ const Community = lazy(() => import("./pages/Community"));
 const CommunityPost = lazy(() => import("./pages/CommunityPost"));
 const Challenges = lazy(() => import("./pages/Challenges"));
 const ChallengeDetail = lazy(() => import("./pages/ChallengeDetail"));
+const HallOfFame = lazy(() => import("./pages/HallOfFame"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Desktop = lazy(() => import("./pages/Desktop"));
 const DesktopPreview = lazy(() => import("./pages/DesktopPreview"));
@@ -90,6 +91,7 @@ const routerWithLayout = createBrowserRouter([
       { path: "/community/:postId", element: withSuspense(CommunityPost) },
       { path: "/community/p/:token", element: withSuspense(CommunityPost) },
       { path: "/challenges", element: withSuspense(Challenges) },
+      { path: "/challenges/hall-of-fame", element: withSuspense(HallOfFame) },
       { path: "/challenges/:challengeId", element: withSuspense(ChallengeDetail) },
       { path: "/capture/:sessionId", element: withSuspense(Capture) },
       { path: "/session/:sessionId", element: withSuspense(SessionReview) },
