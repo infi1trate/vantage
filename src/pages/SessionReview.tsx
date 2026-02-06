@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProcessing } from "@/contexts/ProcessingContext";
+import { useChallengeSessionOptional } from "@/contexts/ChallengeSessionContext";
 import { Header } from "@/components/layout/Header";
 import { CinematicPlayer, VideoMetaInfo, VideoDecodeError, SelectionState } from "@/components/player/CinematicPlayer";
 import { NotStoredLocallyCard } from "@/components/player/NotStoredLocallyCard";
@@ -19,6 +20,10 @@ import { SessionMediaPanel } from "@/components/player/SessionMediaPanel";
 import { TimelineEmptyState } from "@/components/player/OnboardingHint";
 import { ExportCTAs } from "@/components/export/ExportCTAs";
 import { ExportOptions } from "@/components/export/ExportDrawer";
+import { ChallengeSubmitBanner } from "@/components/challenges/ChallengeSubmitBanner";
+import { SubmissionModal } from "@/components/challenges/SubmissionModal";
+import { useQuery } from "@tanstack/react-query";
+import { fetchChallenge } from "@/lib/challenges";
 import {
   getCaptureSession,
   getAnnotations,
@@ -143,6 +148,25 @@ export default function SessionReview() {
   // React Query hook for session media status - ensures consistency with CreateReelModal
   // Must be called unconditionally (before any early returns)
   const { data: sessionMediaStatus } = useSessionMediaStatus(sessionId);
+  
+  // Challenge submission context - check if this session was recorded from a challenge
+  const challengeSession = useChallengeSessionOptional();
+  const [challengeBannerDismissed, setChallengeBannerDismissed] = useState(false);
+  const [submissionModalOpen, setSubmissionModalOpen] = useState(false);
+  
+  // Fetch challenge data if we have context
+  const { data: linkedChallenge } = useQuery({
+    queryKey: ["challenge", challengeSession?.challengeContext?.id],
+    queryFn: () => fetchChallenge(challengeSession!.challengeContext!.id),
+    enabled: !!challengeSession?.challengeContext?.id && !challengeBannerDismissed,
+    staleTime: 5 * 60 * 1000,
+  });
+  
+  // Check if we should show the challenge banner
+  const showChallengeBanner = !!challengeSession?.challengeContext && 
+    !challengeBannerDismissed && 
+    !loading &&
+    !!linkedChallenge;
   
   const videoUrlRef = useRef<string | null>(null);
 
@@ -691,6 +715,23 @@ export default function SessionReview() {
     }
   }, [processingJob, retryJob]);
   
+  // ============ CHALLENGE SUBMISSION HANDLERS ============
+  const handleChallengeSubmitNow = useCallback(() => {
+    setSubmissionModalOpen(true);
+  }, []);
+  
+  const handleChallengeDismiss = useCallback(() => {
+    setChallengeBannerDismissed(true);
+    // Clear context so it doesn't show again elsewhere
+    challengeSession?.clearChallengeContext();
+  }, [challengeSession]);
+  
+  const handleSubmissionSuccess = useCallback(() => {
+    setSubmissionModalOpen(false);
+    setChallengeBannerDismissed(true);
+    challengeSession?.clearChallengeContext();
+  }, [challengeSession]);
+  
   // ============ REEL ELIGIBILITY (SINGLE SOURCE OF TRUTH) ============
   // Compute before early returns to satisfy React hooks rules
   // sessionMediaStatus is fetched at the top of the component via React Query
@@ -938,6 +979,42 @@ export default function SessionReview() {
         onConfirmDelete={handlePermanentDelete}
         isDeleting={isDeleting}
       />
+      
+      {/* Challenge Submission Modal */}
+      {linkedChallenge && (
+        <SubmissionModal
+          open={submissionModalOpen}
+          onOpenChange={setSubmissionModalOpen}
+          challenge={linkedChallenge}
+          selectedSession={session ? {
+            id: session.id,
+            title: session.title,
+            thumbnail_url: session.thumbnail_url,
+            video_url: videoUrl || session.video_url,
+            duration_seconds: displayDuration,
+            annotations: annotations.map(a => ({
+              id: a.id,
+              annotation_type: a.annotation_type,
+              title: a.title,
+              content: a.content,
+              timestamp_seconds: a.timestamp_seconds,
+            })),
+          } : null}
+          onSuccess={handleSubmissionSuccess}
+        />
+      )}
+
+      {/* Challenge Submit Banner - shown when recording was started from a challenge */}
+      {showChallengeBanner && challengeSession?.challengeContext && (
+        <div className="container pt-4">
+          <ChallengeSubmitBanner
+            challengeId={challengeSession.challengeContext.id}
+            challengeTitle={challengeSession.challengeContext.title}
+            onSubmitNow={handleChallengeSubmitNow}
+            onDismiss={handleChallengeDismiss}
+          />
+        </div>
+      )}
 
       {/* Main content - CapCut-style layout */}
       <div className="flex-1 flex min-h-0">
