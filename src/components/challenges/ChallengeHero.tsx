@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, Trophy, Gamepad2, ArrowLeft, Flame, Crown, Medal } from "lucide-react";
+import { Clock, Trophy, Gamepad2, ArrowLeft, Flame, Crown, Medal, Sparkles } from "lucide-react";
 import { type Challenge, getChallengeStatus } from "@/lib/challenges";
 import { cn } from "@/lib/utils";
 
@@ -13,20 +13,26 @@ interface ChallengeHeroProps {
   hasSubmitted?: boolean;
 }
 
-// Difficulty indicator with flame icons
+// Difficulty indicator with flame icons (using semantic colors)
 function DifficultyIndicator({ level }: { level: number }) {
   const maxLevel = 5;
   const normalizedLevel = Math.min(Math.max(level || 1, 1), maxLevel);
+  const labels = ['Easy', 'Normal', 'Hard', 'Expert', 'Legendary'];
   
   return (
-    <div className="flex items-center gap-1">
+    <div 
+      className="flex items-center gap-1" 
+      title={`Difficulty: ${labels[normalizedLevel - 1]}`}
+    >
       <span className="text-xs text-muted-foreground mr-1">Difficulty:</span>
       {Array.from({ length: maxLevel }).map((_, i) => (
         <Flame
           key={i}
           className={cn(
             "h-4 w-4 transition-colors",
-            i < normalizedLevel ? "text-primary fill-primary" : "text-muted-foreground/30"
+            i < normalizedLevel 
+              ? "text-primary fill-primary/30" 
+              : "text-muted-foreground/30"
           )}
         />
       ))}
@@ -34,19 +40,28 @@ function DifficultyIndicator({ level }: { level: number }) {
   );
 }
 
-// Countdown timer with live update
+// Countdown timer with live update - uses ref pattern for stability
 function CountdownTimer({ endsAt, startsAt }: { endsAt: string | null; startsAt: string | null }) {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isStarting, setIsStarting] = useState(false);
   const [urgency, setUrgency] = useState<"normal" | "warning" | "critical">("normal");
+  
+  // Use refs to avoid stale closure issues
+  const endsAtRef = useRef(endsAt);
+  const startsAtRef = useRef(startsAt);
+  
+  useEffect(() => {
+    endsAtRef.current = endsAt;
+    startsAtRef.current = startsAt;
+  }, [endsAt, startsAt]);
 
   useEffect(() => {
     const updateTimer = () => {
       const now = new Date();
       
       // Check if challenge hasn't started yet
-      if (startsAt) {
-        const start = new Date(startsAt);
+      if (startsAtRef.current) {
+        const start = new Date(startsAtRef.current);
         if (now < start) {
           const diff = start.getTime() - now.getTime();
           setIsStarting(true);
@@ -57,12 +72,13 @@ function CountdownTimer({ endsAt, startsAt }: { endsAt: string | null; startsAt:
       }
       
       // Challenge is active, count down to end
-      if (!endsAt) {
+      if (!endsAtRef.current) {
         setTimeLeft("No deadline");
+        setUrgency("normal");
         return;
       }
       
-      const end = new Date(endsAt);
+      const end = new Date(endsAtRef.current);
       const diff = end.getTime() - now.getTime();
       
       if (diff <= 0) {
@@ -88,14 +104,14 @@ function CountdownTimer({ endsAt, startsAt }: { endsAt: string | null; startsAt:
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [endsAt, startsAt]);
+  }, []);
 
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-sm",
+        "inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-sm",
         urgency === "critical" && "bg-destructive/10 text-destructive border border-destructive/20",
-        urgency === "warning" && "bg-orange-500/10 text-orange-400 border border-orange-500/20",
+        urgency === "warning" && "bg-primary/10 text-primary border border-primary/20",
         urgency === "normal" && "bg-muted/50 text-foreground border border-border/50"
       )}
     >
