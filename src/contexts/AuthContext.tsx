@@ -7,7 +7,7 @@ import type { User, Session } from "@supabase/supabase-js";
 const CHALLENGE_ADMIN_EMAILS = [
   "admin@vantage.gg",
   "challenges@vantage.gg",
-  // Add more whitelisted emails here
+  "b@b.com",
 ];
 
 interface AuthContextType {
