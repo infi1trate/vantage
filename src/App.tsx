@@ -34,6 +34,7 @@ const Challenges = lazy(() => import("./pages/Challenges"));
 const ChallengeDetail = lazy(() => import("./pages/ChallengeDetail"));
 const HallOfFame = lazy(() => import("./pages/HallOfFame"));
 const Settings = lazy(() => import("./pages/Settings"));
+const AdminChallenges = lazy(() => import("./pages/AdminChallenges"));
 const Desktop = lazy(() => import("./pages/Desktop"));
 const DesktopPreview = lazy(() => import("./pages/DesktopPreview"));
 
@@ -99,6 +100,7 @@ const routerWithLayout = createBrowserRouter([
       { path: "/library/session/:sessionId", element: withSuspense(SessionReview) },
       { path: "/dashboard/session/:sessionId", element: withSuspense(SessionReview) },
       { path: "/settings", element: withSuspense(Settings) },
+      { path: "/settings/admin/challenges", element: withSuspense(AdminChallenges) },
       { path: "/desktop", element: withSuspense(Desktop) },
       { path: "/desktop/preview", element: withSuspense(DesktopPreview) },
       { path: "*", element: <NotFound /> },
