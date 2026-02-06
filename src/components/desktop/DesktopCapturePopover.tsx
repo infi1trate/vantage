@@ -84,8 +84,9 @@ export function DesktopCapturePopover({
       popover.retry(); // This resets to idle state
     };
     
-    // Handle home button - opens Library page
-    const handleHome = () => {
+    // Handle home button - opens Library in external browser (web app)
+    // This is intentional - home during post-recording opens the web library
+    const handlePostRecordingHome = () => {
       const libraryUrl = "https://getvantage.lovable.app/library";
       
       // Check if running in Electron with openExternal
@@ -99,7 +100,7 @@ export function DesktopCapturePopover({
     
     return (
       <div className={className}>
-        <PopoverShell onClose={handleDismiss} onHome={handleHome}>
+        <PopoverShell onClose={handleDismiss} onHome={handlePostRecordingHome}>
           <PostRecordingStateBody
             state={phase}
             uploadProgress={popover.uploadProgress}

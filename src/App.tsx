@@ -14,6 +14,8 @@ import { ProcessingFooter } from "@/components/processing/ProcessingFooter";
 import { RenderQueueFooter } from "@/components/processing/RenderQueueFooter";
 import { Loader2 } from "lucide-react";
 import ExtensionAuth from "./pages/ExtensionAuth";
+import { DESKTOP_MODE } from "@/lib/desktopMode";
+import { DesktopRouter } from "@/router/DesktopRouter";
 
 // Eagerly load landing page for fast initial render
 import Index from "./pages/Index";
@@ -37,8 +39,6 @@ const Settings = lazy(() => import("./pages/Settings"));
 const AdminChallenges = lazy(() => import("./pages/AdminChallenges"));
 const AdminChallengeCreate = lazy(() => import("./pages/AdminChallengeCreate"));
 const AdminChallengeEdit = lazy(() => import("./pages/AdminChallengeEdit"));
-const Desktop = lazy(() => import("./pages/Desktop"));
-const DesktopPreview = lazy(() => import("./pages/DesktopPreview"));
 
 // Loading fallback for lazy routes
 function RouteLoader() {
@@ -78,6 +78,7 @@ function AppLayout() {
 }
 
 // Create router with layout wrapper for global footers
+// Note: Desktop routes are NOT included here - they use DesktopRouter
 const routerWithLayout = createBrowserRouter([
   {
     element: <AppLayout />,
@@ -105,29 +106,52 @@ const routerWithLayout = createBrowserRouter([
       { path: "/settings/admin/challenges", element: withSuspense(AdminChallenges) },
       { path: "/settings/admin/challenges/new", element: withSuspense(AdminChallengeCreate) },
       { path: "/settings/admin/challenges/:id/edit", element: withSuspense(AdminChallengeEdit) },
-      { path: "/desktop", element: withSuspense(Desktop) },
-      { path: "/desktop/preview", element: withSuspense(DesktopPreview) },
       { path: "*", element: <NotFound /> },
     ],
   },
 ]);
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <JobsProvider>
-        <ProcessingProvider>
-          <ChallengeSessionProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <RouterProvider router={routerWithLayout} />
-            </TooltipProvider>
-          </ChallengeSessionProvider>
-        </ProcessingProvider>
-      </JobsProvider>
-    </AuthProvider>
-  </QueryClientProvider>
-);
+/**
+ * Main App Component
+ * 
+ * IMPORTANT: Desktop mode is hard-isolated.
+ * If DESKTOP_MODE is true, we render ONLY the DesktopRouter.
+ * The main app routes/layout are never mounted in desktop mode.
+ */
+const App = () => {
+  // Desktop mode: render isolated desktop router only
+  if (DESKTOP_MODE) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <DesktopRouter />
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  // Main app mode: render full app with all routes
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <JobsProvider>
+          <ProcessingProvider>
+            <ChallengeSessionProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <RouterProvider router={routerWithLayout} />
+              </TooltipProvider>
+            </ChallengeSessionProvider>
+          </ProcessingProvider>
+        </JobsProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
