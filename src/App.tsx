@@ -27,7 +27,7 @@ const Capture = lazy(() => import("./pages/Capture"));
 const SessionReview = lazy(() => import("./pages/SessionReview"));
 const SessionLibrary = lazy(() => import("./pages/SessionLibrary"));
 const ReelEditor = lazy(() => import("./pages/ReelEditor"));
-const Insights = lazy(() => import("./pages/Insights"));
+
 const Community = lazy(() => import("./pages/Community"));
 const CommunityPost = lazy(() => import("./pages/CommunityPost"));
 const Challenges = lazy(() => import("./pages/Challenges"));
@@ -85,7 +85,7 @@ const routerWithLayout = createBrowserRouter([
       { path: "/extension-auth", element: <ExtensionAuth /> },
       { path: "/dashboard", element: withSuspense(Dashboard) },
       { path: "/library", element: withSuspense(SessionLibrary) },
-      { path: "/insights", element: withSuspense(Insights) },
+      
       { path: "/community", element: withSuspense(Community) },
       { path: "/community/:postId", element: withSuspense(CommunityPost) },
       { path: "/community/p/:token", element: withSuspense(CommunityPost) },

@@ -65,12 +65,6 @@ export function Header() {
           >
             Community
           </Link>
-          <Link 
-            to="/insights" 
-            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors uppercase tracking-wider"
-          >
-            Insights
-          </Link>
         </nav>
 
         {/* Right section */}
