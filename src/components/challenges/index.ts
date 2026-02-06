@@ -7,12 +7,16 @@ export { ChallengeHero } from "./ChallengeHero";
 export { ChallengeRules } from "./ChallengeRules";
 export { ChallengeRulesSection } from "./ChallengeRulesSection";
 export { ChallengeSubmitPrompt } from "./ChallengeSubmitPrompt";
+export { HowItWorksModal } from "./HowItWorksModal";
 export { HowToParticipate } from "./HowToParticipate";
 export { SessionPickerModal } from "./SessionPickerModal";
 export { SubmissionCard } from "./SubmissionCard";
 export { SubmissionEntrySheet } from "./SubmissionEntrySheet";
 export { SubmissionFeed } from "./SubmissionFeed";
 export { SubmissionModal } from "./SubmissionModal";
+
+// Card sub-components
+export * from "./card";
 
 // Submission subcomponents
 export * from "./submission";

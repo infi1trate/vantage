@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
@@ -6,21 +6,25 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChallengeCard } from "@/components/challenges/ChallengeCard";
 import { ChallengeEmptyState } from "@/components/challenges/ChallengeEmptyState";
+import { HowItWorksModal } from "@/components/challenges/HowItWorksModal";
 import { useChallenges } from "@/hooks/useChallenges";
 import { type Challenge, getChallengeStatus } from "@/lib/challenges";
 import { 
   Trophy, 
   HelpCircle, 
-  Clock, 
   Flame, 
   Crown,
   ArrowRight,
   Sparkles,
   CalendarClock,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Sort active challenges: ending soon first, then by prize, then by submissions
+// ============================================================================
+// Sorting Utilities
+// ============================================================================
+
 function sortActiveChallenges(challenges: Challenge[]): Challenge[] {
   return [...challenges].sort((a, b) => {
     // First: ending soon (by ends_at ascending)
@@ -29,9 +33,9 @@ function sortActiveChallenges(challenges: Challenge[]): Challenge[] {
       const endB = new Date(b.ends_at).getTime();
       if (endA !== endB) return endA - endB;
     } else if (a.ends_at && !b.ends_at) {
-      return -1; // a has deadline, b doesn't
+      return -1;
     } else if (!a.ends_at && b.ends_at) {
-      return 1; // b has deadline, a doesn't
+      return 1;
     }
 
     // Second: higher prize pools
@@ -40,13 +44,10 @@ function sortActiveChallenges(challenges: Challenge[]): Challenge[] {
     if (prizeA !== prizeB) return prizeB - prizeA;
 
     // Third: higher submission counts
-    const subsA = a.submission_count || 0;
-    const subsB = b.submission_count || 0;
-    return subsB - subsA;
+    return (b.submission_count || 0) - (a.submission_count || 0);
   });
 }
 
-// Sort upcoming by start date
 function sortUpcomingChallenges(challenges: Challenge[]): Challenge[] {
   return [...challenges].sort((a, b) => {
     if (a.starts_at && b.starts_at) {
@@ -56,30 +57,41 @@ function sortUpcomingChallenges(challenges: Challenge[]): Challenge[] {
   });
 }
 
+// ============================================================================
+// Sub-components
+// ============================================================================
+
 function SectionHeader({ 
   icon: Icon, 
   title, 
   count,
+  subtitle,
   action,
 }: { 
   icon: React.ElementType; 
   title: string; 
   count?: number;
+  subtitle?: string;
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-3">
-        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Icon className="h-5 w-5 text-primary" />
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+      <div className="space-y-1">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Icon className="h-5 w-5 text-primary" />
+          </div>
+          <h2 className="font-display text-xl md:text-2xl font-bold tracking-wide">
+            {title}
+          </h2>
+          {count !== undefined && count > 0 && (
+            <Badge variant="secondary" className="font-mono">
+              {count}
+            </Badge>
+          )}
         </div>
-        <h2 className="font-display text-xl md:text-2xl font-bold tracking-wide">
-          {title}
-        </h2>
-        {count !== undefined && count > 0 && (
-          <Badge variant="secondary" className="font-mono">
-            {count}
-          </Badge>
+        {subtitle && (
+          <p className="text-sm text-muted-foreground ml-12">{subtitle}</p>
         )}
       </div>
       {action}
@@ -89,7 +101,7 @@ function SectionHeader({
 
 function ChallengeGridSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="space-y-3">
           <Skeleton className="aspect-video w-full rounded-xl" />
@@ -102,39 +114,39 @@ function ChallengeGridSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
-function HallOfFamePreview({ challenges }: { challenges: Challenge[] }) {
-  // Get challenges with winners
-  const winnersToShow = challenges.slice(0, 3);
+function PastWinnersPreview({ challenges }: { challenges: Challenge[] }) {
+  const winnersToShow = challenges.slice(0, 4);
 
   if (winnersToShow.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {winnersToShow.map((challenge) => (
         <Link
           key={challenge.id}
           to={`/challenges/${challenge.id}`}
           className={cn(
-            "group relative flex items-center gap-4 p-4 rounded-xl",
+            "group relative flex items-center gap-3 p-3 rounded-xl",
             "border border-border/50 bg-card/30 backdrop-blur-sm",
             "hover:border-primary/50 hover:bg-card/50 transition-all"
           )}
         >
           {/* Thumbnail */}
-          <div className="relative h-16 w-24 rounded-lg overflow-hidden shrink-0">
+          <div className="relative h-14 w-20 rounded-lg overflow-hidden shrink-0">
             {challenge.thumbnail_url ? (
               <img
                 src={challenge.thumbnail_url}
                 alt={challenge.title}
+                loading="lazy"
                 className="h-full w-full object-cover"
               />
             ) : (
               <div className="h-full w-full bg-muted flex items-center justify-center">
-                <Trophy className="h-6 w-6 text-muted-foreground" />
+                <Trophy className="h-5 w-5 text-muted-foreground" />
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-            <Crown className="absolute bottom-1 right-1 h-4 w-4 text-yellow-500" />
+            <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
+            <Crown className="absolute bottom-1 right-1 h-3.5 w-3.5 text-primary" />
           </div>
 
           {/* Info */}
@@ -143,7 +155,7 @@ function HallOfFamePreview({ challenges }: { challenges: Challenge[] }) {
               {challenge.title}
             </h4>
             {challenge.game_name && (
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                 {challenge.game_name}
               </p>
             )}
@@ -153,15 +165,18 @@ function HallOfFamePreview({ challenges }: { challenges: Challenge[] }) {
               </p>
             )}
           </div>
-
-          <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
         </Link>
       ))}
     </div>
   );
 }
 
+// ============================================================================
+// Main Page Component
+// ============================================================================
+
 export default function Challenges() {
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const { data: allChallenges, isLoading } = useChallenges();
 
   // Categorize challenges
@@ -180,17 +195,15 @@ export default function Challenges() {
       if (challenge.status === 'completed') {
         completed.push(challenge);
       } else if (challenge.status === 'active') {
-        // Check if it's upcoming (starts in future) or active now
         if (startsAt && now < startsAt) {
           upcoming.push(challenge);
         } else if (status.isOpen) {
           active.push(challenge);
         } else {
-          // Ended but not marked completed yet
           completed.push(challenge);
         }
       } else if (challenge.status === 'judging') {
-        completed.push(challenge); // Show judging in completed section
+        completed.push(challenge);
       } else if (challenge.status === 'draft' && startsAt && now < startsAt) {
         upcoming.push(challenge);
       }
@@ -199,7 +212,7 @@ export default function Challenges() {
     return {
       active: sortActiveChallenges(active),
       upcoming: sortUpcomingChallenges(upcoming),
-      completed: completed.slice(0, 6), // Limit for preview
+      completed,
     };
   }, [allChallenges]);
 
@@ -221,16 +234,19 @@ export default function Challenges() {
                 </h1>
               </div>
               <p className="text-muted-foreground text-lg max-w-xl">
-                Complete in-game feats. Submit the moment. Win rewards.
+                Compete in gameplay feats. Submit the moment. Win rewards.
               </p>
             </div>
 
-            {/* How it works link */}
-            <Button variant="ghost" size="sm" className="self-start" asChild>
-              <Link to="#how-it-works" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-                <HelpCircle className="h-4 w-4" />
-                How it works
-              </Link>
+            {/* How it works button */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="self-start text-muted-foreground hover:text-foreground"
+              onClick={() => setShowHowItWorks(true)}
+            >
+              <HelpCircle className="h-4 w-4 mr-2" />
+              How it works
             </Button>
           </div>
         </div>
@@ -244,14 +260,14 @@ export default function Challenges() {
           />
           
           {isLoading ? (
-            <ChallengeGridSkeleton count={4} />
+            <ChallengeGridSkeleton count={3} />
           ) : active.length === 0 ? (
             <ChallengeEmptyState
               title="No active challenges right now"
               description="New challenges drop regularly. Check back soon or explore past winners for inspiration!"
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {active.map((challenge) => (
                 <ChallengeCard key={challenge.id} challenge={challenge} />
               ))}
@@ -266,46 +282,52 @@ export default function Challenges() {
               icon={CalendarClock} 
               title="Upcoming Challenges" 
               count={upcoming.length}
+              subtitle="Submissions open when the challenge starts"
             />
             
             {isLoading ? (
               <ChallengeGridSkeleton count={2} />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-                {upcoming.map((challenge) => (
-                  <ChallengeCard 
-                    key={challenge.id} 
-                    challenge={challenge}
-                    className="opacity-80"
-                  />
-                ))}
-              </div>
+              <>
+                {/* Disabled submission notice */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  <span>These challenges aren't accepting submissions yet. Check back when they go live!</span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                  {upcoming.map((challenge) => (
+                    <ChallengeCard 
+                      key={challenge.id} 
+                      challenge={challenge}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </section>
         )}
 
-        {/* Hall of Fame Preview */}
+        {/* Past Winners Preview */}
         {(isLoading || completed.length > 0) && (
           <section className="pt-4 border-t border-border/50">
             <SectionHeader 
               icon={Crown} 
-              title="Hall of Fame"
+              title="Past Winners"
               action={
-                completed.length > 3 && (
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link to="/challenges/hall-of-fame" className="flex items-center gap-2">
-                      View All
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                )
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/challenges/hall-of-fame" className="flex items-center gap-2">
+                    View Hall of Fame
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
               }
             />
             
             {isLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 rounded-xl" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20 rounded-xl" />
                 ))}
               </div>
             ) : completed.length === 0 ? (
@@ -314,54 +336,17 @@ export default function Challenges() {
                 <p>Past challenges will appear here</p>
               </div>
             ) : (
-              <HallOfFamePreview challenges={completed} />
+              <PastWinnersPreview challenges={completed} />
             )}
           </section>
         )}
-
-        {/* How it Works (anchor target) */}
-        <section id="how-it-works" className="scroll-mt-24 pt-8 border-t border-border/50">
-          <SectionHeader icon={HelpCircle} title="How It Works" />
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              {
-                step: "1",
-                title: "Find a Challenge",
-                description: "Browse active challenges that match your game and skill level.",
-                icon: Trophy,
-              },
-              {
-                step: "2",
-                title: "Capture the Moment",
-                description: "Record your gameplay and capture the feat required by the challenge.",
-                icon: Flame,
-              },
-              {
-                step: "3",
-                title: "Submit & Win",
-                description: "Submit your clip before the deadline. Winners are selected by the host.",
-                icon: Crown,
-              },
-            ].map((item) => (
-              <div
-                key={item.step}
-                className={cn(
-                  "relative p-6 rounded-xl",
-                  "border border-border/50 bg-card/30 backdrop-blur-sm"
-                )}
-              >
-                <div className="absolute -top-3 -left-3 h-8 w-8 rounded-full bg-primary text-primary-foreground font-display font-bold text-lg flex items-center justify-center">
-                  {item.step}
-                </div>
-                <item.icon className="h-8 w-8 text-primary mb-4" />
-                <h3 className="font-display text-lg font-bold mb-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </section>
       </main>
+
+      {/* How It Works Modal */}
+      <HowItWorksModal 
+        open={showHowItWorks} 
+        onOpenChange={setShowHowItWorks} 
+      />
     </div>
   );
 }
