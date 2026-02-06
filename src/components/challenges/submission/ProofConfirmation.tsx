@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CheckCircle2, Clock, Plus, Tag } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Plus, Tag, Edit2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { InlineAnnotationCreator } from "./InlineAnnotationCreator";
 
 interface Annotation {
   id: string;
@@ -18,8 +20,14 @@ interface ProofConfirmationProps {
   isConfirmed: boolean;
   onConfirmChange: (confirmed: boolean) => void;
   onAddAnnotation?: () => void;
+  onCreateInlineAnnotation?: (annotation: {
+    type: string;
+    label: string;
+    timestamp_seconds: number;
+  }) => Promise<Annotation>;
   clipStartMs: number;
   clipEndMs: number;
+  currentTimeMs?: number;
 }
 
 export function ProofConfirmation({
@@ -27,9 +35,13 @@ export function ProofConfirmation({
   isConfirmed,
   onConfirmChange,
   onAddAnnotation,
+  onCreateInlineAnnotation,
   clipStartMs,
   clipEndMs,
+  currentTimeMs = clipStartMs,
 }: ProofConfirmationProps) {
+  const [showInlineCreator, setShowInlineCreator] = useState(false);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -61,7 +73,31 @@ export function ProofConfirmation({
   const annotationMs = annotation ? annotation.timestamp_seconds * 1000 : 0;
   const isWithinClip = annotation && annotationMs >= clipStartMs && annotationMs <= clipEndMs;
 
+  const handleInlineCreate = async (data: {
+    type: string;
+    label: string;
+    timestamp_seconds: number;
+  }) => {
+    if (onCreateInlineAnnotation) {
+      await onCreateInlineAnnotation(data);
+      setShowInlineCreator(false);
+    }
+  };
+
   if (!annotation) {
+    // Show inline creator if active
+    if (showInlineCreator && onCreateInlineAnnotation) {
+      return (
+        <InlineAnnotationCreator
+          currentTimeMs={currentTimeMs}
+          clipStartMs={clipStartMs}
+          clipEndMs={clipEndMs}
+          onCancel={() => setShowInlineCreator(false)}
+          onSubmit={handleInlineCreate}
+        />
+      );
+    }
+
     return (
       <div className="space-y-3">
         <div className="flex items-start gap-3 p-4 rounded-lg border border-destructive/30 bg-destructive/5">
@@ -73,17 +109,28 @@ export function ProofConfirmation({
             <p className="text-sm text-muted-foreground">
               To submit to this challenge, you must annotate the moment that proves you completed it.
             </p>
-            {onAddAnnotation && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onAddAnnotation}
-                className="mt-2"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Annotation
-              </Button>
-            )}
+            <div className="flex flex-wrap gap-2 mt-2">
+              {onCreateInlineAnnotation && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setShowInlineCreator(true)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Quick Annotation
+                </Button>
+              )}
+              {onAddAnnotation && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onAddAnnotation}
+                >
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Open Full Editor
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

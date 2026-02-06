@@ -53,12 +53,12 @@ export function SubmissionSuccess({
 
       {/* Title */}
       <h3 className="text-xl font-display font-semibold mb-2">
-        Submission Complete!
+        Your entry is live! 🎉
       </h3>
 
       {/* Description */}
       <p className="text-muted-foreground mb-1">
-        Your entry has been submitted to
+        Successfully submitted to
       </p>
       <p className="font-medium text-foreground mb-4">
         "{challengeTitle}"
