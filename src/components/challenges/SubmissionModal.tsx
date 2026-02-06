@@ -34,6 +34,8 @@ import {
   SubmissionLimitsBar,
   SubmissionSuccess,
 } from "./submission";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 // Submission steps
@@ -88,6 +90,7 @@ export function SubmissionModal({
   onChangeSession,
 }: SubmissionModalProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const createSubmission = useCreateSubmission();
   const { data: userSubmissions = [] } = useUserSubmissions(challenge.id);
 
@@ -100,6 +103,7 @@ export function SubmissionModal({
   const [clipEndMs, setClipEndMs] = useState(
     initialClipRange?.end_ms ?? (selectedSession?.duration_seconds ?? 60) * 1000
   );
+  const [currentPlaybackMs, setCurrentPlaybackMs] = useState(0);
 
   // Proof confirmation state
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(
@@ -284,12 +288,58 @@ export function SubmissionModal({
     }
   };
 
-  // Handle add annotation action
+  // Handle add annotation action (full editor)
   const handleAddAnnotation = () => {
     if (selectedSession) {
       onOpenChange(false);
-      navigate(`/session/${selectedSession.id}`);
+      navigate(`/session/${selectedSession.id}?action=annotate`);
     }
+  };
+
+  // Handle inline annotation creation
+  const handleCreateInlineAnnotation = async (data: {
+    type: string;
+    label: string;
+    timestamp_seconds: number;
+  }): Promise<Annotation> => {
+    if (!selectedSession || !user) {
+      throw new Error("No session or user");
+    }
+
+    const { data: annotation, error } = await supabase
+      .from("annotations")
+      .insert({
+        session_id: selectedSession.id,
+        user_id: user.id,
+        annotation_type: data.type,
+        title: data.label,
+        timestamp_seconds: data.timestamp_seconds,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const newAnnotation: Annotation = {
+      id: annotation.id,
+      annotation_type: annotation.annotation_type || data.type,
+      title: annotation.title,
+      content: annotation.content,
+      timestamp_seconds: annotation.timestamp_seconds,
+    };
+
+    setSelectedAnnotation(newAnnotation);
+    toast.success("Annotation created!", {
+      description: `"${data.label}" at ${formatTimestamp(data.timestamp_seconds)}`,
+    });
+
+    return newAnnotation;
+  };
+
+  const formatTimestamp = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   // Get rule summary (first line of rules or description)
@@ -381,8 +431,10 @@ export function SubmissionModal({
                   isConfirmed={isProofConfirmed}
                   onConfirmChange={setIsProofConfirmed}
                   onAddAnnotation={handleAddAnnotation}
+                  onCreateInlineAnnotation={handleCreateInlineAnnotation}
                   clipStartMs={clipStartMs}
                   clipEndMs={clipEndMs}
+                  currentTimeMs={currentPlaybackMs || clipStartMs}
                 />
               </div>
             )}
