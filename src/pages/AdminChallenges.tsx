@@ -100,8 +100,7 @@ export default function AdminChallenges() {
 
   // Handlers
   const handleEdit = (id: string) => {
-    // TODO: Navigate to edit page or open modal
-    toast.info("Edit functionality coming soon");
+    navigate(`/settings/admin/challenges/${id}/edit`);
   };
 
   const handlePublish = (id: string) => {
