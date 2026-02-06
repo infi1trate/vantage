@@ -2,7 +2,10 @@
  * Desktop Capture Popover Page
  * 
  * Renders the desktop capture popover as a real menubar-style UI.
- * Requires authentication — redirects to /auth if not logged in.
+ * Requires authentication — redirects to /desktop/auth if not logged in.
+ * 
+ * IMPORTANT: This page is part of the isolated desktop router.
+ * All navigation must stay within /desktop/* routes.
  */
 
 import { useEffect, useCallback } from "react";
@@ -12,15 +15,16 @@ import { DesktopCapturePopover, HUDMini, usePopoverState } from "@/components/de
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { DESKTOP_ROUTES } from "@/lib/desktopMode";
 
 export default function DesktopPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   
-  // Redirect to auth if not logged in
+  // Redirect to desktop auth if not logged in (NOT /auth)
   useEffect(() => {
     if (!authLoading && !user) {
-      navigate("/auth?returnTo=/desktop", { replace: true });
+      navigate(DESKTOP_ROUTES.AUTH, { replace: true });
     }
   }, [user, authLoading, navigate]);
 
@@ -54,10 +58,15 @@ interface AuthenticatedDesktopViewProps {
 function AuthenticatedDesktopView({ user }: AuthenticatedDesktopViewProps) {
   const navigate = useNavigate();
 
-  // Sign out handler - signs out of Supabase and redirects to auth
+  // Sign out handler - signs out of Supabase and redirects to desktop auth (NOT /auth)
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
-    navigate("/auth", { replace: true });
+    navigate(DESKTOP_ROUTES.AUTH, { replace: true });
+  }, [navigate]);
+
+  // Home button handler - navigates to /desktop (NOT /library)
+  const handleHome = useCallback(() => {
+    navigate(DESKTOP_ROUTES.ROOT);
   }, [navigate]);
 
   // Extract username from email
@@ -103,7 +112,7 @@ function AuthenticatedDesktopView({ user }: AuthenticatedDesktopViewProps) {
             maxHeight: '100vh',
           }}
         >
-          <DesktopCapturePopover externalState={popover} />
+          <DesktopCapturePopover externalState={popover} onHome={handleHome} />
         </div>
       </div>
     </div>

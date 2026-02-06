@@ -20,6 +20,7 @@ export { SettingsModal } from "./SettingsModal";
 export { QuitConfirmDialog } from "./QuitConfirmDialog";
 export { QuickStartSheet } from "./QuickStartSheet";
 export { DesktopCapturePopover } from "./DesktopCapturePopover";
+export { DesktopRouteGuard } from "./DesktopRouteGuard";
 export { usePopoverState, type UsePopoverStateReturn, type PostRecordingPhase, type DesktopUserInfo } from "./usePopoverState";
 export { AboutModal } from "./AboutModal";
 export * from "./types";
