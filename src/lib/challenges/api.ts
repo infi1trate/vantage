@@ -202,6 +202,24 @@ export async function getHallOfFame(): Promise<HallOfFameWeek[]> {
   return [];
 }
 
+/**
+ * Fetch winners for an ended challenge.
+ * Returns top 3 entries with rank set.
+ */
+export async function getChallengeWinners(challengeId: string): Promise<ChallengeEntry[]> {
+  const { data, error } = await supabase
+    .from('challenge_submissions')
+    .select('*, profiles!challenge_submissions_user_id_fkey(id, username, display_name, avatar_url)')
+    .eq('challenge_id', challengeId)
+    .eq('status', 'winner')
+    .order('rank', { ascending: true })
+    .limit(3);
+
+  if (error) throw error;
+
+  return (data || []).map(transformDbEntryToUi);
+}
+
 // ============================================================================
 // Admin API
 // ============================================================================

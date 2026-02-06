@@ -29,13 +29,14 @@ import {
   type ChallengeFormValues,
   type DisabledFields,
 } from "@/components/admin/ChallengeForm";
+import { WinnersModule } from "@/components/admin/WinnersModule";
 import {
   useAdminPublishChallenge,
   useAdminUnpublishChallenge,
   useAdminEndChallenge,
   useAdminDeleteChallenge,
 } from "@/hooks/useAdminChallenges";
-import { getChallengeDetail, adminUpdateChallenge } from "@/lib/challenges/api";
+import { getChallengeDetail, adminUpdateChallenge, getChallengeWinners } from "@/lib/challenges/api";
 import {
   Trophy,
   ArrowLeft,
@@ -49,7 +50,6 @@ import {
   Flag,
   ExternalLink,
   AlertTriangle,
-  Crown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,6 +74,14 @@ export default function AdminChallengeEdit() {
     queryFn: () => getChallengeDetail(id!),
     enabled: !!id && isChallengeAdmin,
     staleTime: 30 * 1000,
+  });
+
+  // Fetch winners for ended challenges
+  const { data: winners = [], isLoading: isLoadingWinners } = useQuery({
+    queryKey: ["challenge-winners", id],
+    queryFn: () => getChallengeWinners(id!),
+    enabled: !!id && isChallengeAdmin && challenge?.status === "ended",
+    staleTime: 60 * 1000,
   });
 
   const form = useForm<ChallengeFormValues>({
@@ -408,27 +416,6 @@ export default function AdminChallengeEdit() {
             </div>
           </div>
 
-          {/* Ended challenge banner */}
-          {challengeState.isEnded && (
-            <div className="mt-4 rounded-lg border border-border/50 bg-muted/30 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Crown className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-medium">This challenge has ended</p>
-                  <p className="text-sm text-muted-foreground">
-                    {challenge.submissionsCount} submissions received
-                  </p>
-                </div>
-              </div>
-              <Button variant="outline" size="sm" asChild>
-                <Link to={`/challenges/${id}`}>
-                  View Winners
-                  <ExternalLink className="h-4 w-4 ml-2" />
-                </Link>
-              </Button>
-            </div>
-          )}
-
           {/* Active challenge warning */}
           {challengeState.isActive && (
             <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
@@ -445,7 +432,16 @@ export default function AdminChallengeEdit() {
       </div>
 
       {/* Form */}
-      <main className="container flex-1 py-8">
+      <main className="container flex-1 py-8 space-y-8">
+        {/* Winners Module for ended challenges */}
+        {challengeState.isEnded && id && (
+          <WinnersModule 
+            challengeId={id} 
+            winners={winners} 
+            isLoading={isLoadingWinners}
+          />
+        )}
+        
         <ChallengeForm
           form={form}
           isReadOnly={isReadOnly}
