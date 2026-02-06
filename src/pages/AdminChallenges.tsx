@@ -121,8 +121,7 @@ export default function AdminChallenges() {
   };
 
   const handleCreateChallenge = () => {
-    // TODO: Navigate to create page or open modal
-    toast.info("Create challenge functionality coming soon");
+    navigate("/settings/admin/challenges/new");
   };
 
   // Show loading while checking auth
