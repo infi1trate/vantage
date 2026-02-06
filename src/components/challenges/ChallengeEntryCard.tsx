@@ -34,6 +34,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  Share2,
+  Link2,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLazyLoad } from "@/hooks/useLazyLoad";
@@ -169,6 +172,11 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
+  
+  // Optimistic vote state
+  const [optimisticVoteCount, setOptimisticVoteCount] = useState(voteCount);
+  const [optimisticHasVoted, setOptimisticHasVoted] = useState(hasVoted);
+  const [isVoting, setIsVoting] = useState(false);
 
   // Lazy load video when card is in viewport
   const { ref: cardRef, isVisible, hasBeenVisible } = useLazyLoad<HTMLDivElement>({
@@ -235,13 +243,62 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
     onClick?.(id);
   };
 
-  // Handle vote
-  const handleVote = (e: React.MouseEvent) => {
+  // Handle vote with optimistic update
+  const handleVote = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isChallengeEnded && !isRejectedOrRemoved) {
-      onVote?.(id);
+    if (isChallengeEnded || isRejectedOrRemoved || isVoting) return;
+    
+    // Optimistic update
+    const wasVoted = optimisticHasVoted;
+    setOptimisticHasVoted(!wasVoted);
+    setOptimisticVoteCount(prev => wasVoted ? prev - 1 : prev + 1);
+    setIsVoting(true);
+    
+    try {
+      // Call the vote handler - it should return or throw if failed
+      await onVote?.(id);
+    } catch (error) {
+      // Revert on error
+      setOptimisticHasVoted(wasVoted);
+      setOptimisticVoteCount(prev => wasVoted ? prev + 1 : prev - 1);
+      toast.error("Failed to vote", { description: "Please try again." });
+    } finally {
+      setIsVoting(false);
     }
-  };
+  }, [id, isChallengeEnded, isRejectedOrRemoved, isVoting, optimisticHasVoted, onVote]);
+
+  // Handle share
+  const handleShare = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const shareUrl = `${window.location.origin}/challenges/entry/${id}`;
+    
+    // Try native share first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: title,
+          text: `Check out this challenge entry: ${title}`,
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        // User cancelled or share failed, fall through to clipboard
+        if ((err as Error).name === 'AbortError') return;
+      }
+    }
+    
+    // Fallback to clipboard
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copied!", {
+        description: "Share link copied to clipboard",
+        icon: <Link2 className="h-4 w-4" />,
+      });
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  }, [id, title]);
 
   // Handle report confirmation
   const handleReportConfirm = async () => {
@@ -424,25 +481,42 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
               {/* Vote Button - hidden for rejected/removed */}
               {!isRejectedOrRemoved && (
                 <Button
-                  variant={hasVoted ? "default" : "ghost"}
+                  variant={optimisticHasVoted ? "default" : "ghost"}
                   size="sm"
                   className={cn(
-                    "h-8 px-2 gap-1.5",
-                    hasVoted && "bg-primary/20 text-primary hover:bg-primary/30",
+                    "h-8 px-2 gap-1.5 min-w-[52px]",
+                    optimisticHasVoted && "bg-primary/20 text-primary hover:bg-primary/30",
                     isChallengeEnded && "opacity-50 cursor-not-allowed"
                   )}
                   onClick={handleVote}
-                  disabled={isChallengeEnded}
-                  title={isChallengeEnded ? "Voting has ended" : "Vote for this entry"}
+                  disabled={isChallengeEnded || isVoting}
+                  title={isChallengeEnded ? "Voting has ended" : optimisticHasVoted ? "Remove vote" : "Vote for this entry"}
                 >
-                  <ThumbsUp
-                    className={cn("h-4 w-4", hasVoted && "fill-current")}
-                  />
-                  <span className="text-xs font-medium">{voteCount}</span>
+                  {isVoting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ThumbsUp
+                      className={cn("h-4 w-4", optimisticHasVoted && "fill-current")}
+                    />
+                  )}
+                  <span className="text-xs font-medium">{optimisticVoteCount}</span>
                 </Button>
               )}
 
-              {/* More Options */}
+              {/* Share Button */}
+              {!isRejectedOrRemoved && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={handleShare}
+                  title="Share this entry"
+                >
+                  <Share2 className="h-4 w-4" />
+                </Button>
+              )}
+
+              {/* More Options (Report) */}
               {!isRejectedOrRemoved && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -461,7 +535,7 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
                       className="text-destructive focus:text-destructive"
                     >
                       <Flag className="h-4 w-4 mr-2" />
-                      Report
+                      Report Entry
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
