@@ -19,6 +19,7 @@ import { SessionsSection } from "./sections/SessionsSection";
 import { ConnectedAccountsSection } from "./sections/ConnectedAccountsSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NavLink } from "@/components/NavLink";
 import { 
   User, 
   Shield, 
@@ -27,7 +28,9 @@ import {
   Laptop,
   Link2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trophy,
+  ExternalLink,
 } from "lucide-react";
 
 type SettingsTab = "account" | "security" | "camera" | "privacy" | "sessions" | "connected";
@@ -42,7 +45,7 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
 ];
 
 export function SettingsLayout() {
-  const { loading } = useAuth();
+  const { loading, isChallengeAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const tabsContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Map<SettingsTab, HTMLButtonElement | null>>(new Map());
@@ -236,6 +239,25 @@ export function SettingsLayout() {
               </button>
             );
           })}
+          
+          {/* Admin Section - only visible to challenge admins */}
+          {isChallengeAdmin && (
+            <>
+              <div className="my-4 border-t border-border/30" />
+              <div className="px-4 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Admin
+              </div>
+              <NavLink
+                to="/settings/admin/challenges"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all hover:bg-muted/50 text-muted-foreground border border-transparent hover:text-foreground"
+                activeClassName="bg-primary/10 text-primary border-primary/20"
+              >
+                <Trophy className="h-5 w-5 shrink-0" aria-hidden="true" />
+                <span className="text-sm font-medium flex-1">Challenges</span>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+              </NavLink>
+            </>
+          )}
         </nav>
 
         {/* Content Area - uses tabpanel role for accessibility */}

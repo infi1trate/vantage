@@ -1,17 +1,28 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+
+// Whitelisted emails for challenge admin access
+// In production, this should come from a secure backend/database
+const CHALLENGE_ADMIN_EMAILS = [
+  "admin@vantage.gg",
+  "challenges@vantage.gg",
+  // Add more whitelisted emails here
+];
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  /** True if user is whitelisted for challenge admin access */
+  isChallengeAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  isChallengeAdmin: false,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -39,8 +50,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Compute isChallengeAdmin based on user email
+  const isChallengeAdmin = useMemo(() => {
+    if (!user?.email) return false;
+    return CHALLENGE_ADMIN_EMAILS.includes(user.email.toLowerCase());
+  }, [user?.email]);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading }}>
+    <AuthContext.Provider value={{ user, session, loading, isChallengeAdmin }}>
       {children}
     </AuthContext.Provider>
   );
