@@ -2,7 +2,8 @@ import { useState, memo, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Trophy, Crown, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Trophy, Crown, Users, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Challenge as DbChallenge } from "@/lib/challenges";
 import type { Challenge as UiChallenge } from "@/lib/challenges/types";
@@ -165,6 +166,24 @@ export const ChallengeCard = memo(function ChallengeCard({
 
         {/* Content */}
         <CardContent className="p-4 space-y-3">
+          {/* Sponsored Label */}
+          {challenge.isSponsored && challenge.sponsor && (
+            <div className="flex items-center gap-2">
+              {challenge.sponsor.logoUrl ? (
+                <img 
+                  src={challenge.sponsor.logoUrl} 
+                  alt={challenge.sponsor.name}
+                  className="h-4 w-4 object-contain opacity-70"
+                />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+              <span className="text-xs text-muted-foreground">
+                Sponsored by {challenge.sponsor.name}
+              </span>
+            </div>
+          )}
+          
           {/* Title - 2 lines max */}
           <h3 className="font-display text-lg font-bold leading-tight line-clamp-2 group-hover:text-primary transition-colors min-h-[3.5rem]">
             {challenge.title}

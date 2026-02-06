@@ -246,11 +246,14 @@ export function ChallengeHero({
               )}
             </div>
             
-            {/* Sponsored badge */}
+            {/* Sponsored badge with optional logo */}
             {challenge.is_sponsored && challenge.sponsor_name && (
-              <Badge variant="secondary" className="absolute bottom-3 left-3">
-                Sponsored by {challenge.sponsor_name}
-              </Badge>
+              <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border/50">
+                <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground font-medium">
+                  Sponsored by {challenge.sponsor_name}
+                </span>
+              </div>
             )}
           </div>
 

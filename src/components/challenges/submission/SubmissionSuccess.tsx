@@ -1,12 +1,18 @@
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ExternalLink, Share2, Plus, Trophy } from "lucide-react";
+import { CheckCircle2, ExternalLink, Share2, Plus, Trophy, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
+
+interface SponsorInfo {
+  name: string;
+  logoUrl?: string;
+}
 
 interface SubmissionSuccessProps {
   challengeTitle: string;
   submissionTitle?: string;
   remainingSubmissions: number;
   maxSubmissions: number;
+  sponsor?: SponsorInfo | null;
   onViewChallenge: () => void;
   onShare: () => void;
   onSubmitAnother?: () => void;
@@ -18,6 +24,7 @@ export function SubmissionSuccess({
   submissionTitle,
   remainingSubmissions,
   maxSubmissions,
+  sponsor,
   onViewChallenge,
   onShare,
   onSubmitAnother,
@@ -65,9 +72,25 @@ export function SubmissionSuccess({
       </p>
 
       {submissionTitle && (
-        <div className="px-4 py-2 rounded-lg bg-muted/50 border border-border mb-6">
+        <div className="px-4 py-2 rounded-lg bg-muted/50 border border-border mb-4">
           <p className="text-sm text-muted-foreground">Submission title:</p>
           <p className="font-medium">{submissionTitle}</p>
+        </div>
+      )}
+
+      {/* Sponsor acknowledgment */}
+      {sponsor && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+          {sponsor.logoUrl ? (
+            <img 
+              src={sponsor.logoUrl} 
+              alt={sponsor.name}
+              className="h-4 w-4 object-contain opacity-70"
+            />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" />
+          )}
+          <span>This challenge is sponsored by <span className="font-medium text-foreground">{sponsor.name}</span>.</span>
         </div>
       )}
 
