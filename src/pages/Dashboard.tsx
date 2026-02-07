@@ -7,7 +7,8 @@ import { OpenVantageModal } from "@/components/capture/OpenVantageModal";
 import { getCaptureSessions, CaptureSession } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Plus, Video, BarChart3, Clock } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Loader2, Monitor, Plus, Video, BarChart3, Clock } from "lucide-react";
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -72,14 +73,21 @@ export default function Dashboard() {
               </h1>
             </div>
             
-            <Button 
-              size="lg" 
-              onClick={() => setShowOpenVantage(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider glow-primary"
-            >
-              <Plus className="mr-2 h-5 w-5" />
-              New Capture
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="lg" 
+                  onClick={() => setShowOpenVantage(true)}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider glow-primary"
+                >
+                  <Monitor className="mr-2 h-5 w-5" />
+                  Open Vantage (Desktop)
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Capture runs in the desktop app</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         </section>
 
@@ -145,11 +153,11 @@ export default function Dashboard() {
                 <Video className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
                 <h3 className="font-display text-2xl mb-2">No Captures Yet</h3>
                 <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">
-                  Start your first capture session to begin analyzing your gameplay decisions
+                  Start your first capture session with the Vantage desktop app
                 </p>
                 <Button onClick={() => setShowOpenVantage(true)} className="uppercase tracking-wider font-bold">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create First Capture
+                  <Monitor className="mr-2 h-4 w-4" />
+                  Open Vantage (Desktop)
                 </Button>
               </div>
             </Card>

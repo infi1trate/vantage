@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -425,14 +426,21 @@ export default function SessionLibrary() {
             </p>
           </div>
           
-          <Button 
-            size="lg" 
-            onClick={() => setShowOpenVantage(true)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary"
-          >
-            <Plus className="mr-2 h-5 w-5" />
-            New Capture
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                size="lg" 
+                onClick={() => setShowOpenVantage(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary"
+              >
+                <Monitor className="mr-2 h-5 w-5" />
+                Open Vantage (Desktop)
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Capture runs in the desktop app</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Stats Cards */}
@@ -617,11 +625,11 @@ export default function SessionLibrary() {
                 <>
                   <h3 className="text-lg font-semibold mb-2">No recordings yet</h3>
                   <p className="text-muted-foreground mb-6">
-                    Start your first capture to begin recording gameplay
+                    Start your first capture with the Vantage desktop app
                   </p>
                   <Button onClick={() => setShowOpenVantage(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create First Capture
+                    <Monitor className="mr-2 h-4 w-4" />
+                    Open Vantage (Desktop)
                   </Button>
                 </>
               ) : (
