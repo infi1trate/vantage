@@ -6,7 +6,7 @@ import { useChallengeSession } from "@/contexts/ChallengeSessionContext";
 import { Header } from "@/components/layout/Header";
 import { SessionCard, UnifiedSession } from "@/components/library/SessionCard";
 import { ProcessingSessionCard } from "@/components/library/ProcessingSessionCard";
-import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
+import { OpenVantageModal } from "@/components/capture/OpenVantageModal";
 import { DropboxPromoBanner } from "@/components/library/DropboxPromoBanner";
 import { ChallengeSubmitPrompt } from "@/components/challenges/ChallengeSubmitPrompt";
 import { SubmissionModal } from "@/components/challenges/SubmissionModal";
@@ -100,7 +100,7 @@ export default function SessionLibrary() {
   const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
   const [storageUsage, setStorageUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
   const [localLoading, setLocalLoading] = useState(true);
-  const [showNewCapture, setShowNewCapture] = useState(false);
+  const [showOpenVantage, setShowOpenVantage] = useState(false);
   
   // Filters and view state
   const [searchQuery, setSearchQuery] = useState("");
@@ -427,7 +427,7 @@ export default function SessionLibrary() {
           
           <Button 
             size="lg" 
-            onClick={() => setShowNewCapture(true)}
+            onClick={() => setShowOpenVantage(true)}
             className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary"
           >
             <Plus className="mr-2 h-5 w-5" />
@@ -619,7 +619,7 @@ export default function SessionLibrary() {
                   <p className="text-muted-foreground mb-6">
                     Start your first capture to begin recording gameplay
                   </p>
-                  <Button onClick={() => setShowNewCapture(true)}>
+                  <Button onClick={() => setShowOpenVantage(true)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Create First Capture
                   </Button>
@@ -688,7 +688,7 @@ export default function SessionLibrary() {
         )}
       </main>
 
-      <NewCaptureDialog open={showNewCapture} onOpenChange={setShowNewCapture} />
+      <OpenVantageModal open={showOpenVantage} onOpenChange={setShowOpenVantage} />
       
       {/* Challenge Submit Prompt - shown after recording from a challenge */}
       {challengeContext && completedSessionId && (

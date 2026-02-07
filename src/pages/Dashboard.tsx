@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { SessionCard } from "@/components/captures/SessionCard";
-import { NewCaptureDialog } from "@/components/captures/NewCaptureDialog";
+import { OpenVantageModal } from "@/components/capture/OpenVantageModal";
 import { getCaptureSessions, CaptureSession } from "@/lib/captures";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,7 +15,7 @@ export default function Dashboard() {
   
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showNewCapture, setShowNewCapture] = useState(false);
+  const [showOpenVantage, setShowOpenVantage] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -74,7 +74,7 @@ export default function Dashboard() {
             
             <Button 
               size="lg" 
-              onClick={() => setShowNewCapture(true)}
+              onClick={() => setShowOpenVantage(true)}
               className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold uppercase tracking-wider glow-primary"
             >
               <Plus className="mr-2 h-5 w-5" />
@@ -147,7 +147,7 @@ export default function Dashboard() {
                 <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">
                   Start your first capture session to begin analyzing your gameplay decisions
                 </p>
-                <Button onClick={() => setShowNewCapture(true)} className="uppercase tracking-wider font-bold">
+                <Button onClick={() => setShowOpenVantage(true)} className="uppercase tracking-wider font-bold">
                   <Plus className="mr-2 h-4 w-4" />
                   Create First Capture
                 </Button>
@@ -163,7 +163,7 @@ export default function Dashboard() {
         </section>
       </main>
 
-      <NewCaptureDialog open={showNewCapture} onOpenChange={setShowNewCapture} />
+      <OpenVantageModal open={showOpenVantage} onOpenChange={setShowOpenVantage} />
     </div>
   );
 }
