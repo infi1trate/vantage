@@ -26,6 +26,7 @@ import NotFound from "./pages/NotFound";
 // Lazy load heavy routes - only loaded when navigating to them
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Capture = lazy(() => import("./pages/Capture"));
+const Download = lazy(() => import("./pages/Download"));
 const SessionReview = lazy(() => import("./pages/SessionReview"));
 const SessionLibrary = lazy(() => import("./pages/SessionLibrary"));
 const ReelEditor = lazy(() => import("./pages/ReelEditor"));
@@ -98,6 +99,7 @@ const routerWithLayout = createBrowserRouter([
       { path: "/challenges/hall-of-fame", element: withSuspense(HallOfFame) },
       { path: "/challenges/:challengeId", element: withSuspense(ChallengeDetail) },
       { path: "/capture/:sessionId", element: withSuspense(Capture) },
+      { path: "/download", element: withSuspense(Download) },
       { path: "/session/:sessionId", element: withSuspense(SessionReview) },
       { path: "/reel/:reelId", element: withSuspense(ReelEditor) },
       { path: "/library/session/:sessionId", element: withSuspense(SessionReview) },
