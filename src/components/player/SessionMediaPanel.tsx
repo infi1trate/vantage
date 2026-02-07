@@ -464,7 +464,7 @@ export const SessionMediaPanel = forwardRef<HTMLDivElement, SessionMediaPanelPro
     }, []);
 
     const handleStartNewRecording = useCallback(() => {
-      navigate("/capture");
+      navigate("/download");
     }, [navigate]);
 
     const screenStatus = getMediaStatus("video", { 
