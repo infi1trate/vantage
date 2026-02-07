@@ -621,7 +621,7 @@ function ReelEditorContent() {
                     goBack();
                   }}
                   onStartRecording={() => {
-                    navigate("/capture");
+                    navigate("/download");
                   }}
                   onReportIssue={() => {
                     // Open support/feedback - for now just show a toast
