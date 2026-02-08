@@ -52,7 +52,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="container py-8 md:py-10 space-y-12 md:space-y-16">
+      <main className="container py-10 md:py-14 space-y-16 md:space-y-20">
         {/* 1. Hero Action Module */}
         <HeroActionModule
           user={user}

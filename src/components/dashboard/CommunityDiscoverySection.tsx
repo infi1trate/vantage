@@ -48,19 +48,24 @@ export function CommunityDiscoverySection() {
     return (
       <section>
         <SectionHeader />
-        <Card className="p-12 border-border/30 border-dashed text-center">
-          <Sparkles className="h-10 w-10 text-primary/30 mx-auto mb-4" />
-          <p className="font-display text-2xl mb-2">BE THE FIRST</p>
-          <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-5">
-            No clips shared yet. Record a session and share your best moment with the community.
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => navigate("/community")}
-            className="uppercase tracking-wider text-xs"
-          >
-            Go to Community
-          </Button>
+        <Card className="border-border/20 border-dashed bg-card/30">
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Play className="h-5 w-5 text-muted-foreground/50 ml-0.5" />
+            </div>
+            <p className="font-display text-xl mb-1.5">BE THE FIRST TO SHARE</p>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed mb-5">
+              The feed is quiet — for now. Record a session, share your best moment, and set the bar.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/community")}
+              className="uppercase tracking-wider text-xs"
+            >
+              Explore Community
+            </Button>
+          </div>
         </Card>
       </section>
     );
@@ -109,13 +114,13 @@ function SectionHeader({
   showViewAll?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between mb-5">
+    <div className="flex items-center justify-between mb-6">
       <div className="flex items-center gap-3">
         <div className="w-1 h-6 rounded-full bg-vantage-teal" />
         <div>
           <h2 className="font-display text-2xl tracking-wide">FROM THE COMMUNITY</h2>
           <p className="text-xs text-muted-foreground tracking-wide mt-0.5">
-            Popular right now
+            Trending this week
           </p>
         </div>
       </div>
