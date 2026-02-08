@@ -27,23 +27,28 @@ export function PersonalActivitySection({ sessions, loading }: PersonalActivityS
     return { total: sessions.length, totalHours, ready: readyCount };
   }, [sessions]);
 
-  if (loading || recentSessions.length === 0) {
+  if (loading) {
     return null;
   }
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="w-1 h-6 rounded-full bg-muted-foreground/40" />
           <div>
             <h2 className="font-display text-2xl tracking-wide">YOUR MOMENTUM</h2>
-            {/* Compact at-a-glance stats row */}
-            <div className="flex items-center gap-4 mt-1">
-              <GlanceStat icon={Film} value={glance.total} label="captures" />
-              <GlanceStat icon={Clock} value={glance.totalHours} label="hrs recorded" />
-              <GlanceStat icon={Eye} value={glance.ready} label="ready" />
-            </div>
+            {sessions.length > 0 ? (
+              <div className="flex items-center gap-4 mt-1">
+                <GlanceStat icon={Film} value={glance.total} label="captures" />
+                <GlanceStat icon={Clock} value={glance.totalHours} label="hrs recorded" />
+                <GlanceStat icon={Eye} value={glance.ready} label="ready" />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground tracking-wide mt-0.5">
+                Your journey starts here
+              </p>
+            )}
           </div>
         </div>
         {sessions.length > 3 && (
@@ -58,18 +63,32 @@ export function PersonalActivitySection({ sessions, loading }: PersonalActivityS
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {recentSessions.map((session, idx) => (
-          <motion.div
-            key={session.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: idx * 0.08 }}
-          >
-            <MomentumCard session={session} onClick={() => navigate(`/session/${session.id}`)} />
-          </motion.div>
-        ))}
-      </div>
+      {recentSessions.length === 0 ? (
+        <Card className="border-border/20 border-dashed bg-card/30">
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Video className="h-5 w-5 text-muted-foreground/50" />
+            </div>
+            <p className="font-display text-xl mb-1.5">NO SESSIONS YET</p>
+            <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+              Record your first gameplay session and it'll show up here. Every great highlight reel starts with one clip.
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {recentSessions.map((session, idx) => (
+            <motion.div
+              key={session.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: idx * 0.08 }}
+            >
+              <MomentumCard session={session} onClick={() => navigate(`/session/${session.id}`)} />
+            </motion.div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
