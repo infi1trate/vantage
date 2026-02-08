@@ -35,10 +35,13 @@ import {
   createCommunityAnnotation,
   deleteCommunityAnnotation,
   incrementViewCount,
+  updateCommunityPost,
   getShareableLink,
   CommunityPost,
   CommunityAnnotation,
 } from "@/lib/community";
+import { generateAndUploadThumbnail } from "@/lib/videoThumbnail";
+import { supabase } from "@/integrations/supabase/client";
 import { ReactionEmoji } from "@/lib/communityReactions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCommunityReactions } from "@/hooks/useCommunityReactions";
@@ -96,6 +99,24 @@ export default function CommunityPostPage() {
         
         // Increment view count
         incrementViewCount(postData.id).catch(console.error);
+        
+        // Lazy backfill: generate thumbnail if missing
+        if (!postData.thumbnail_url && postData.video_url) {
+          generateAndUploadThumbnail(postData.video_url, postData.author_id, postData.id)
+            .then((thumbUrl) => {
+              if (thumbUrl) {
+                // Update the post in the database
+                supabase
+                  .from("community_posts")
+                  .update({ thumbnail_url: thumbUrl })
+                  .eq("id", postData.id)
+                  .then(() => {
+                    console.log("[CommunityPost] Backfilled thumbnail");
+                  });
+              }
+            })
+            .catch(console.error);
+        }
         
         // Load annotations if allowed or if author
         if (postData.allow_public_annotations || user?.id === postData.author_id) {

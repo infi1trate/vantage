@@ -89,6 +89,7 @@ import {
 import { cn } from "@/lib/utils";
 import { exportToDesktop, generateExportFilename } from "@/lib/fileExport";
 import { createCommunityPost, getShareableLink } from "@/lib/community";
+import { generateAndUploadThumbnail } from "@/lib/videoThumbnail";
 import { loadExportSettings, saveExportSettings } from "@/lib/exportSettings";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -454,6 +455,13 @@ export function ExportDrawer({
     setIsPublishing(true);
     
     try {
+      // Generate a thumbnail from the first frame of the video if we have a video URL
+      let thumbnailUrl = sessionThumbnail || null;
+      if (!thumbnailUrl && videoUrl) {
+        const postId = crypto.randomUUID();
+        thumbnailUrl = await generateAndUploadThumbnail(videoUrl, user.id, postId);
+      }
+
       // Create the community post
       const post = await createCommunityPost(user.id, {
         sessionId,
@@ -464,7 +472,7 @@ export function ExportDrawer({
         allowComments,
         allowPublicAnnotations: allowAnnotations,
         allowPublicRemixes: allowRemixes,
-        thumbnailUrl: sessionThumbnail,
+        thumbnailUrl: thumbnailUrl || undefined,
         videoUrl: videoUrl,
         durationSeconds: sessionDuration,
       });
