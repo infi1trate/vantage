@@ -176,7 +176,9 @@ export default function AdminChallengeCreate() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingSponsorLogo, setUploadingSponsorLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sponsorLogoInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ChallengeFormValues>({
     resolver: zodResolver(challengeFormSchema),
@@ -1035,35 +1037,127 @@ export default function AdminChallengeCreate() {
                     )}
                   />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="sponsorLogoUrl"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Logo URL</FormLabel>
-                          <FormControl>
-                            <Input placeholder="https://..." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <FormField
+                    control={form.control}
+                    name="sponsorLogoUrl"
+                    render={({ field }) => {
+                      const logoValue = field.value || "";
+                      const isLogoImage = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?.*)?$/i.test(logoValue) || logoValue.includes("challenge-assets");
 
-                    <FormField
-                      control={form.control}
-                      name="sponsorLink"
-                      render={({ field }) => (
+                      async function handleSponsorLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/svg+xml"];
+                        if (!allowedTypes.includes(file.type)) {
+                          toast.error("Please upload a JPG, PNG, WebP, GIF, AVIF, or SVG image.");
+                          return;
+                        }
+                        if (file.size > 5 * 1024 * 1024) {
+                          toast.error("Logo must be under 5 MB.");
+                          return;
+                        }
+
+                        setUploadingSponsorLogo(true);
+                        try {
+                          const { data: { user: authUser } } = await supabase.auth.getUser();
+                          if (!authUser) throw new Error("Must be authenticated");
+
+                          const ext = file.name.split(".").pop() || "png";
+                          const path = `${authUser.id}/sponsor-${crypto.randomUUID()}.${ext}`;
+
+                          const { error: uploadError } = await supabase.storage
+                            .from("challenge-assets")
+                            .upload(path, file, { contentType: file.type, upsert: false });
+
+                          if (uploadError) throw uploadError;
+
+                          const { data: urlData } = supabase.storage
+                            .from("challenge-assets")
+                            .getPublicUrl(path);
+
+                          form.setValue("sponsorLogoUrl", urlData.publicUrl, { shouldValidate: true });
+                          toast.success("Logo uploaded!");
+                        } catch (err: any) {
+                          console.error("Logo upload failed:", err);
+                          toast.error(err.message || "Upload failed");
+                        } finally {
+                          setUploadingSponsorLogo(false);
+                          if (sponsorLogoInputRef.current) sponsorLogoInputRef.current.value = "";
+                        }
+                      }
+
+                      return (
                         <FormItem>
-                          <FormLabel>Website URL</FormLabel>
+                          <FormLabel>Sponsor Logo</FormLabel>
+
+                          {/* Logo preview */}
+                          {logoValue && isLogoImage && (
+                            <div className="relative w-24 h-24 rounded-lg border border-border overflow-hidden bg-muted">
+                              <img
+                                src={logoValue}
+                                alt="Sponsor logo"
+                                className="w-full h-full object-contain p-1"
+                              />
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 h-5 w-5 rounded-full bg-background/80 flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                                onClick={() => form.setValue("sponsorLogoUrl", "", { shouldValidate: true })}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Upload + URL input */}
+                          <div className="flex items-center gap-2">
+                            <input
+                              ref={sponsorLogoInputRef}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml"
+                              className="hidden"
+                              onChange={handleSponsorLogoUpload}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={uploadingSponsorLogo}
+                              onClick={() => sponsorLogoInputRef.current?.click()}
+                            >
+                              {uploadingSponsorLogo ? (
+                                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4 mr-1.5" />
+                              )}
+                              Upload Logo
+                            </Button>
+                            <span className="text-xs text-muted-foreground">or</span>
+                          </div>
+
                           <FormControl>
-                            <Input placeholder="https://..." {...field} />
+                            <Input placeholder="https://logo-url.png" {...field} />
                           </FormControl>
+                          <FormDescription>Upload an image or paste a URL</FormDescription>
                           <FormMessage />
                         </FormItem>
-                      )}
-                    />
-                  </div>
+                      );
+                    }}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="sponsorLink"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Website URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://..." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </CardContent>
               )}
             </Card>
