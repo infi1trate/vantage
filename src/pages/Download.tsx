@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import vantageAppIcon from "@/assets/vantage-app-icon.png";
 import { LandingNav } from "@/components/landing/LandingNav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -63,9 +64,11 @@ export default function DownloadPage() {
       <main className="container mx-auto px-6 pt-28 sm:pt-36 pb-20">
         {/* ─── Hero ─── */}
         <section className="max-w-3xl mx-auto text-center mb-20">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-8">
-            <DownloadIcon className="h-10 w-10 text-primary" />
-          </div>
+          <img
+            src={vantageAppIcon}
+            alt="Vantage app icon"
+            className="mx-auto h-20 w-20 rounded-2xl mb-8"
+          />
 
           <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl tracking-wide mb-4">
             Download Vantage
