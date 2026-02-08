@@ -323,6 +323,142 @@ function HeroMediaField({
   );
 }
 
+/**
+ * Sponsor Logo field with image upload + URL input.
+ */
+function SponsorLogoField({
+  form,
+  isReadOnly,
+}: {
+  form: UseFormReturn<ChallengeFormValues>;
+  isReadOnly: boolean;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentValue = form.watch("sponsorLogoUrl") || "";
+
+  const isImageUrl = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?.*)?$/i.test(currentValue) || currentValue.includes("challenge-assets");
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/svg+xml"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload a JPG, PNG, WebP, GIF, AVIF, or SVG image.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5 MB.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Must be authenticated");
+
+      const ext = file.name.split(".").pop() || "png";
+      const path = `${user.id}/sponsor-${crypto.randomUUID()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("challenge-assets")
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("challenge-assets")
+        .getPublicUrl(path);
+
+      form.setValue("sponsorLogoUrl", urlData.publicUrl, { shouldValidate: true });
+      toast.success("Logo uploaded!");
+    } catch (err: any) {
+      console.error("Upload failed:", err);
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  return (
+    <FormField
+      control={form.control}
+      name="sponsorLogoUrl"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Sponsor Logo</FormLabel>
+
+          {/* Logo preview */}
+          {currentValue && isImageUrl && (
+            <div className="relative rounded-lg overflow-hidden border border-border bg-muted/30 inline-block">
+              <img
+                src={currentValue}
+                alt="Sponsor logo preview"
+                className="h-16 w-auto max-w-[200px] object-contain p-2"
+              />
+              {!isReadOnly && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute top-1 right-1 h-5 w-5"
+                  onClick={() => form.setValue("sponsorLogoUrl", "", { shouldValidate: true })}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Upload button + URL input */}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isReadOnly || uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0"
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-1.5" />
+              )}
+              {uploading ? "Uploading…" : "Upload Logo"}
+            </Button>
+            <span className="text-xs text-muted-foreground">or</span>
+            <FormControl>
+              <Input
+                placeholder="https://..."
+                {...field}
+                disabled={isReadOnly}
+                className="flex-1"
+              />
+            </FormControl>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+
+          <FormDescription>
+            Upload a logo or paste a URL
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 export function ChallengeForm({ 
   form, 
   isReadOnly = false,
@@ -901,43 +1037,25 @@ export function ChallengeForm({
                 )}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="sponsorLogoUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Logo URL</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="https://..." 
-                          {...field} 
-                          disabled={isReadOnly}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <SponsorLogoField form={form} isReadOnly={isReadOnly} />
 
-                <FormField
-                  control={form.control}
-                  name="sponsorLink"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Website URL</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="https://..." 
-                          {...field} 
-                          disabled={isReadOnly}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="sponsorLink"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Website URL</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="https://..." 
+                        {...field} 
+                        disabled={isReadOnly}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           )}
         </Card>
