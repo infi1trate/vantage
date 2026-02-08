@@ -4,7 +4,7 @@
  * Form for creating new challenges.
  */
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -43,6 +43,11 @@ import {
 } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Trophy,
   ArrowLeft,
   Loader2,
@@ -55,7 +60,11 @@ import {
   AlertTriangle,
   CheckCircle,
   Sparkles,
+  HelpCircle,
+  Upload,
+  ImageIcon,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { adminCreateChallenge, adminPublishChallenge } from "@/lib/challenges/api";
 import { cn } from "@/lib/utils";
@@ -150,6 +159,8 @@ export default function AdminChallengeCreate() {
   const { user, loading: authLoading, isChallengeAdmin } = useAuth();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ChallengeFormValues>({
     resolver: zodResolver(challengeFormSchema),
@@ -392,18 +403,131 @@ export default function AdminChallengeCreate() {
                 <FormField
                   control={form.control}
                   name="heroMediaUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Hero Media URL</FormLabel>
-                      <FormControl>
-                        <Input placeholder="https://example.com/video.mp4" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Video or image URL for the challenge hero section
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  render={({ field }) => {
+                    const currentValue = field.value || "";
+                    const isImageUrl = /\.(jpg|jpeg|png|webp|gif|avif)(\?.*)?$/i.test(currentValue);
+
+                    async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+                      if (!allowedTypes.includes(file.type)) {
+                        toast.error("Please upload a JPG, PNG, WebP, GIF, or AVIF image.");
+                        return;
+                      }
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast.error("Image must be under 5 MB.");
+                        return;
+                      }
+
+                      setUploading(true);
+                      try {
+                        const { data: { user: authUser } } = await supabase.auth.getUser();
+                        if (!authUser) throw new Error("Must be authenticated");
+
+                        const ext = file.name.split(".").pop() || "jpg";
+                        const path = `${authUser.id}/${crypto.randomUUID()}.${ext}`;
+
+                        const { error: uploadError } = await supabase.storage
+                          .from("challenge-assets")
+                          .upload(path, file, { contentType: file.type, upsert: false });
+
+                        if (uploadError) throw uploadError;
+
+                        const { data: urlData } = supabase.storage
+                          .from("challenge-assets")
+                          .getPublicUrl(path);
+
+                        form.setValue("heroMediaUrl", urlData.publicUrl, { shouldValidate: true });
+                        toast.success("Image uploaded!");
+                      } catch (err: any) {
+                        console.error("Upload failed:", err);
+                        toast.error(err.message || "Upload failed");
+                      } finally {
+                        setUploading(false);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }
+                    }
+
+                    return (
+                      <FormItem>
+                        <div className="flex items-center gap-1.5">
+                          <FormLabel>Hero Media</FormLabel>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">
+                                <HelpCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-[220px]">
+                              <p className="text-xs">Optimal dimensions: <strong>1920 × 1080 px</strong> (16:9). JPG, PNG, or WebP under 5 MB.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+
+                        {/* Image preview */}
+                        {currentValue && isImageUrl && (
+                          <div className="relative rounded-lg overflow-hidden border border-border bg-muted/30 max-w-xs">
+                            <img
+                              src={currentValue}
+                              alt="Hero preview"
+                              className="w-full h-auto max-h-40 object-cover"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute top-2 right-2 h-6 w-6"
+                              onClick={() => form.setValue("heroMediaUrl", "", { shouldValidate: true })}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Upload button + URL input */}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={uploading}
+                            onClick={() => fileInputRef.current?.click()}
+                            className="shrink-0"
+                          >
+                            {uploading ? (
+                              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-1.5" />
+                            )}
+                            {uploading ? "Uploading…" : "Upload Image"}
+                          </Button>
+                          <span className="text-xs text-muted-foreground">or</span>
+                          <FormControl>
+                            <Input
+                              placeholder="https://example.com/video.mp4"
+                              {...field}
+                              className="flex-1"
+                            />
+                          </FormControl>
+                        </div>
+
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                          className="hidden"
+                          onChange={handleImageUpload}
+                        />
+
+                        <FormDescription>
+                          Upload an image or paste a video/image URL for the hero section
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
               </CardContent>
             </Card>
