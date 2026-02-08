@@ -110,11 +110,17 @@ export function HeroActionModule({ user, sessions, onOpenVantage }: HeroActionMo
             <Button
               variant="outline"
               size="lg"
-              onClick={() => navigate("/download")}
               className="uppercase tracking-wider text-xs min-h-[48px]"
+              asChild
             >
-              <Download className="mr-2 h-4 w-4" />
-              Download for Mac
+              <a
+                href="https://www.dropbox.com/scl/fi/nibofwti4pf9rtw591i6e/Vantage-Desktop-0.1.0-arm64-mac.zip?rlkey=vtcmh6zpanea8poou7lbqwtf8&dl=0"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download for Mac
+              </a>
             </Button>
           </div>
 
