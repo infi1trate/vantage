@@ -262,7 +262,9 @@ export async function adminCreateChallenge(
       difficulty: payload.difficulty,
       is_sponsored: !!payload.sponsor,
       sponsor_name: payload.sponsor?.name,
-      prize_description: payload.prizePool,
+      prize_description: payload.prizesTop3 ? JSON.stringify(payload.prizesTop3) : null,
+      prize_crypto_amount: payload.prizePool ? parseFloat(payload.prizePool.match(/^([\d.]+)/)?.[1] || '0') : null,
+      prize_crypto: payload.prizePool ? (payload.prizePool.match(/\s(\w+)$/)?.[1] || null) : null,
       starts_at: payload.startAt,
       ends_at: payload.endAt,
       thumbnail_url: payload.thumbnailUrl,
@@ -296,7 +298,16 @@ export async function adminUpdateChallenge(
     updates.is_sponsored = !!payload.sponsor;
     updates.sponsor_name = payload.sponsor?.name;
   }
-  if (payload.prizePool !== undefined) updates.prize_description = payload.prizePool;
+  if (payload.prizePool !== undefined) {
+    const match = payload.prizePool?.match(/^([\d.]+)\s*(\w+)$/);
+    if (match) {
+      updates.prize_crypto_amount = parseFloat(match[1]);
+      updates.prize_crypto = match[2];
+    }
+  }
+  if (payload.prizesTop3 !== undefined) {
+    updates.prize_description = JSON.stringify(payload.prizesTop3);
+  }
   if (payload.startAt !== undefined) updates.starts_at = payload.startAt;
   if (payload.endAt !== undefined) updates.ends_at = payload.endAt;
   if (payload.thumbnailUrl !== undefined) updates.thumbnail_url = payload.thumbnailUrl;
@@ -422,21 +433,35 @@ function transformDbChallengeToUi(row: Record<string, unknown>): Challenge {
   let prizePool: string | null = null;
   if (row.prize_crypto && row.prize_crypto_amount) {
     prizePool = `${row.prize_crypto_amount} ${row.prize_crypto}`;
-  } else if (row.prize_description) {
-    prizePool = row.prize_description as string;
+  }
+
+  // Parse top 3 breakdown from prize_description (stored as JSON array)
+  let prizesTop3: Challenge['prizesTop3'] = [];
+  if (row.prize_description) {
+    try {
+      const parsed = JSON.parse(row.prize_description as string);
+      if (Array.isArray(parsed)) {
+        prizesTop3 = parsed;
+      }
+    } catch {
+      // Legacy plain-text format — use as display string if no crypto fields
+      if (!prizePool) {
+        prizePool = row.prize_description as string;
+      }
+    }
   }
 
   return {
     id: row.id as string,
     title: row.title as string,
     game: (row.game_name as string) || 'Unknown Game',
-    gameId: null, // TODO: Add game_id to schema if needed
+    gameId: null,
     rulesSummary: (row.description as string) || null,
     rulesFull: row.rules as string | null,
     difficulty: Math.min(5, Math.max(1, (row.difficulty as number) || 3)) as 1 | 2 | 3 | 4 | 5,
     sponsor,
     prizePool,
-    prizesTop3: [], // TODO: Parse from prize_description or add structured field
+    prizesTop3,
     startAt: (row.starts_at as string) || row.created_at as string,
     endAt: (row.ends_at as string) || '',
     status,
