@@ -1,123 +1,134 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Monitor, Trophy, Video, ArrowRight } from "lucide-react";
+import { Monitor, Download, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CaptureSession } from "@/lib/captures";
-import type { Challenge } from "@/lib/challenges";
+import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 
 interface HeroActionModuleProps {
   user: { email?: string } | null;
   sessions: CaptureSession[];
-  activeChallenges: Challenge[];
   onOpenVantage: () => void;
 }
 
 /**
- * Determines the primary "next action" CTA based on user state.
+ * Derive the motivational headline, copy, and CTA based on user state.
+ * The primary action is always "get the user recording" via the desktop app.
  */
-function getNextAction(sessions: CaptureSession[], activeChallenges: Challenge[]) {
-  const readySessions = sessions.filter((s) => s.status === "ready");
-  const processingSessions = sessions.filter((s) => s.status === "processing");
+function deriveHeroContent(sessions: CaptureSession[]) {
+  const hasSessions = sessions.length > 0;
+  const mostRecent = hasSessions ? sessions[0] : null; // already sorted desc
 
-  // If there are sessions processing, nudge them to wait / review
-  if (processingSessions.length > 0) {
+  // Build the "last played" micro-copy
+  let lastPlayedLine: string | null = null;
+  if (mostRecent) {
+    const gameName = mostRecent.game_name || "a session";
+    const timeAgo = formatDistanceToNow(new Date(mostRecent.created_at), { addSuffix: true });
+    lastPlayedLine = `Last played: ${gameName} · ${timeAgo}`;
+  }
+
+  if (!hasSessions) {
     return {
-      headline: "YOUR SESSION IS PROCESSING",
-      subtext: `${processingSessions.length} capture${processingSessions.length > 1 ? "s" : ""} still cooking. Review your ready sessions while you wait.`,
-      cta: "Go to Library",
-      route: "/library",
-      icon: Video,
-      variant: "teal" as const,
+      headline: "YOUR NEXT MOVE",
+      subtext: "Record your gameplay, review every play, and prove you're built different. One click to start.",
+      lastPlayed: null,
     };
   }
 
-  // If there are active challenges and the user has some sessions, suggest a challenge
-  if (activeChallenges.length > 0 && readySessions.length > 0) {
+  const processing = sessions.filter((s) => s.status === "processing");
+  if (processing.length > 0) {
     return {
-      headline: "ENTER A CHALLENGE",
-      subtext: `${activeChallenges.length} challenge${activeChallenges.length > 1 ? "s" : ""} open now. Submit your best clip and compete for prizes.`,
-      cta: "Browse Challenges",
-      route: "/challenges",
-      icon: Trophy,
-      variant: "primary" as const,
+      headline: "YOUR NEXT MOVE",
+      subtext: `${processing.length} session${processing.length > 1 ? "s" : ""} still processing. Jump back in and capture your next highlight.`,
+      lastPlayed: lastPlayedLine,
     };
   }
 
-  // If the user has ready sessions but no challenges, review them
-  if (readySessions.length > 0) {
-    return {
-      headline: "REVIEW YOUR CAPTURES",
-      subtext: `You have ${readySessions.length} session${readySessions.length > 1 ? "s" : ""} ready for film room review. Add annotations, create reels, and share.`,
-      cta: "Open Library",
-      route: "/library",
-      icon: Video,
-      variant: "primary" as const,
-    };
-  }
-
-  // New user — prompt to capture
   return {
-    headline: "START YOUR FIRST CAPTURE",
-    subtext: "Record your gameplay with the Vantage desktop app, then review, annotate, and share your best moments.",
-    cta: "Open Vantage (Desktop)",
-    route: null,
-    icon: Monitor,
-    variant: "primary" as const,
+    headline: "YOUR NEXT MOVE",
+    subtext: "Your clips are ready. Capture your next session, enter a challenge, or push your rank higher.",
+    lastPlayed: lastPlayedLine,
   };
 }
 
-export function HeroActionModule({ user, sessions, activeChallenges, onOpenVantage }: HeroActionModuleProps) {
+export function HeroActionModule({ user, sessions, onOpenVantage }: HeroActionModuleProps) {
   const navigate = useNavigate();
-  const action = getNextAction(sessions, activeChallenges);
+  const hero = deriveHeroContent(sessions);
 
-  const displayName = user?.email?.split("@")[0].toUpperCase() || "PLAYER";
+  const displayName = user?.email?.split("@")[0]?.toUpperCase() || "PLAYER";
 
   return (
     <section className="relative overflow-hidden rounded-xl border border-border/30">
-      {/* Background gradient */}
+      {/* Layered background */}
       <div className="absolute inset-0 -z-10 bg-gradient-dark" />
+      <div className="absolute inset-0 -z-10 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,hsl(var(--primary)),transparent_60%)]" />
+      {/* Subtle grid texture */}
       <div
-        className={cn(
-          "absolute inset-0 -z-10 opacity-[0.08]",
-          action.variant === "primary"
-            ? "bg-[radial-gradient(ellipse_at_top_right,hsl(var(--primary)),transparent_70%)]"
-            : "bg-[radial-gradient(ellipse_at_top_right,hsl(var(--vantage-teal)),transparent_70%)]"
-        )}
+        className="absolute inset-0 -z-10 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(hsl(var(--primary) / 0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary) / 0.3) 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
       />
 
-      <div className="px-6 py-10 md:px-10 md:py-14 lg:px-14 lg:py-16">
+      <div className="px-6 py-12 md:px-10 md:py-16 lg:px-14 lg:py-20">
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
           className="max-w-2xl"
         >
-          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+          {/* Eyebrow */}
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">
             Welcome back, {displayName}
           </p>
-          <h1 className="font-display text-4xl md:text-5xl lg:text-6xl tracking-wide text-foreground mb-4">
-            {action.headline}
+
+          {/* Headline */}
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-wide text-foreground mb-5 leading-[0.95]">
+            {hero.headline}
           </h1>
+
+          {/* Supporting copy */}
           <p className="text-base md:text-lg text-muted-foreground max-w-lg mb-8 leading-relaxed font-sans">
-            {action.subtext}
+            {hero.subtext}
           </p>
-          <Button
-            size="lg"
-            onClick={() => {
-              if (action.route) {
-                navigate(action.route);
-              } else {
-                onOpenVantage();
-              }
-            }}
-            className="font-bold uppercase tracking-wider glow-primary group"
-          >
-            <action.icon className="mr-2 h-5 w-5" />
-            {action.cta}
-            <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-          </Button>
+
+          {/* CTA cluster */}
+          <div className="flex flex-col sm:flex-row items-start gap-3">
+            <Button
+              size="lg"
+              onClick={onOpenVantage}
+              className="font-bold uppercase tracking-wider glow-primary group min-h-[48px]"
+            >
+              <Monitor className="mr-2 h-5 w-5" />
+              Open Vantage (Desktop)
+              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => navigate("/download")}
+              className="uppercase tracking-wider text-xs min-h-[48px]"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download for Mac
+            </Button>
+          </div>
+
+          {/* Last played micro-copy */}
+          {hero.lastPlayed && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4, duration: 0.4 }}
+              className="mt-6 text-xs text-muted-foreground/70 tracking-wide font-mono-data"
+            >
+              {hero.lastPlayed}
+            </motion.p>
+          )}
         </motion.div>
       </div>
     </section>

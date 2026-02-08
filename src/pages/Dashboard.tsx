@@ -57,7 +57,6 @@ export default function Dashboard() {
         <HeroActionModule
           user={user}
           sessions={sessions}
-          activeChallenges={activeChallenges}
           onOpenVantage={() => setShowOpenVantage(true)}
         />
 
