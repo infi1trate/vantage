@@ -5,7 +5,7 @@
  * Supports read-only mode and field-level disabling.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useRef } from "react";
 import { UseFormReturn } from "react-hook-form";
 import { format, isBefore, isAfter } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,11 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   CalendarIcon,
@@ -45,9 +50,16 @@ import {
   Sparkles,
   AlertTriangle,
   Lock,
+  HelpCircle,
+  Upload,
+  ImageIcon,
+  X,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 // Games list - in production this would come from the database
 export const GAMES = [
@@ -157,6 +169,157 @@ function LockedBadge() {
       <Lock className="h-3 w-3 mr-1" />
       Locked
     </Badge>
+  );
+}
+/**
+ * Hero Media field with image upload + video URL input.
+ */
+function HeroMediaField({
+  form,
+  isReadOnly,
+}: {
+  form: UseFormReturn<ChallengeFormValues>;
+  isReadOnly: boolean;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentValue = form.watch("heroMediaUrl") || "";
+
+  // Check if current value looks like an image URL
+  const isImageUrl = /\.(jpg|jpeg|png|webp|gif|avif)(\?.*)?$/i.test(currentValue);
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload a JPG, PNG, WebP, GIF, or AVIF image.");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5 MB.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Must be authenticated");
+
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("challenge-assets")
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("challenge-assets")
+        .getPublicUrl(path);
+
+      form.setValue("heroMediaUrl", urlData.publicUrl, { shouldValidate: true });
+      toast.success("Image uploaded!");
+    } catch (err: any) {
+      console.error("Upload failed:", err);
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      // Reset file input so re-selecting the same file works
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  return (
+    <FormField
+      control={form.control}
+      name="heroMediaUrl"
+      render={({ field }) => (
+        <FormItem>
+          <div className="flex items-center gap-1.5">
+            <FormLabel>Hero Media</FormLabel>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <HelpCircle className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-[220px]">
+                <p className="text-xs">Optimal dimensions: <strong>1920 × 1080 px</strong> (16:9). JPG, PNG, or WebP under 5 MB.</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Image preview */}
+          {currentValue && isImageUrl && (
+            <div className="relative rounded-lg overflow-hidden border border-border bg-muted/30 max-w-xs">
+              <img
+                src={currentValue}
+                alt="Hero preview"
+                className="w-full h-auto max-h-40 object-cover"
+              />
+              {!isReadOnly && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute top-2 right-2 h-6 w-6"
+                  onClick={() => form.setValue("heroMediaUrl", "", { shouldValidate: true })}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Upload button + URL input */}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isReadOnly || uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0"
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-1.5" />
+              )}
+              {uploading ? "Uploading…" : "Upload Image"}
+            </Button>
+            <span className="text-xs text-muted-foreground">or</span>
+            <FormControl>
+              <Input
+                placeholder="https://example.com/video.mp4"
+                {...field}
+                disabled={isReadOnly}
+                className="flex-1"
+              />
+            </FormControl>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+
+          <FormDescription>
+            Upload an image or paste a video/image URL for the hero section
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   );
 }
 
@@ -287,26 +450,7 @@ export function ChallengeForm({
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="heroMediaUrl"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Hero Media URL</FormLabel>
-                  <FormControl>
-                    <Input 
-                      placeholder="https://example.com/video.mp4" 
-                      {...field} 
-                      disabled={isReadOnly}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Video or image URL for the challenge hero section
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <HeroMediaField form={form} isReadOnly={isReadOnly} />
           </CardContent>
         </Card>
 
