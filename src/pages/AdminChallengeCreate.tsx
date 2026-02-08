@@ -99,9 +99,12 @@ const challengeFormSchema = z.object({
   startAt: z.date({ required_error: "Start date is required" }),
   endAt: z.date({ required_error: "End date is required" }),
   
-  // Clip requirements
-  minDurationSeconds: z.number().min(1).max(300).default(6),
-  maxDurationSeconds: z.number().min(1).max(300).default(30),
+  // Clip requirements (optional)
+  clipRequirementsEnabled: z.boolean().default(false),
+  minDurationMinutes: z.number().min(0).max(30).default(0),
+  minDurationSeconds: z.number().min(0).max(59).default(6),
+  maxDurationMinutes: z.number().min(0).max(30).default(0),
+  maxDurationSeconds: z.number().min(0).max(59).default(30),
   
   // Rewards
   prizeAmount: z.number().min(0),
@@ -128,6 +131,16 @@ const challengeFormSchema = z.object({
 }, {
   message: "Prize breakdown must equal total prize pool",
   path: ["prize1stAmount"],
+}).refine((data) => {
+  if (!data.clipRequirementsEnabled) return true;
+  const minTotal = data.minDurationMinutes * 60 + data.minDurationSeconds;
+  const maxTotal = data.maxDurationMinutes * 60 + data.maxDurationSeconds;
+  if (maxTotal > 1800) return false; // max 30 mins
+  if (minTotal >= maxTotal) return false;
+  return true;
+}, {
+  message: "Max duration must be greater than min, and at most 30 minutes",
+  path: ["maxDurationSeconds"],
 });
 
 type ChallengeFormValues = z.infer<typeof challengeFormSchema>;
@@ -141,7 +154,10 @@ const defaultValues: Partial<ChallengeFormValues> = {
   rulesFull: "",
   startAt: new Date(),
   endAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
+  clipRequirementsEnabled: false,
+  minDurationMinutes: 0,
   minDurationSeconds: 6,
+  maxDurationMinutes: 0,
   maxDurationSeconds: 30,
   prizeAmount: 0,
   prizeCurrency: "USDC",
@@ -690,52 +706,125 @@ export default function AdminChallengeCreate() {
             {/* Section D: Clip Requirements */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Clip Requirements</CardTitle>
-                <CardDescription>Submission clip duration limits</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Clip Requirements</CardTitle>
+                    <CardDescription>Submission clip duration limits (optional)</CardDescription>
+                  </div>
                   <FormField
                     control={form.control}
-                    name="minDurationSeconds"
+                    name="clipRequirementsEnabled"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Min Duration (seconds)</FormLabel>
+                      <FormItem className="flex items-center gap-2 space-y-0">
+                        <FormLabel className="text-sm text-muted-foreground">Enable</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            min={1} 
-                            max={300}
-                            {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 6)}
-                          />
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="maxDurationSeconds"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Max Duration (seconds)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            min={1} 
-                            max={300}
-                            {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 30)}
-                          />
-                        </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-              </CardContent>
+              </CardHeader>
+              {form.watch("clipRequirementsEnabled") && (
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Min Duration</Label>
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="minDurationMinutes"
+                          render={({ field }) => (
+                            <FormItem className="flex-1 space-y-0">
+                              <FormControl>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    {...field}
+                                    onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                  />
+                                  <span className="text-xs text-muted-foreground shrink-0">min</span>
+                                </div>
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="minDurationSeconds"
+                          render={({ field }) => (
+                            <FormItem className="flex-1 space-y-0">
+                              <FormControl>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={59}
+                                    {...field}
+                                    onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                  />
+                                  <span className="text-xs text-muted-foreground shrink-0">sec</span>
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Max Duration</Label>
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="maxDurationMinutes"
+                          render={({ field }) => (
+                            <FormItem className="flex-1 space-y-0">
+                              <FormControl>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    {...field}
+                                    onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                  />
+                                  <span className="text-xs text-muted-foreground shrink-0">min</span>
+                                </div>
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="maxDurationSeconds"
+                          render={({ field }) => (
+                            <FormItem className="flex-1 space-y-0">
+                              <FormControl>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={59}
+                                    {...field}
+                                    onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                  />
+                                  <span className="text-xs text-muted-foreground shrink-0">sec</span>
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Max allowed: 30 minutes</p>
+                </CardContent>
+              )}
             </Card>
 
             {/* Section E: Rewards */}
