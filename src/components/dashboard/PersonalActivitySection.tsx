@@ -1,9 +1,10 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
-import { Video, ArrowRight, Eye, Scissors, Share2 } from "lucide-react";
+import { Video, ArrowRight, Eye, Scissors, Clock, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CaptureSession } from "@/lib/captures";
 import { formatDistanceToNow } from "date-fns";
@@ -18,20 +19,31 @@ export function PersonalActivitySection({ sessions, loading }: PersonalActivityS
   const navigate = useNavigate();
   const recentSessions = sessions.slice(0, 3);
 
+  const glance = useMemo(() => {
+    const totalHours = Math.floor(
+      sessions.reduce((acc, s) => acc + (s.duration_seconds || 0), 0) / 3600
+    );
+    const readyCount = sessions.filter((s) => s.status === "ready").length;
+    return { total: sessions.length, totalHours, ready: readyCount };
+  }, [sessions]);
+
   if (loading || recentSessions.length === 0) {
     return null;
   }
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-1 h-6 rounded-full bg-muted-foreground/40" />
           <div>
             <h2 className="font-display text-2xl tracking-wide">YOUR MOMENTUM</h2>
-            <p className="text-xs text-muted-foreground tracking-wide mt-0.5">
-              Recent activity at a glance
-            </p>
+            {/* Compact at-a-glance stats row */}
+            <div className="flex items-center gap-4 mt-1">
+              <GlanceStat icon={Film} value={glance.total} label="captures" />
+              <GlanceStat icon={Clock} value={glance.totalHours} label="hrs recorded" />
+              <GlanceStat icon={Eye} value={glance.ready} label="ready" />
+            </div>
           </div>
         </div>
         {sessions.length > 3 && (
@@ -59,6 +71,26 @@ export function PersonalActivitySection({ sessions, loading }: PersonalActivityS
         ))}
       </div>
     </section>
+  );
+}
+
+// ─── Compact stat (inline) ──────────────────────────────────────────────────
+
+function GlanceStat({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: typeof Video;
+  value: number;
+  label: string;
+}) {
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <Icon className="h-3 w-3" />
+      <span className="font-mono font-medium text-foreground">{value}</span>
+      <span>{label}</span>
+    </span>
   );
 }
 
