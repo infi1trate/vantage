@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { openVantageApp } from "@/lib/desktopDeepLink";
 
-const DOWNLOAD_URL = "https://www.dropbox.com/scl/fi/nibofwti4pf9rtw591i6e/Vantage-Desktop-0.1.0-arm64-mac.zip?rlkey=vtcmh6zpanea8poou7lbqwtf8&dl=0";
+const DOWNLOAD_URL = "https://www.dropbox.com/scl/fi/nibofwti4pf9rtw591i6e/Vantage-Desktop-0.1.0-arm64-mac.zip?rlkey=vtcmh6zpanea8poou7lbqwtf8&dl=1";
 
 export default function DownloadPage() {
   const [waitlistEmail, setWaitlistEmail] = useState("");
