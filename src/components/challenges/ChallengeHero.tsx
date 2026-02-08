@@ -206,9 +206,9 @@ export function ChallengeHero({
     <div className="relative">
       {/* Background */}
       <div className="absolute inset-0 -z-10">
-        {challenge.thumbnail_url ? (
+        {(challenge.preview_video_url || challenge.thumbnail_url) ? (
           <img
-            src={challenge.thumbnail_url}
+            src={challenge.thumbnail_url || challenge.preview_video_url || ''}
             alt=""
             className="h-full w-full object-cover opacity-20 blur-xl"
           />
@@ -233,9 +233,9 @@ export function ChallengeHero({
           {/* Thumbnail */}
           <div className="relative w-full lg:w-80 xl:w-96 shrink-0">
             <div className="aspect-video rounded-xl overflow-hidden border border-border/50 shadow-lg">
-              {challenge.thumbnail_url ? (
+              {(challenge.thumbnail_url || challenge.preview_video_url) ? (
                 <img
-                  src={challenge.thumbnail_url}
+                  src={challenge.thumbnail_url || challenge.preview_video_url || ''}
                   alt={challenge.title}
                   className="h-full w-full object-cover"
                 />

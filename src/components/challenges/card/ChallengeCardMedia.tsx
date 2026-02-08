@@ -80,10 +80,18 @@ export const ChallengeCardMedia = memo(function ChallengeCardMedia({
   const timeDisplay = getTimeDisplay(challenge, cardStatus);
   const isEnded = cardStatus === 'ended';
 
+  // Determine if heroMediaUrl is a video or image
+  const heroUrl = challenge.heroMediaUrl || null;
+  const isHeroVideo = heroUrl ? /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(heroUrl) : false;
+  const isHeroImage = heroUrl ? !isHeroVideo : false;
+
+  // Use thumbnailUrl first, then heroMediaUrl if it's an image
+  const staticImageUrl = challenge.thumbnailUrl || (isHeroImage ? heroUrl : null);
+
   // Handle video preview on hover
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !challenge.heroMediaUrl) return;
+    if (!video || !isHeroVideo || !heroUrl) return;
 
     if (isHovered && !isEnded) {
       video.play().catch(() => {
@@ -93,22 +101,22 @@ export const ChallengeCardMedia = memo(function ChallengeCardMedia({
       video.pause();
       video.currentTime = 0;
     }
-  }, [isHovered, isEnded, challenge.heroMediaUrl]);
+  }, [isHovered, isEnded, isHeroVideo, heroUrl]);
 
   return (
     <div className="relative overflow-hidden">
       <AspectRatio ratio={16 / 9}>
         {/* Static Image */}
-        {challenge.thumbnailUrl ? (
+        {staticImageUrl ? (
           <img
-            src={challenge.thumbnailUrl}
+            src={staticImageUrl}
             alt={challenge.title}
             loading="lazy"
             decoding="async"
             className={cn(
               "h-full w-full object-cover transition-all duration-500",
               isHovered && "scale-105",
-              challenge.heroMediaUrl && isHovered && "opacity-0"
+              isHeroVideo && heroUrl && isHovered && "opacity-0"
             )}
           />
         ) : (
@@ -118,10 +126,10 @@ export const ChallengeCardMedia = memo(function ChallengeCardMedia({
         )}
         
         {/* Video Preview (on hover) */}
-        {challenge.heroMediaUrl && (
+        {isHeroVideo && heroUrl && (
           <video
             ref={videoRef}
-            src={challenge.heroMediaUrl}
+            src={heroUrl}
             className={cn(
               "absolute inset-0 h-full w-full object-cover transition-opacity duration-300",
               isHovered ? "opacity-100" : "opacity-0"
