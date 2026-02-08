@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { openVantageApp } from "@/lib/desktopDeepLink";
 
-const DOWNLOAD_URL = "/downloads/Vantage.dmg";
+const DOWNLOAD_URL = "https://www.dropbox.com/scl/fi/nibofwti4pf9rtw591i6e/Vantage-Desktop-0.1.0-arm64-mac.zip?rlkey=vtcmh6zpanea8poou7lbqwtf8&dl=0";
 
 export default function DownloadPage() {
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -84,7 +84,7 @@ export default function DownloadPage() {
             className="h-14 px-10 text-lg gap-3 glow-primary font-bold uppercase tracking-wider"
             asChild
           >
-            <a href={DOWNLOAD_URL}>
+            <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer">
               <Apple className="h-5 w-5" />
               Download for macOS
             </a>
@@ -158,8 +158,8 @@ export default function DownloadPage() {
             <StepCard
               step={1}
               icon={DownloadIcon}
-              title="Download the Installer"
-              description="Download the .dmg file and open it."
+              title="Download the Archive"
+              description="Download the .zip file and extract it."
             />
             <StepCard
               step={2}

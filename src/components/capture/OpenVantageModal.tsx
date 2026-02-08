@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { Monitor, Download, RefreshCw, ChevronDown, ChevronUp, Apple } from "lucide-react";
+import { Monitor, RefreshCw, ChevronDown, ChevronUp, Apple } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +16,6 @@ interface OpenVantageModalProps {
 }
 
 export function OpenVantageModal({ open, onOpenChange }: OpenVantageModalProps) {
-  const navigate = useNavigate();
   const [attempting, setAttempting] = useState(false);
   const [showTips, setShowTips] = useState(false);
 
@@ -72,14 +70,17 @@ export function OpenVantageModal({ open, onOpenChange }: OpenVantageModalProps) 
 
         <div className="flex flex-col gap-3 pt-2">
           <Button
-            onClick={() => {
-              onOpenChange(false);
-              navigate("/download");
-            }}
             className="w-full gap-2"
+            asChild
           >
-            <Apple className="h-4 w-4" />
-            Download for macOS
+            <a
+              href="https://www.dropbox.com/scl/fi/nibofwti4pf9rtw591i6e/Vantage-Desktop-0.1.0-arm64-mac.zip?rlkey=vtcmh6zpanea8poou7lbqwtf8&dl=0"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Apple className="h-4 w-4" />
+              Download for macOS
+            </a>
           </Button>
 
           <Button
