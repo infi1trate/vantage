@@ -257,6 +257,7 @@ export async function adminCreateChallenge(
       created_by: user.id,
       title: payload.title,
       game_name: payload.game,
+      description: payload.rulesSummary || null,
       rules: payload.rulesFull,
       difficulty: payload.difficulty,
       is_sponsored: !!payload.sponsor,
@@ -288,6 +289,7 @@ export async function adminUpdateChallenge(
   
   if (payload.title !== undefined) updates.title = payload.title;
   if (payload.game !== undefined) updates.game_name = payload.game;
+  if (payload.rulesSummary !== undefined) updates.description = payload.rulesSummary;
   if (payload.rulesFull !== undefined) updates.rules = payload.rulesFull;
   if (payload.difficulty !== undefined) updates.difficulty = payload.difficulty;
   if (payload.sponsor !== undefined) {
@@ -429,7 +431,7 @@ function transformDbChallengeToUi(row: Record<string, unknown>): Challenge {
     title: row.title as string,
     game: (row.game_name as string) || 'Unknown Game',
     gameId: null, // TODO: Add game_id to schema if needed
-    rulesSummary: null, // TODO: Extract summary from rules
+    rulesSummary: (row.description as string) || null,
     rulesFull: row.rules as string | null,
     difficulty: Math.min(5, Math.max(1, (row.difficulty as number) || 3)) as 1 | 2 | 3 | 4 | 5,
     sponsor,
