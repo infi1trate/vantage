@@ -1,7 +1,9 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom";
-import { Star, Mic, Camera } from "lucide-react";
+import { Star, Mic, Camera, Trophy, ShieldCheck, Banknote } from "lucide-react";
+import { toast } from "sonner";
 import fortniteGameplay from "@/assets/fortnite-gameplay.webp";
 import { useRef, useState, useEffect } from "react";
 
@@ -13,6 +15,20 @@ export function HeroSection() {
   // Simulated recording state
   const [recordingTime, setRecordingTime] = useState(107); // 1:47
   const [isRecording] = useState(true);
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+
+  const handleWaitlistSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!waitlistEmail.trim()) return;
+    toast.success("You're on the list!", { description: "We'll notify you when challenges go live." });
+    setWaitlistEmail("");
+  };
+
+  const proofItems = [
+    { icon: Trophy, label: "Weekly Challenges" },
+    { icon: ShieldCheck, label: "Verified Submissions" },
+    { icon: Banknote, label: "Cash + Perks" },
+  ];
 
   // Increment recording time
   useEffect(() => {
@@ -48,11 +64,82 @@ export function HeroSection() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.06)_0%,transparent_60%)]" aria-hidden="true" />
 
       <div className="relative z-10 w-full max-w-5xl mx-auto">
+        {/* GET PAID TO GAME layer */}
+        <div className="text-center mb-10">
+          <motion.h2
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0 }}
+            className="font-display text-3xl md:text-5xl text-primary mb-3"
+            style={{ textShadow: "0 0 24px hsl(var(--primary) / 0.35)" }}
+          >
+            GET PAID TO GAME
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.12 }}
+            className="text-lg md:text-xl text-foreground/90 mb-2"
+          >
+            Turn your sessions into challenges, rewards, and real-world payouts.
+          </motion.p>
+
+          <motion.p
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.24 }}
+            className="text-sm text-muted-foreground mb-6 max-w-xl mx-auto"
+          >
+            Vantage is launching a new rewards layer for competitive play. Join the early list.
+          </motion.p>
+
+          {/* Proof row */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: prefersReducedMotion ? 0 : 0.36 }}
+            className="flex items-center justify-center gap-4 md:gap-6 mb-6"
+          >
+            {proofItems.map((item, i) => (
+              <motion.div
+                key={item.label}
+                whileHover={prefersReducedMotion ? {} : { boxShadow: "0 0 12px hsl(var(--primary) / 0.15)" }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/40 bg-card/30 backdrop-blur-sm transition-shadow"
+              >
+                <item.icon className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs uppercase tracking-wider font-mono text-muted-foreground">{item.label}</span>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* Waitlist input */}
+          <motion.form
+            onSubmit={handleWaitlistSubmit}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: prefersReducedMotion ? 0 : 0.48 }}
+            className="flex items-center justify-center gap-2 max-w-sm mx-auto"
+          >
+            <Input
+              type="email"
+              placeholder="you@email.com"
+              value={waitlistEmail}
+              onChange={(e) => setWaitlistEmail(e.target.value)}
+              className="h-10 bg-card/40 border-border/50"
+              required
+            />
+            <Button type="submit" size="sm" className="shrink-0 h-10 px-5">
+              Join Waitlist
+            </Button>
+          </motion.form>
+        </div>
+
         {/* Live recording interface */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
+          transition={{ duration: 0.8, delay: prefersReducedMotion ? 0 : 0.8 }}
           className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/30 shadow-elevated mb-12"
           role="img"
           aria-label="Live gameplay capture interface"
@@ -73,7 +160,7 @@ export function HeroSection() {
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.5 }}
+            transition={{ duration: 0.4, delay: 1.1 }}
             className="absolute top-4 left-4 flex items-center gap-3"
           >
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-destructive/20 border border-destructive/40 backdrop-blur-sm">
@@ -91,7 +178,7 @@ export function HeroSection() {
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
+            transition={{ duration: 0.5, delay: 1.2 }}
             className="absolute top-4 right-4 w-24 h-24 md:w-32 md:h-32 rounded-2xl overflow-hidden border-2 border-primary/30 bg-muted/50"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-muted/80 to-muted/40" />
@@ -126,7 +213,7 @@ export function HeroSection() {
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
+            transition={{ duration: 0.5, delay: 1.4 }}
             className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-background/70 backdrop-blur-sm border border-border/50"
           >
             <Mic className="w-3.5 h-3.5 text-primary" />
@@ -155,7 +242,7 @@ export function HeroSection() {
             <motion.div
               initial={{ opacity: 0, scale: 0.5, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 1.2, ease: [0.23, 1, 0.32, 1] }}
+              transition={{ duration: 0.5, delay: 1.8, ease: [0.23, 1, 0.32, 1] }}
               className="relative"
             >
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/50 bg-primary/10 backdrop-blur-sm shadow-lg shadow-primary/10">
@@ -169,7 +256,7 @@ export function HeroSection() {
                 className="absolute left-1/2 -translate-x-1/2 top-full w-px bg-gradient-to-b from-primary/60 to-transparent"
                 initial={{ height: 0 }}
                 animate={{ height: 24 }}
-                transition={{ duration: 0.3, delay: 1.5 }}
+                transition={{ duration: 0.3, delay: 2.1 }}
               />
               
               {/* Pin dot */}
@@ -177,7 +264,7 @@ export function HeroSection() {
                 className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary"
                 initial={{ opacity: 0, top: "100%" }}
                 animate={{ opacity: 1, top: "calc(100% + 24px)" }}
-                transition={{ duration: 0.2, delay: 1.7 }}
+                transition={{ duration: 0.2, delay: 2.3 }}
               />
             </motion.div>
 
@@ -185,7 +272,7 @@ export function HeroSection() {
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={isInView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 10, scale: 0.95 }}
-              transition={{ duration: 0.6, delay: 2, ease: "easeOut" }}
+              transition={{ duration: 0.6, delay: 2.6, ease: "easeOut" }}
               className="absolute left-1/2 -translate-x-1/2 top-full mt-10 w-72"
             >
               <div className="relative px-4 py-3 rounded-xl border border-vantage-warning/30 bg-vantage-warning/5 backdrop-blur-sm">
@@ -211,12 +298,12 @@ export function HeroSection() {
                   className="absolute inset-0 rounded-xl overflow-hidden"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 2.5 }}
+                  transition={{ delay: 3.1 }}
                 >
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-transparent via-vantage-warning/10 to-transparent -translate-x-full"
                     animate={prefersReducedMotion ? {} : { x: ["-100%", "200%"] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "linear", delay: 3 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear", delay: 3.6 }}
                   />
                 </motion.div>
               </div>
@@ -251,7 +338,7 @@ export function HeroSection() {
             id="hero-heading"
             initial={{ opacity: 0, y: 25 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.4 }}
+            transition={{ duration: 0.7, delay: 1.0 }}
             className="font-display text-5xl md:text-7xl lg:text-8xl leading-none tracking-tight mb-4"
           >
             See the Game Differently
@@ -260,7 +347,7 @@ export function HeroSection() {
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
+            transition={{ duration: 0.6, delay: 1.2 }}
             className="text-xl md:text-2xl text-primary font-medium mb-4"
           >
             Vantage is the Loom for Gamers.
@@ -269,7 +356,7 @@ export function HeroSection() {
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
+            transition={{ duration: 0.6, delay: 1.3 }}
             className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mb-10"
           >
             Record gameplay, voice, reactions, and intent — all synchronized in one continuous perspective.
@@ -279,7 +366,7 @@ export function HeroSection() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.9 }}
+            transition={{ duration: 0.6, delay: 1.5 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
             role="group"
             aria-label="Call to action buttons"
