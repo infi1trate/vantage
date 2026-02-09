@@ -1,7 +1,6 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
 import { Star, Crosshair, AlertTriangle, Timer } from "lucide-react";
 import marvelRivalsGameplay from "@/assets/marvel-rivals-gameplay.jpg";
 
@@ -145,9 +144,9 @@ export function CTASection() {
               animate={isInView ? animate : {}}
               transition={prefersReducedMotion ? {} : { duration: 0.6, delay: 0.75 }}
               className="font-display text-4xl md:text-6xl lg:text-7xl leading-tight mb-12 text-gradient-primary"
-              aria-label="They see more."
+              aria-label="They earn more."
             >
-              They see more.
+              They earn more.
             </motion.p>
 
             {/* CTA */}
@@ -160,13 +159,16 @@ export function CTASection() {
               <Button
                 size="lg"
                 className="h-14 px-10 text-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-offset-background"
-                asChild
+                onClick={() => {
+                  const el = document.getElementById("waitlist-input");
+                  if (el) { el.scrollIntoView({ behavior: "smooth" }); setTimeout(() => el.focus(), 500); }
+                }}
               >
-                <Link to="/auth">Record Your First Session</Link>
+                Join the Waitlist
               </Button>
 
               <p className="text-sm text-muted-foreground">
-                No highlights. No noise. Just perspective.
+                Be first in line for rewards + early access.
               </p>
             </motion.div>
           </div>
