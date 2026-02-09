@@ -87,7 +87,7 @@ export function HeroSection() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.06)_0%,transparent_60%)]" aria-hidden="true" />
 
       <div className="relative z-10 w-full max-w-5xl mx-auto">
-        <div className="text-center mb-10">
+        <div className="text-center mb-5">
           <motion.h1
             id="hero-heading"
             initial={{ opacity: 0, y: 12 }}
@@ -183,7 +183,7 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: prefersReducedMotion ? 0 : 0.8 }}
-          className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/30 shadow-elevated mb-12"
+          className="relative aspect-video rounded-xl overflow-hidden border border-border/40 bg-card/30 shadow-elevated mb-8"
           role="img"
           aria-label="Live gameplay capture interface"
         >
