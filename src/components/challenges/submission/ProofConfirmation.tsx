@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CheckCircle2, Clock, Plus, Tag, Edit2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Plus, Tag, Edit2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InlineAnnotationCreator } from "./InlineAnnotationCreator";
 
@@ -28,6 +28,8 @@ interface ProofConfirmationProps {
   clipStartMs: number;
   clipEndMs: number;
   currentTimeMs?: number;
+  /** When true, annotation was auto-selected from existing session data — skip manual confirmation */
+  isPreExisting?: boolean;
 }
 
 export function ProofConfirmation({
@@ -39,6 +41,7 @@ export function ProofConfirmation({
   clipStartMs,
   clipEndMs,
   currentTimeMs = clipStartMs,
+  isPreExisting = false,
 }: ProofConfirmationProps) {
   const [showInlineCreator, setShowInlineCreator] = useState(false);
 
@@ -72,6 +75,13 @@ export function ProofConfirmation({
   // Check if annotation is within clip range
   const annotationMs = annotation ? annotation.timestamp_seconds * 1000 : 0;
   const isWithinClip = annotation && annotationMs >= clipStartMs && annotationMs <= clipEndMs;
+
+  // Auto-confirm when pre-existing annotation is within clip — no friction
+  useEffect(() => {
+    if (isPreExisting && annotation && isWithinClip && !isConfirmed) {
+      onConfirmChange(true);
+    }
+  }, [isPreExisting, annotation, isWithinClip, isConfirmed, onConfirmChange]);
 
   const handleInlineCreate = async (data: {
     type: string;
@@ -130,6 +140,47 @@ export function ProofConfirmation({
                   Open Full Editor
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Pre-existing annotation within clip — show auto-confirmed, no checkbox needed
+  if (isPreExisting && isWithinClip) {
+    return (
+      <div className="space-y-3">
+        <div className="p-3 rounded-lg border bg-green-500/10 border-green-500/30">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-medium text-green-600 dark:text-green-500">
+                  Proof auto-detected
+                </p>
+                <div
+                  className={cn(
+                    "px-2 py-0.5 rounded border text-xs font-medium",
+                    getAnnotationColor(annotation.annotation_type)
+                  )}
+                >
+                  <Tag className="h-3 w-3 inline mr-1" />
+                  {getAnnotationTypeLabel(annotation.annotation_type)}
+                </div>
+              </div>
+              <div className="mt-1.5">
+                {annotation.title && (
+                  <p className="text-sm truncate">{annotation.title}</p>
+                )}
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span className="font-mono">{formatTime(annotation.timestamp_seconds)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Your existing moment is within the clip range and counts as proof.
+              </p>
             </div>
           </div>
         </div>
