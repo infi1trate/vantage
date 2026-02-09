@@ -165,7 +165,7 @@ export function HeroSection() {
                     required
                   />
                   <Button type="submit" size="sm" className="shrink-0 h-10 px-5" disabled={waitlistLoading}>
-                    {waitlistLoading ? "..." : "Get Early Access"}
+                    {waitlistLoading ? "..." : "Join Waitlist"}
                   </Button>
                 </div>
                 {waitlistError ? (
