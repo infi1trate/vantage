@@ -45,8 +45,8 @@ export function SubmissionSuccess({
         transition={{ type: "spring", delay: 0.1 }}
         className="relative mb-6"
       >
-        <div className="h-20 w-20 rounded-full bg-green-500/20 flex items-center justify-center">
-          <CheckCircle2 className="h-10 w-10 text-green-500" />
+        <div className="h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center">
+          <CheckCircle2 className="h-10 w-10 text-primary" />
         </div>
         <motion.div
           initial={{ scale: 0 }}
@@ -60,7 +60,7 @@ export function SubmissionSuccess({
 
       {/* Title */}
       <h3 className="text-xl font-display font-semibold mb-2">
-        Your entry is live! 🎉
+        Entry submitted! 🎉
       </h3>
 
       {/* Description */}
@@ -95,8 +95,8 @@ export function SubmissionSuccess({
       )}
 
       {/* Status badge */}
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 text-sm font-medium mb-6">
-        <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent text-accent-foreground text-sm font-medium mb-6">
+        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
         Pending Review
       </div>
 
