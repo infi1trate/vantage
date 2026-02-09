@@ -8,14 +8,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Video, Check } from "lucide-react";
+import { Search, Video, Check, AlertCircle, Library } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { Link } from "react-router-dom";
 
 interface Session {
   id: string;
@@ -42,19 +44,34 @@ export function SessionPickerModal({
   const { user } = useAuth();
   const [search, setSearch] = useState("");
 
-  const { data: sessions, isLoading } = useQuery({
+  const { data: sessions, isLoading, error: queryError } = useQuery({
     queryKey: ["user-sessions-for-challenge", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      console.log("[SessionPicker] Querying capture_sessions", {
+        userId: user!.id,
+        filters: { status: "completed", deleted_at: null },
+      });
+
+      const { data, error, count } = await supabase
         .from("capture_sessions")
-        .select("id, title, thumbnail_url, duration_seconds, game_name, created_at")
+        .select("id, title, thumbnail_url, duration_seconds, game_name, created_at, status, video_url", { count: "exact" })
         .eq("user_id", user!.id)
         .eq("status", "completed")
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(50);
 
-      if (error) throw error;
+      if (error) {
+        console.error("[SessionPicker] Query error:", error);
+        throw error;
+      }
+
+      console.log("[SessionPicker] Query returned", {
+        count,
+        returnedRows: data?.length ?? 0,
+        firstRow: data?.[0] ? { id: data[0].id, title: data[0].title, status: (data[0] as any).status } : null,
+      });
+
       return data as Session[];
     },
     enabled: !!user?.id && open,
@@ -107,9 +124,25 @@ export function SessionPickerModal({
               ))}
             </div>
           ) : !filteredSessions || filteredSessions.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">
-              <Video className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No recordings found</p>
+            <div className="py-12 text-center text-muted-foreground space-y-3">
+              <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p className="font-medium text-foreground">No eligible recordings found</p>
+              <div className="text-xs text-muted-foreground max-w-xs mx-auto space-y-1">
+                <p>Recordings must meet these criteria:</p>
+                <ul className="text-left list-disc list-inside space-y-0.5">
+                  <li>Status: <strong>Completed</strong> (not recording/processing)</li>
+                  <li>Not deleted</li>
+                </ul>
+                {queryError && (
+                  <p className="text-destructive mt-2">Error: {queryError.message}</p>
+                )}
+              </div>
+              <Button variant="outline" size="sm" asChild className="mt-3">
+                <Link to="/library">
+                  <Library className="h-4 w-4 mr-2" />
+                  Go to Library
+                </Link>
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 py-4">
