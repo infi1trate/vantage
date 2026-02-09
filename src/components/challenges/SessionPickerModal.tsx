@@ -49,14 +49,14 @@ export function SessionPickerModal({
     queryFn: async () => {
       console.log("[SessionPicker] Querying capture_sessions", {
         userId: user!.id,
-        filters: { status: "completed", deleted_at: null },
+        filters: { status: "ready", deleted_at: null },
       });
 
       const { data, error, count } = await supabase
         .from("capture_sessions")
         .select("id, title, thumbnail_url, duration_seconds, game_name, created_at, status, video_url", { count: "exact" })
         .eq("user_id", user!.id)
-        .eq("status", "completed")
+        .eq("status", "ready")
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -130,7 +130,7 @@ export function SessionPickerModal({
               <div className="text-xs text-muted-foreground max-w-xs mx-auto space-y-1">
                 <p>Recordings must meet these criteria:</p>
                 <ul className="text-left list-disc list-inside space-y-0.5">
-                  <li>Status: <strong>Completed</strong> (not recording/processing)</li>
+                  <li>Status: <strong>Ready</strong> (fully processed)</li>
                   <li>Not deleted</li>
                 </ul>
                 {queryError && (
