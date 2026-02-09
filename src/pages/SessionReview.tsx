@@ -22,6 +22,7 @@ import { ExportCTAs } from "@/components/export/ExportCTAs";
 import { ExportOptions } from "@/components/export/ExportDrawer";
 import { ChallengeSubmitBanner } from "@/components/challenges/ChallengeSubmitBanner";
 import { SubmissionModal } from "@/components/challenges/SubmissionModal";
+import { SuggestedChallenges } from "@/components/challenges/SuggestedChallenges";
 import { useQuery } from "@tanstack/react-query";
 import { fetchChallenge } from "@/lib/challenges";
 import {
@@ -1032,6 +1033,27 @@ export default function SessionReview() {
         </div>
       )}
 
+      {/* Suggested Challenges — game-matched discovery module */}
+      {!loading && !isLocal && displayGame && (
+        <div className="container pt-3">
+          <SuggestedChallenges
+            gameName={displayGame}
+            sessionId={displaySessionId || sessionId || ""}
+            sessionTitle={displayTitle}
+            sessionVideoUrl={videoUrl}
+            sessionThumbnailUrl={session?.thumbnail_url}
+            sessionDuration={displayDuration}
+            annotations={annotations.map(a => ({
+              id: a.id,
+              annotation_type: a.annotation_type,
+              title: a.title,
+              content: a.content,
+              timestamp_seconds: a.timestamp_seconds,
+            }))}
+          />
+        </div>
+      )}
+
       {/* Main content - CapCut-style layout */}
       <div className="flex-1 flex min-h-0">
         {/* Left: Video + Timeline (~70%) */}
@@ -1182,6 +1204,10 @@ export default function SessionReview() {
               coachError={coachError}
               commentsEnabled={false}
               sessionTitle={displayTitle}
+              sessionVideoUrl={videoUrl}
+              sessionThumbnailUrl={session?.thumbnail_url}
+              sessionDuration={displayDuration}
+              sessionGameName={displayGame}
               reelEligibility={reelEligibility}
               onViewSessionMedia={handleViewSessionMedia}
             />
