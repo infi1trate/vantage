@@ -353,6 +353,21 @@ export function HeroSection() {
             </motion.div>
           </div>
 
+          {/* Reward unlocked annotation */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 3.8, ease: "easeOut" }}
+            className="absolute bottom-16 right-4 md:right-8"
+          >
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-primary/40 bg-primary/10 backdrop-blur-sm shadow-[0_0_16px_hsl(var(--primary)/0.15)]">
+              <Trophy className="w-3.5 h-3.5 text-primary" />
+              <span className="text-sm font-medium text-foreground">Reward Unlocked</span>
+              <span className="text-xs font-mono text-muted-foreground">•</span>
+              <span className="text-xs font-mono text-primary/80">$10 Weekly Challenge</span>
+            </div>
+          </motion.div>
+
           {/* Timeline preview at bottom */}
           <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background/90 via-background/60 to-transparent">
             <div className="absolute bottom-2 left-20 right-4 h-1 bg-muted/30 rounded-full overflow-hidden">
