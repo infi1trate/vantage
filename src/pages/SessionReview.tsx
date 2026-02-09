@@ -61,6 +61,8 @@ import {
   Minimize2,
   Keyboard,
   Eye,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -897,6 +899,20 @@ export default function SessionReview() {
                   )}
                   {isLocal && (
                     <Badge variant="outline" className="text-[10px] h-4">Local</Badge>
+                  )}
+                  {/* Mic track indicator — non-invasive, desktop sessions */}
+                  {!isLocal && !isProcessing && !isProcessingFailed && (
+                    audioTracks.some(t => t.track_type === "microphone") ? (
+                      <span className="flex items-center gap-0.5 text-vantage-success">
+                        <Mic className="h-3 w-3" />
+                        <span className="text-[10px]">Mic: On</span>
+                      </span>
+                    ) : session && (session.metadata as any)?.created_from === "desktop" ? (
+                      <span className="flex items-center gap-0.5 text-muted-foreground/60">
+                        <MicOff className="h-3 w-3" />
+                        <span className="text-[10px]">Mic: Not detected</span>
+                      </span>
+                    ) : null
                   )}
                   {isProcessing && (
                     <Badge variant="outline" className="text-[10px] h-4 bg-primary/10 text-primary border-primary/30">

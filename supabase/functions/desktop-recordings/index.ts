@@ -34,6 +34,12 @@ interface InitRecordingRequest {
   sizeBytes: number;
   durationSeconds: number;
   sourceName?: string;
+  /** Whether the recording includes microphone audio (mixed into the file) */
+  hasMic?: boolean;
+  /** Whether the recording includes game/system audio */
+  hasGameAudio?: boolean;
+  /** Capture config from Electron (hardware flags, layout, etc.) */
+  captureConfig?: Record<string, unknown>;
 }
 
 interface InitRecordingResponse {
@@ -161,6 +167,9 @@ async function handleInitWithBody(
     sizeBytes,
     durationSeconds,
     sourceName,
+    hasMic,
+    hasGameAudio,
+    captureConfig,
   } = body;
 
   // Log incoming request for debugging
@@ -213,6 +222,9 @@ async function handleInitWithBody(
         file_size_bytes: sizeBytes,
         storage_key: storageKey,
         upload_started_at: new Date().toISOString(),
+        has_mic: hasMic ?? false,
+        has_game_audio: hasGameAudio ?? true,
+        capture_config: captureConfig || null,
       },
     })
     .select()
@@ -432,6 +444,61 @@ async function handleCompleteWithBody(
   if (assetError) {
     console.error("[desktop-recordings] Failed to create video asset:", assetError);
     // Don't fail - session can still be marked ready
+  }
+
+  // Create audio track records for desktop sessions with mic
+  // The mic audio is mixed into the MP4 — this record enables the web app
+  // to detect mic presence and show the correct indicator
+  const hasMicFlag = (metadata.has_mic === true);
+  const hasGameAudioFlag = (metadata.has_game_audio !== false); // default true
+  
+  console.log(`[desktop-recordings] Audio flags - hasMic: ${hasMicFlag}, hasGameAudio: ${hasGameAudioFlag}`);
+
+  if (hasMicFlag) {
+    const { error: micTrackError } = await supabase
+      .from("audio_tracks")
+      .insert({
+        session_id: sessionId,
+        user_id: userId,
+        track_type: "microphone",
+        track_name: "Desktop Microphone",
+        storage_url: videoUrl, // Audio is embedded in the video file
+        duration_ms: (session.duration_seconds || 0) * 1000,
+        status: "ready",
+        mime_type: metadata.mime_type as string || "video/mp4",
+        file_size_bytes: 0, // Embedded in video, no separate file
+        video_asset_id: videoAsset?.id || null,
+      });
+
+    if (micTrackError) {
+      console.error("[desktop-recordings] Failed to create mic audio track:", micTrackError);
+      // Non-fatal — session still works, just missing mic indicator
+    } else {
+      console.log(`[desktop-recordings] Mic audio track created for session: ${sessionId}`);
+    }
+  }
+
+  if (hasGameAudioFlag) {
+    const { error: gameTrackError } = await supabase
+      .from("audio_tracks")
+      .insert({
+        session_id: sessionId,
+        user_id: userId,
+        track_type: "game",
+        track_name: "Game Audio",
+        storage_url: videoUrl, // Audio is embedded in the video file
+        duration_ms: (session.duration_seconds || 0) * 1000,
+        status: "ready",
+        mime_type: metadata.mime_type as string || "video/mp4",
+        file_size_bytes: 0,
+        video_asset_id: videoAsset?.id || null,
+      });
+
+    if (gameTrackError) {
+      console.error("[desktop-recordings] Failed to create game audio track:", gameTrackError);
+    } else {
+      console.log(`[desktop-recordings] Game audio track created for session: ${sessionId}`);
+    }
   }
 
   // Update session to ready with videoBucket, videoKey, and videoUrl
