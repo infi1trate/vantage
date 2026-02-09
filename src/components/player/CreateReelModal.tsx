@@ -909,6 +909,29 @@ function ReelCreatorContent({
     }
   }, [selectedMoments, selectedIds, aspectRatio, sessionId, sessionTitle, onReelCreated, onViewSessionMedia, refreshMediaStatus]);
 
+  // If no moments available, show a clear empty state
+  if (sortedMoments.length === 0) {
+    return (
+      <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <Target className="h-8 w-8 text-primary/60" />
+          </div>
+          <div className="space-y-2 max-w-xs">
+            <p className="text-sm font-semibold text-foreground">No moments tagged yet</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Tag gameplay moments (Kill, Death, Highlight) on the timeline first. 
+              Reels are assembled from your tagged moments.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose} className="mt-2">
+            Go back and tag moments
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full max-h-[80vh] md:max-h-[600px]">
       {/* AI Badge - consistent padding, never overlaps content */}
