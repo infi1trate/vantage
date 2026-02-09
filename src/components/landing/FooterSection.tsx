@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+
 
 export function FooterSection() {
   return (
@@ -13,12 +13,12 @@ export function FooterSection() {
           </div>
           
           <nav className="flex items-center gap-6" aria-label="Footer navigation">
-            <Link 
-              to="/auth" 
+            <a 
+              href="#features" 
               className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
             >
-              Login
-            </Link>
+              Features
+            </a>
             <a 
               href="#features" 
               className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
