@@ -1120,14 +1120,16 @@ export function CreateReelModal({
     );
   }, [moments]);
 
-  // Reset state when modal closes
+  // Transition state for smooth mode change
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [pendingReelId, setPendingReelId] = useState<string | null>(null);
+
+  // Reset state when modal closes — but NOT if a transition is active
   useEffect(() => {
-    if (!open) {
-      // Reset transition state if modal closes unexpectedly
-      setIsTransitioning(false);
+    if (!open && !isTransitioning) {
       setPendingReelId(null);
     }
-  }, [open]);
+  }, [open, isTransitioning]);
 
   // Cleanup on unmount - ensure overlay doesn't stay stuck
   useEffect(() => {
@@ -1141,17 +1143,13 @@ export function CreateReelModal({
     onOpenChange(false);
   }, [onOpenChange]);
 
-  // Transition state for smooth mode change
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [pendingReelId, setPendingReelId] = useState<string | null>(null);
-
   const handleReelCreated = useCallback((reelId: string) => {
     console.log("[CreateReelModal] Reel created, starting transition to:", reelId);
-    // Start transition overlay
+    // Set transition state BEFORE closing modal to prevent cleanup effect from clearing it
     setPendingReelId(reelId);
     setIsTransitioning(true);
-    // Close modal immediately (will be hidden by overlay)
-    onOpenChange(false);
+    // Defer modal close so transition state is established first
+    setTimeout(() => onOpenChange(false), 0);
   }, [onOpenChange]);
 
   const handleTransitionComplete = useCallback(() => {
