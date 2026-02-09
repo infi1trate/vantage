@@ -89,20 +89,28 @@ export const ManifestPlayer = memo(function ManifestPlayer({
   const cumulativeClips = buildCumulativeTimeline(manifest.clips, annotations);
   const totalDurationSec = manifest.totalDurationMs / 1000;
   
-  // Find current clip based on global time
-  const getCurrentClipData = useCallback((globalTimeSec: number) => {
-    const globalTimeMs = globalTimeSec * 1000;
-    
-    return cumulativeClips.find(
-      c => globalTimeMs >= c.globalStartMs && globalTimeMs < c.globalEndMs
-    ) || cumulativeClips[cumulativeClips.length - 1] || null;
-  }, [cumulativeClips]);
+  // Keep refs in sync for RAF loop (avoids stale closures)
+  const clipsRef = useRef(cumulativeClips);
+  clipsRef.current = cumulativeClips;
+  const totalDurationSecRef = useRef(totalDurationSec);
+  totalDurationSecRef.current = totalDurationSec;
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  onTimeUpdateRef.current = onTimeUpdate;
   
-  const currentClipData = getCurrentClipData(currentTime);
+  // Find current clip based on global time (uses latest clips via ref)
+  const findClipForTime = useCallback((globalTimeSec: number) => {
+    const clips = clipsRef.current;
+    const globalTimeMs = globalTimeSec * 1000;
+    return clips.find(
+      c => globalTimeMs >= c.globalStartMs && globalTimeMs < c.globalEndMs
+    ) || clips[clips.length - 1] || null;
+  }, []);
+  
+  const currentClipData = findClipForTime(currentTime);
   
   // Calculate session time from global time
   const getSessionTime = useCallback((globalTimeSec: number) => {
-    const clipData = getCurrentClipData(globalTimeSec);
+    const clipData = findClipForTime(globalTimeSec);
     if (!clipData) return 0;
     
     const clipLocalMs = (globalTimeSec * 1000) - clipData.globalStartMs;
@@ -110,52 +118,98 @@ export const ManifestPlayer = memo(function ManifestPlayer({
     const clipDurationSec = clipData.sessionEndSec - clipData.sessionStartSec;
     
     return clipData.sessionStartSec + (clipProgress * clipDurationSec);
-  }, [getCurrentClipData]);
+  }, [findClipForTime]);
   
-  // Sync video position when current time or clip changes
+  // Sync video position when current time changes (only for external seeks, not RAF updates)
+  const isRAFUpdatingRef = useRef(false);
   useEffect(() => {
+    if (isRAFUpdatingRef.current) return; // Skip sync during RAF-driven updates
     const video = videoRef.current;
     if (!video || !videoReady || !currentClipData) return;
     
     const targetSessionTime = getSessionTime(currentTime);
     const currentVideoTime = video.currentTime;
     
-    // Only seek if difference is significant (avoid micro-seeks during playback)
     if (Math.abs(currentVideoTime - targetSessionTime) > 0.1) {
       video.currentTime = targetSessionTime;
     }
   }, [currentTime, currentClipData, videoReady, getSessionTime]);
   
-  // Playback loop - update global time based on video playback
+  // Playback loop - uses refs to avoid stale closures during clip transitions
   useEffect(() => {
-    if (!isPlaying || !videoReady || !currentClipData) return;
+    if (!isPlaying || !videoReady) return;
     
     const video = videoRef.current;
     if (!video) return;
     
     const updateTime = () => {
-      if (!video.paused && currentClipData) {
-        // Calculate global time from current video position
-        const videoCurrentTime = video.currentTime;
-        const clipDurationSec = currentClipData.sessionEndSec - currentClipData.sessionStartSec;
-        const clipProgress = (videoCurrentTime - currentClipData.sessionStartSec) / clipDurationSec;
-        const globalTimeMs = currentClipData.globalStartMs + (clipProgress * currentClipData.durationMs);
+      if (video.paused) {
+        animationRef.current = requestAnimationFrame(updateTime);
+        return;
+      }
+      
+      const clips = clipsRef.current;
+      const totalDur = totalDurationSecRef.current;
+      const videoCurrentTime = video.currentTime;
+      
+      // Find which clip the video is currently in by session time
+      let activeClip = clips.find(
+        c => videoCurrentTime >= c.sessionStartSec && videoCurrentTime < c.sessionEndSec
+      );
+      
+      // If not found, we may have overshot the current clip's end
+      if (!activeClip) {
+        // Find the clip whose end we just passed
+        activeClip = clips.find(
+          c => videoCurrentTime >= c.sessionEndSec && 
+               videoCurrentTime < c.sessionEndSec + 0.5
+        );
         
-        // Check if we've reached end of current clip
-        if (videoCurrentTime >= currentClipData.sessionEndSec) {
+        if (activeClip) {
           // Move to next clip
-          const nextClip = cumulativeClips[currentClipData.index + 1];
+          const nextClip = clips[activeClip.index + 1];
           if (nextClip) {
             video.currentTime = nextClip.sessionStartSec;
-            onTimeUpdate(nextClip.globalStartMs / 1000);
+            isRAFUpdatingRef.current = true;
+            onTimeUpdateRef.current(nextClip.globalStartMs / 1000);
+            isRAFUpdatingRef.current = false;
           } else {
             // End of reel
-            setIsPlaying(false);
             video.pause();
-            onTimeUpdate(totalDurationSec);
+            setIsPlaying(false);
+            isRAFUpdatingRef.current = true;
+            onTimeUpdateRef.current(totalDur);
+            isRAFUpdatingRef.current = false;
+          }
+          animationRef.current = requestAnimationFrame(updateTime);
+          return;
+        }
+      }
+      
+      if (activeClip) {
+        // Check if we've reached end of current clip
+        if (videoCurrentTime >= activeClip.sessionEndSec - 0.016) {
+          const nextClip = clips[activeClip.index + 1];
+          if (nextClip) {
+            video.currentTime = nextClip.sessionStartSec;
+            isRAFUpdatingRef.current = true;
+            onTimeUpdateRef.current(nextClip.globalStartMs / 1000);
+            isRAFUpdatingRef.current = false;
+          } else {
+            video.pause();
+            setIsPlaying(false);
+            isRAFUpdatingRef.current = true;
+            onTimeUpdateRef.current(totalDur);
+            isRAFUpdatingRef.current = false;
           }
         } else {
-          onTimeUpdate(Math.min(globalTimeMs / 1000, totalDurationSec));
+          // Normal playback - calculate global time
+          const clipDurationSec = activeClip.sessionEndSec - activeClip.sessionStartSec;
+          const clipProgress = (videoCurrentTime - activeClip.sessionStartSec) / clipDurationSec;
+          const globalTimeMs = activeClip.globalStartMs + (clipProgress * activeClip.durationMs);
+          isRAFUpdatingRef.current = true;
+          onTimeUpdateRef.current(Math.min(globalTimeMs / 1000, totalDur));
+          isRAFUpdatingRef.current = false;
         }
       }
       
@@ -169,7 +223,7 @@ export const ManifestPlayer = memo(function ManifestPlayer({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, videoReady, currentClipData, cumulativeClips, onTimeUpdate, totalDurationSec]);
+  }, [isPlaying, videoReady]);
   
   // Handle play/pause
   const togglePlayPause = useCallback(() => {
