@@ -441,9 +441,9 @@ export function SubmissionModal({
                 {sessionHasAnnotations ? (
                   sessionHasMultipleAnnotations ? (
                     <>
-                      <h4 className="font-medium">Select a moment to submit</h4>
+                      <h4 className="font-medium">Which moment proves this challenge?</h4>
                       <p className="text-sm text-muted-foreground">
-                        Pick the moment that best proves your challenge entry. The clip will be auto-generated around it.
+                        Pick the moment that best proves your entry. Your clip will be auto-positioned around it.
                       </p>
                       <AnnotationSelector
                         annotations={sessionAnnotations}
@@ -457,7 +457,7 @@ export function SubmissionModal({
                     /* Single annotation — show confirmation card */
                     selectedAnnotation && (
                       <div className="space-y-3">
-                        <h4 className="font-medium">Submitting moment</h4>
+                        <h4 className="font-medium">Moment selected</h4>
                         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5">
                           <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
                           <div className="flex-1 min-w-0">
@@ -478,9 +478,9 @@ export function SubmissionModal({
                 ) : (
                   /* No annotations — helper text + inline creator */
                   <div className="space-y-4">
-                    <h4 className="font-medium">Tag the moment</h4>
+                    <h4 className="font-medium">Tag your moment</h4>
                     <p className="text-sm text-muted-foreground">
-                      Tag the exact moment that proves this challenge. Add a quick annotation or use the full editor.
+                      Almost there — tag the exact moment that proves this challenge.
                     </p>
 
                     {selectedAnnotation ? (
@@ -488,7 +488,7 @@ export function SubmissionModal({
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 text-sm">
                         <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                         <span className="truncate">
-                          <strong>{selectedAnnotation.title || selectedAnnotation.annotation_type}</strong> at {formatTimestamp(selectedAnnotation.timestamp_seconds)}
+                          Moment selected · <strong>{selectedAnnotation.title || selectedAnnotation.annotation_type}</strong> at {formatTimestamp(selectedAnnotation.timestamp_seconds)}
                         </span>
                       </div>
                     ) : showInlineCreator ? (
@@ -542,22 +542,22 @@ export function SubmissionModal({
             {step === "clip" && (
               <div className="space-y-4">
                 <h4 className="font-medium">
-                  {selectedAnnotation ? "Refine your clip range" : "Select your clip range"}
+                  {selectedAnnotation ? "Clip looks good" : "Select your clip range"}
                 </h4>
                 {selectedAnnotation && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
                     <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">Proof moment selected ✓</span>
+                    <span className="text-muted-foreground">Moment selected</span>
                     <span className="text-xs text-muted-foreground ml-auto font-mono tabular-nums">
                       {formatTimestamp(selectedAnnotation.timestamp_seconds)}
                     </span>
                   </div>
                 )}
-                {selectedAnnotation && (
-                  <p className="text-sm text-muted-foreground">
-                    Clip auto-positioned around your moment. Adjust the trim handles if needed.
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  {selectedAnnotation
+                    ? "Auto-positioned around your moment. Adjust if needed."
+                    : "Drag the trim handles to select the clip you want to submit."}
+                </p>
                 <ClipTrimmer
                   videoUrl={selectedSession.video_url}
                   thumbnailUrl={selectedSession.thumbnail_url}
@@ -575,22 +575,20 @@ export function SubmissionModal({
             {/* Step: Metadata */}
             {step === "metadata" && (
               <div className="space-y-4">
-                <h4 className="font-medium">Add details</h4>
+                <h4 className="font-medium">Ready to submit</h4>
 
-                {/* Passive proof confirmation or gentle final-step warning */}
+                {/* Passive progress confirmation or gentle nudge */}
                 {selectedAnnotation ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
                     <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">Proof moment selected ✓</span>
+                    <span className="text-muted-foreground">Moment selected · Clip looks good</span>
                   </div>
                 ) : (
                   <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm">
                     <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        No proof moment selected. Go back to tag the moment that proves this challenge.
-                      </p>
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Almost there — go back to tag the exact moment that proves this challenge.
+                    </p>
                   </div>
                 )}
 

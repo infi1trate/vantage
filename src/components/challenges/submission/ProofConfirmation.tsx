@@ -114,10 +114,10 @@ export function ProofConfirmation({
           <Tag className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
           <div className="flex-1 space-y-2">
             <p className="text-sm font-medium">
-              Tag a proof moment
+              Tag your moment
             </p>
             <p className="text-sm text-muted-foreground">
-              Add an annotation marking the moment that proves you completed this challenge.
+              Almost there — tag the exact moment that proves this challenge.
             </p>
             <div className="flex flex-wrap gap-2 mt-2">
               {onCreateInlineAnnotation && (
@@ -157,7 +157,7 @@ export function ProofConfirmation({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-medium text-primary">
-                  Proof moment selected ✓
+                  Moment selected ✓
                 </p>
                 <div
                   className={cn(
@@ -227,7 +227,7 @@ export function ProofConfirmation({
         {!isWithinClip && (
           <div className="mt-3 pt-3 border-t border-accent">
             <p className="text-xs text-muted-foreground">
-              ⚠️ This annotation is outside your selected clip range. Adjust your trim to include it.
+              This moment is outside your clip range. Adjust your trim to include it.
             </p>
           </div>
         )}
@@ -256,10 +256,10 @@ export function ProofConfirmation({
               isConfirmed ? "text-primary" : "text-foreground"
             )}
           >
-            This clip clearly shows me completing the challenge.
+            Confirm your moment
           </Label>
           <p className="text-xs text-muted-foreground mt-1">
-            Submissions without valid proof may be rejected by moderators.
+            This clip clearly shows me completing the challenge.
           </p>
         </div>
         {isConfirmed && (
