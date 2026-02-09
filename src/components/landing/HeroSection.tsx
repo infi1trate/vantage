@@ -1,11 +1,10 @@
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link } from "react-router-dom";
-import { Star, Mic, Camera, Trophy, ShieldCheck, Banknote } from "lucide-react";
-import { toast } from "sonner";
+import { Star, Mic, Camera, Trophy, ShieldCheck, Banknote, CheckCircle2 } from "lucide-react";
 import fortniteGameplay from "@/assets/fortnite-gameplay.webp";
 import { useRef, useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export function HeroSection() {
   const heroRef = useRef<HTMLElement>(null);
@@ -16,12 +15,36 @@ export function HeroSection() {
   const [recordingTime, setRecordingTime] = useState(107); // 1:47
   const [isRecording] = useState(true);
   const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistError, setWaitlistError] = useState("");
+  const [waitlistSuccess, setWaitlistSuccess] = useState(false);
+  const [waitlistLoading, setWaitlistLoading] = useState(false);
 
-  const handleWaitlistSubmit = (e: React.FormEvent) => {
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const handleWaitlistSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!waitlistEmail.trim()) return;
-    toast.success("You're on the list!", { description: "We'll notify you when challenges go live." });
-    setWaitlistEmail("");
+    setWaitlistError("");
+    if (!isValidEmail(waitlistEmail)) {
+      setWaitlistError("Please enter a valid email.");
+      return;
+    }
+    setWaitlistLoading(true);
+    try {
+      const { error } = await supabase.from("waitlist").insert({ email: waitlistEmail.trim().toLowerCase(), source: "landing" });
+      if (error) {
+        if (error.code === "23505") {
+          setWaitlistSuccess(true);
+        } else {
+          setWaitlistError("Something went wrong. Try again.");
+        }
+      } else {
+        setWaitlistSuccess(true);
+      }
+    } catch {
+      setWaitlistError("Something went wrong. Try again.");
+    } finally {
+      setWaitlistLoading(false);
+    }
   };
 
   const proofItems = [
@@ -114,25 +137,45 @@ export function HeroSection() {
           </motion.div>
 
           {/* Waitlist input */}
-          <motion.form
-            onSubmit={handleWaitlistSubmit}
+          <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: prefersReducedMotion ? 0 : 0.48 }}
-            className="flex items-center justify-center gap-2 max-w-sm mx-auto"
+            className="max-w-sm mx-auto"
           >
-            <Input
-              type="email"
-              placeholder="you@email.com"
-              value={waitlistEmail}
-              onChange={(e) => setWaitlistEmail(e.target.value)}
-              className="h-10 bg-card/40 border-border/50"
-              required
-            />
-            <Button type="submit" size="sm" className="shrink-0 h-10 px-5">
-              Join Waitlist
-            </Button>
-          </motion.form>
+            {waitlistSuccess ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5"
+              >
+                <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm text-foreground/90">You're on the list. We'll email you at launch.</span>
+              </motion.div>
+            ) : (
+              <form onSubmit={handleWaitlistSubmit}>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="waitlist-input"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={waitlistEmail}
+                    onChange={(e) => { setWaitlistEmail(e.target.value); setWaitlistError(""); }}
+                    className={`h-10 bg-card/40 border-border/50 ${waitlistError ? "border-destructive/60" : ""}`}
+                    required
+                  />
+                  <Button type="submit" size="sm" className="shrink-0 h-10 px-5" disabled={waitlistLoading}>
+                    {waitlistLoading ? "..." : "Get Early Access"}
+                  </Button>
+                </div>
+                {waitlistError ? (
+                  <p className="text-xs text-destructive mt-1.5 text-left">{waitlistError}</p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/60 mt-1.5 text-center">No spam. First access goes to early signups.</p>
+                )}
+              </form>
+            )}
+          </motion.div>
         </div>
 
         {/* Live recording interface */}
@@ -362,29 +405,22 @@ export function HeroSection() {
             Record gameplay, voice, reactions, and intent — all synchronized in one continuous perspective.
           </motion.p>
 
-          {/* CTAs */}
+          {/* CTA */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 1.5 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-            role="group"
-            aria-label="Call to action buttons"
+            className="flex items-center justify-center"
           >
             <Button
               size="lg"
               className="h-12 px-8 text-base font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-              asChild
+              onClick={() => {
+                const el = document.getElementById("waitlist-input");
+                if (el) { el.scrollIntoView({ behavior: "smooth" }); setTimeout(() => el.focus(), 500); }
+              }}
             >
-              <Link to="/auth">Start Recording</Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="lg"
-              className="h-12 px-6 text-base text-muted-foreground hover:text-foreground"
-              asChild
-            >
-              <Link to="/auth">Log in</Link>
+              Join Waitlist
             </Button>
           </motion.div>
         </div>
