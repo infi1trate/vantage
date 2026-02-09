@@ -13,6 +13,7 @@ import {
   Sparkles,
   AlertCircle,
   ExternalLink,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateReelModal } from "../CreateReelModal";
@@ -26,6 +27,10 @@ import {
   type ReelEligibilityResult, 
   getCreateReelDisabledTooltip,
 } from "@/lib/reelEligibility";
+import { useChallengeSessionOptional } from "@/contexts/ChallengeSessionContext";
+import { ChallengePickerModal } from "@/components/challenges/ChallengePickerModal";
+import { SubmissionModal } from "@/components/challenges/SubmissionModal";
+import { type Challenge } from "@/lib/challenges";
 
 interface MomentsSectionProps {
   annotations: Annotation[];
@@ -35,6 +40,10 @@ interface MomentsSectionProps {
   onAnnotationDelete?: (annotationId: string) => void;
   sessionId?: string;
   sessionTitle?: string;
+  sessionVideoUrl?: string | null;
+  sessionThumbnailUrl?: string | null;
+  sessionDuration?: number | null;
+  sessionGameName?: string | null;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
   /** Callback to navigate to Session Media panel */
@@ -69,11 +78,13 @@ const MomentRow = memo(function MomentRow({
   isActive,
   onClick,
   onDelete,
+  onSubmitToChallenge,
 }: {
   annotation: Annotation;
   isActive: boolean;
   onClick: () => void;
   onDelete?: () => void;
+  onSubmitToChallenge?: () => void;
 }) {
   const config = MOMENT_CONFIG[annotation.annotation_type] || MOMENT_CONFIG.highlight;
   const Icon = config.icon;
@@ -117,18 +128,43 @@ const MomentRow = memo(function MomentRow({
         </span>
       </div>
       
-      {/* Delete action - visible on mobile via active state, hover on desktop */}
-      <div className="shrink-0 flex items-center gap-1">
+      {/* Actions - visible on hover/active */}
+      <div className="shrink-0 flex items-center gap-0.5">
+        {onSubmitToChallenge && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-8 w-8 transition-opacity touch-manipulation",
+                  isActive 
+                    ? "opacity-100" 
+                    : "opacity-0 group-hover:opacity-100"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSubmitToChallenge();
+                }}
+                aria-label="Submit to challenge"
+              >
+                <Trophy className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-xs">
+              Submit to Challenge
+            </TooltipContent>
+          </Tooltip>
+        )}
         {onDelete && (
           <Button
             variant="ghost"
             size="icon"
             className={cn(
-              "h-10 w-10 transition-opacity touch-manipulation",
-              // Always visible on mobile when active, hover-reveal on desktop
+              "h-8 w-8 transition-opacity touch-manipulation",
               isActive 
                 ? "opacity-100" 
-                : "opacity-0 group-hover:opacity-100 sm:opacity-0"
+                : "opacity-0 group-hover:opacity-100"
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -136,7 +172,7 @@ const MomentRow = memo(function MomentRow({
             }}
             aria-label="Delete moment"
           >
-            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
           </Button>
         )}
         <ChevronRight className={cn(
@@ -147,7 +183,6 @@ const MomentRow = memo(function MomentRow({
     </button>
   );
 });
-
 export const HighlightsSection = memo(function HighlightsSection({
   annotations,
   currentTime,
@@ -156,11 +191,22 @@ export const HighlightsSection = memo(function HighlightsSection({
   onAnnotationDelete,
   sessionId = "",
   sessionTitle,
+  sessionVideoUrl,
+  sessionThumbnailUrl,
+  sessionDuration,
+  sessionGameName,
   reelEligibility = { ok: true },
   onViewSessionMedia,
 }: MomentsSectionProps) {
   const [reelModalOpen, setReelModalOpen] = useState(false);
   const navigate = useNavigate();
+  
+  // Challenge submission state
+  const challengeSession = useChallengeSessionOptional();
+  const [challengePickerOpen, setChallengePickerOpen] = useState(false);
+  const [submissionModalOpen, setSubmissionModalOpen] = useState(false);
+  const [pendingAnnotation, setPendingAnnotation] = useState<Annotation | null>(null);
+  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   
   // Fetch existing reels for this session
   const { data: sessionReels } = useSessionReels(sessionId || undefined);
@@ -191,6 +237,47 @@ export const HighlightsSection = memo(function HighlightsSection({
   const handleMomentClick = useCallback((annotation: Annotation) => {
     onAnnotationClick?.(annotation) ?? onMarkerClick(annotation.timestamp_seconds);
   }, [onAnnotationClick, onMarkerClick]);
+
+  // Handle "Submit to Challenge" on an annotation
+  const handleSubmitToChallenge = useCallback((annotation: Annotation) => {
+    setPendingAnnotation(annotation);
+
+    // If there's an active challenge context, go straight to submission
+    if (challengeSession?.challengeContext) {
+      // We need to fetch the challenge — navigate to challenge detail with annotation context
+      navigate(`/challenges/${challengeSession.challengeContext.id}?submitSession=${sessionId}&annotationId=${annotation.id}`);
+      return;
+    }
+
+    // Otherwise, open challenge picker
+    setChallengePickerOpen(true);
+  }, [challengeSession, navigate, sessionId]);
+
+  // When a challenge is picked from the picker modal
+  const handleChallengePicked = useCallback((challenge: Challenge) => {
+    setSelectedChallenge(challenge);
+    setChallengePickerOpen(false);
+    setSubmissionModalOpen(true);
+  }, []);
+
+  // Build session object for submission modal
+  const submissionSession = useMemo(() => {
+    if (!sessionId) return null;
+    return {
+      id: sessionId,
+      title: sessionTitle || "Untitled Session",
+      thumbnail_url: sessionThumbnailUrl,
+      video_url: sessionVideoUrl,
+      duration_seconds: sessionDuration,
+      annotations: annotations.map((a) => ({
+        id: a.id,
+        annotation_type: a.annotation_type,
+        title: a.title ?? null,
+        content: a.content ?? null,
+        timestamp_seconds: a.timestamp_seconds,
+      })),
+    };
+  }, [sessionId, sessionTitle, sessionThumbnailUrl, sessionVideoUrl, sessionDuration, annotations]);
 
   if (moments.length === 0) {
     return (
@@ -293,6 +380,7 @@ export const HighlightsSection = memo(function HighlightsSection({
                 isActive={annotation.id === activeMomentId}
                 onClick={() => handleMomentClick(annotation)}
                 onDelete={onAnnotationDelete ? () => onAnnotationDelete(annotation.id) : undefined}
+                onSubmitToChallenge={() => handleSubmitToChallenge(annotation)}
               />
             ))}
           </div>
@@ -309,6 +397,35 @@ export const HighlightsSection = memo(function HighlightsSection({
         reelEligibility={reelEligibility}
         onViewSessionMedia={onViewSessionMedia}
       />
+
+      {/* Challenge Picker Modal */}
+      <ChallengePickerModal
+        open={challengePickerOpen}
+        onOpenChange={setChallengePickerOpen}
+        gameName={sessionGameName}
+        onSelect={handleChallengePicked}
+      />
+
+      {/* Submission Modal */}
+      {selectedChallenge && submissionSession && (
+        <SubmissionModal
+          open={submissionModalOpen}
+          onOpenChange={setSubmissionModalOpen}
+          challenge={selectedChallenge}
+          selectedSession={submissionSession}
+          selectedAnnotation={pendingAnnotation ? {
+            id: pendingAnnotation.id,
+            annotation_type: pendingAnnotation.annotation_type,
+            title: pendingAnnotation.title ?? null,
+            content: pendingAnnotation.content ?? null,
+            timestamp_seconds: pendingAnnotation.timestamp_seconds,
+          } : null}
+          onSuccess={() => {
+            setSelectedChallenge(null);
+            setPendingAnnotation(null);
+          }}
+        />
+      )}
     </div>
   );
 });

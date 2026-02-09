@@ -45,6 +45,10 @@ interface SessionRightRailProps {
   isSessionShared?: boolean;
   // Session/video availability
   sessionTitle?: string;
+  sessionVideoUrl?: string | null;
+  sessionThumbnailUrl?: string | null;
+  sessionDuration?: number | null;
+  sessionGameName?: string | null;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
   /** Callback to navigate to Session Media panel */
@@ -73,6 +77,10 @@ export const SessionRightRail = memo(function SessionRightRail({
   onReactionVisibilityChange,
   isSessionShared = false,
   sessionTitle,
+  sessionVideoUrl,
+  sessionThumbnailUrl,
+  sessionDuration,
+  sessionGameName,
   reelEligibility = { ok: true },
   onViewSessionMedia,
 }: SessionRightRailProps) {
@@ -198,6 +206,10 @@ export const SessionRightRail = memo(function SessionRightRail({
             onAnnotationDelete={onAnnotationDelete}
             sessionId={sessionId}
             sessionTitle={sessionTitle}
+            sessionVideoUrl={sessionVideoUrl}
+            sessionThumbnailUrl={sessionThumbnailUrl}
+            sessionDuration={sessionDuration}
+            sessionGameName={sessionGameName}
             reelEligibility={reelEligibility}
             onViewSessionMedia={onViewSessionMedia}
           />

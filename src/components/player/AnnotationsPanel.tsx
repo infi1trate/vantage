@@ -47,6 +47,10 @@ interface AnnotationsPanelProps {
   commentsEnabled?: boolean;
   // Session/video availability
   sessionTitle?: string;
+  sessionVideoUrl?: string | null;
+  sessionThumbnailUrl?: string | null;
+  sessionDuration?: number | null;
+  sessionGameName?: string | null;
   /** Centralized reel eligibility check result (single source of truth) */
   reelEligibility?: ReelEligibilityResult;
   /** Callback to navigate to Session Media panel */
@@ -83,6 +87,10 @@ export function AnnotationsPanel({
   coachError,
   commentsEnabled = false,
   sessionTitle,
+  sessionVideoUrl,
+  sessionThumbnailUrl,
+  sessionDuration,
+  sessionGameName,
   reelEligibility = { ok: true },
   onViewSessionMedia,
 }: AnnotationsPanelProps) {
@@ -148,6 +156,10 @@ export function AnnotationsPanel({
         commentsEnabled={commentsEnabled}
         onSeekTo={onMarkerClick}
         sessionTitle={sessionTitle}
+        sessionVideoUrl={sessionVideoUrl}
+        sessionThumbnailUrl={sessionThumbnailUrl}
+        sessionDuration={sessionDuration}
+        sessionGameName={sessionGameName}
         reelEligibility={reelEligibility}
         onViewSessionMedia={onViewSessionMedia}
       />
