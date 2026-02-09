@@ -138,6 +138,31 @@ function formatTimeLeft(diff: number): string {
 }
 
 // Prize breakdown component
+interface PrizeEntry {
+  rank: number;
+  amount: number;
+  currency: string;
+}
+
+function parsePrizeDescription(raw: string | null): PrizeEntry[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].rank != null) {
+      return parsed as PrizeEntry[];
+    }
+  } catch {
+    // Not JSON — treat as plain text (handled by caller)
+  }
+  return null;
+}
+
+const RANK_META: Record<number, { label: string; icon: typeof Crown; gold: boolean }> = {
+  1: { label: "1st Place", icon: Crown, gold: true },
+  2: { label: "2nd Place", icon: Medal, gold: false },
+  3: { label: "3rd Place", icon: Medal, gold: false },
+};
+
 function PrizeBreakdown({ 
   prizeDescription, 
   prizeCrypto, 
@@ -149,47 +174,66 @@ function PrizeBreakdown({
 }) {
   if (!prizeDescription && !prizeCrypto) return null;
 
-  // Mock top 3 breakdown (in real app, this would come from challenge data)
-  const prizes = prizeCryptoAmount ? [
-    { place: 1, icon: Crown, amount: Math.floor(prizeCryptoAmount * 0.5), label: "1st Place" },
-    { place: 2, icon: Medal, amount: Math.floor(prizeCryptoAmount * 0.3), label: "2nd Place" },
-    { place: 3, icon: Medal, amount: Math.floor(prizeCryptoAmount * 0.2), label: "3rd Place" },
-  ] : [];
+  // Try to parse structured prize data from prize_description JSON
+  const structured = parsePrizeDescription(prizeDescription);
 
-  return (
-    <div className="space-y-3">
-      {/* Main prize */}
+  // If structured prizes exist, render them directly
+  if (structured && structured.length > 0) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-lg font-semibold">
+          <Trophy className="h-5 w-5 text-primary" />
+          <span className="text-primary">Prize Breakdown</span>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {structured.sort((a, b) => a.rank - b.rank).map((prize) => {
+            const meta = RANK_META[prize.rank] || { label: `#${prize.rank}`, icon: Medal, gold: false };
+            const Icon = meta.icon;
+            return (
+              <div
+                key={prize.rank}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm",
+                  "border border-border/50 bg-card/30",
+                  meta.gold && "border-primary/30 bg-primary/5"
+                )}
+              >
+                <Icon className={cn("h-4 w-4", meta.gold ? "text-yellow-500" : "text-muted-foreground")} />
+                <span className="text-muted-foreground">{meta.label}:</span>
+                <span className="font-mono font-medium">{prize.amount} {prize.currency}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: plain-text prize description (not JSON)
+  if (prizeDescription && typeof prizeDescription === "string") {
+    return (
       <div className="flex items-center gap-2 text-lg font-semibold">
         <Trophy className="h-5 w-5 text-primary" />
-        {prizeDescription ? (
-          <span className="text-primary">{prizeDescription}</span>
-        ) : prizeCrypto && prizeCryptoAmount ? (
-          <span className="font-mono text-primary">{prizeCryptoAmount} {prizeCrypto}</span>
-        ) : null}
+        <span className="text-primary">{prizeDescription}</span>
       </div>
-      
-      {/* Top 3 breakdown */}
-      {prizes.length > 0 && prizeCrypto && (
-        <div className="flex flex-wrap gap-3">
-          {prizes.map((prize) => (
-            <div
-              key={prize.place}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm",
-                "border border-border/50 bg-card/30",
-                prize.place === 1 && "border-primary/30 bg-primary/5"
-              )}
-            >
-              <prize.icon className={cn(
-                "h-4 w-4",
-                prize.place === 1 ? "text-yellow-500" : "text-muted-foreground"
-              )} />
-              <span className="text-muted-foreground">{prize.label}:</span>
-              <span className="font-mono font-medium">{prize.amount} {prizeCrypto}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    );
+  }
+
+  // Fallback: crypto amount without structured breakdown
+  if (prizeCrypto && prizeCryptoAmount) {
+    return (
+      <div className="flex items-center gap-2 text-lg font-semibold">
+        <Trophy className="h-5 w-5 text-primary" />
+        <span className="font-mono text-primary">{prizeCryptoAmount} {prizeCrypto}</span>
+      </div>
+    );
+  }
+
+  // Nothing valid
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Trophy className="h-4 w-4" />
+      <span>Prizes TBD</span>
     </div>
   );
 }
