@@ -545,6 +545,15 @@ export function SubmissionModal({
                   {selectedAnnotation ? "Refine your clip range" : "Select your clip range"}
                 </h4>
                 {selectedAnnotation && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-muted-foreground">Proof moment selected ✓</span>
+                    <span className="text-xs text-muted-foreground ml-auto font-mono tabular-nums">
+                      {formatTimestamp(selectedAnnotation.timestamp_seconds)}
+                    </span>
+                  </div>
+                )}
+                {selectedAnnotation && (
                   <p className="text-sm text-muted-foreground">
                     Clip auto-positioned around your moment. Adjust the trim handles if needed.
                   </p>
@@ -567,6 +576,24 @@ export function SubmissionModal({
             {step === "metadata" && (
               <div className="space-y-4">
                 <h4 className="font-medium">Add details</h4>
+
+                {/* Passive proof confirmation or gentle final-step warning */}
+                {selectedAnnotation ? (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-muted-foreground">Proof moment selected ✓</span>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm">
+                    <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        No proof moment selected. Go back to tag the moment that proves this challenge.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <Form {...form}>
                   <form className="space-y-4">
                     <FormField
