@@ -87,23 +87,23 @@ export function HeroSection() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.06)_0%,transparent_60%)]" aria-hidden="true" />
 
       <div className="relative z-10 w-full max-w-5xl mx-auto">
-        {/* GET PAID TO GAME layer */}
         <div className="text-center mb-10">
-          <motion.h2
+          <motion.h1
+            id="hero-heading"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0 }}
-            className="font-display text-3xl md:text-5xl text-primary mb-3"
+            className="font-display text-5xl md:text-7xl lg:text-8xl leading-none tracking-tight text-primary mb-4"
             style={{ textShadow: "0 0 24px hsl(var(--primary) / 0.35)" }}
           >
             GET PAID TO GAME
-          </motion.h2>
+          </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.12 }}
-            className="text-lg md:text-xl text-foreground/90 mb-2"
+            className="text-xl md:text-2xl text-foreground/90 font-medium mb-2"
           >
             Turn your sessions into challenges, rewards, and real-world payouts.
           </motion.p>
@@ -112,9 +112,9 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.24 }}
-            className="text-sm text-muted-foreground mb-6 max-w-xl mx-auto"
+            className="text-base text-muted-foreground mb-6 max-w-2xl mx-auto"
           >
-            Vantage is launching a new rewards layer for competitive play. Join the early list.
+            Record gameplay, voice, and reactions — all synchronized. Compete in weekly challenges and earn real-world payouts.
           </motion.p>
 
           {/* Proof row */}
@@ -390,55 +390,6 @@ export function HeroSection() {
           />
         </motion.div>
 
-        {/* Text content */}
-        <div className="text-center">
-          <motion.h1
-            id="hero-heading"
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 1.0 }}
-            className="font-display text-5xl md:text-7xl lg:text-8xl leading-none tracking-tight mb-4"
-          >
-            See the Game Differently
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 1.2 }}
-            className="text-xl md:text-2xl text-primary font-medium mb-4"
-          >
-            Vantage is the Loom for Gamers.
-          </motion.p>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 1.3 }}
-            className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mb-10"
-          >
-            Record gameplay, voice, reactions, and intent — all synchronized in one continuous perspective.
-          </motion.p>
-
-          {/* CTA */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 1.5 }}
-            className="flex items-center justify-center"
-          >
-            <Button
-              size="lg"
-              className="h-12 px-8 text-base font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-              onClick={() => {
-                const el = document.getElementById("waitlist-input");
-                if (el) { el.scrollIntoView({ behavior: "smooth" }); setTimeout(() => el.focus(), 500); }
-              }}
-            >
-              Join Waitlist
-            </Button>
-          </motion.div>
-        </div>
       </div>
     </section>
   );
