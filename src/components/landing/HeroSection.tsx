@@ -105,7 +105,7 @@ export function HeroSection() {
             transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.12 }}
             className="text-xl md:text-2xl text-foreground/90 font-medium mb-2"
           >
-            Turn your sessions into challenges, rewards, and real-world payouts.
+            Turn your gameplay into challenges, rewards, and real-world payouts — automatically.
           </motion.p>
 
           <motion.p
@@ -114,7 +114,7 @@ export function HeroSection() {
             transition={{ duration: 0.6, delay: prefersReducedMotion ? 0 : 0.24 }}
             className="text-base text-muted-foreground mb-6 max-w-2xl mx-auto"
           >
-            Record gameplay, voice, and reactions — all synchronized. Compete in weekly challenges and earn real-world payouts.
+            Vantage analyzes your sessions, tags key moments, and unlocks rewards for competitive play.
           </motion.p>
 
           {/* Proof row */}
