@@ -1,3 +1,4 @@
+export { AnnotationSelector } from "./AnnotationSelector";
 export { ChallengeContextBar } from "./ChallengeContextBar";
 export { ClipTrimmer } from "./ClipTrimmer";
 export { InlineAnnotationCreator } from "./InlineAnnotationCreator";

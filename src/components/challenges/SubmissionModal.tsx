@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { type Challenge } from "@/lib/challenges";
 import { useCreateSubmission, useUserSubmissions } from "@/hooks/useChallenges";
 import {
+  AnnotationSelector,
   ChallengeContextBar,
   ClipTrimmer,
   ProofConfirmation,
@@ -39,7 +40,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 // Submission steps
-type SubmissionStep = "trim" | "proof" | "metadata" | "success";
+type SubmissionStep = "select" | "trim" | "proof" | "metadata" | "success";
 
 const submissionSchema = z.object({
   title: z.string().min(1, "Title is required").max(100, "Title is too long"),
@@ -95,7 +96,7 @@ export function SubmissionModal({
   const { data: userSubmissions = [] } = useUserSubmissions(challenge.id);
 
   // Step management
-  const [step, setStep] = useState<SubmissionStep>("trim");
+  const [step, setStep] = useState<SubmissionStep>("select");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Clip trim state
@@ -114,6 +115,9 @@ export function SubmissionModal({
   // Track whether annotation was pre-existing (auto-detected, no manual confirmation needed)
   const [isAnnotationPreExisting, setIsAnnotationPreExisting] = useState(false);
 
+  // Derived: does session have annotations?
+  const sessionHasAnnotations = (selectedSession?.annotations?.length ?? 0) > 0;
+
   // Form state
   const form = useForm<SubmissionFormData>({
     resolver: zodResolver(submissionSchema),
@@ -128,44 +132,39 @@ export function SubmissionModal({
     if (open && selectedSession) {
       setIsSubmitting(false);
 
+      const annotations = selectedSession.annotations ?? [];
+      const hasAnnotations = annotations.length > 0;
+
       // Set annotation from session or initial prop
-      const annotation = initialAnnotation ?? selectedSession.annotations?.[0] ?? null;
+      const annotation = initialAnnotation ?? annotations[0] ?? null;
       setSelectedAnnotation(annotation);
 
-      // Set initial clip range
-      let computedStartMs = 0;
-      let computedEndMs = (selectedSession.duration_seconds ?? 60) * 1000;
-      
-      if (initialClipRange) {
-        computedStartMs = initialClipRange.start_ms;
-        computedEndMs = initialClipRange.end_ms;
-      } else if (annotation) {
-        // Auto-position around annotation
-        const annotationMs = annotation.timestamp_seconds * 1000;
-        const preRoll = 3000; // 3 seconds
-        const postRoll = 12000; // 12 seconds
-        const totalDurationMs = (selectedSession.duration_seconds ?? 60) * 1000;
-        computedStartMs = Math.max(0, annotationMs - preRoll);
-        computedEndMs = Math.min(totalDurationMs, annotationMs + postRoll);
-      }
-      
-      setClipStartMs(computedStartMs);
-      setClipEndMs(computedEndMs);
-
-      // Determine if annotation is pre-existing and within clip range
-      const hasPreExistingProof = annotation !== null && 
-        (annotation.timestamp_seconds * 1000) >= computedStartMs && 
-        (annotation.timestamp_seconds * 1000) <= computedEndMs;
-      
-      setIsAnnotationPreExisting(hasPreExistingProof);
-      
-      // If pre-existing annotation in range, auto-confirm and skip proof step
-      if (hasPreExistingProof) {
+      // Determine starting step based on annotations
+      if (hasAnnotations) {
+        // Annotation-first flow: start at select step
+        setStep("select");
+        // Pre-compute clip range from first annotation
+        if (annotation) {
+          const annotationMs = annotation.timestamp_seconds * 1000;
+          const totalMs = (selectedSession.duration_seconds ?? 60) * 1000;
+          setClipStartMs(Math.max(0, annotationMs - 2000));
+          setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+        }
+        setIsAnnotationPreExisting(true);
         setIsProofConfirmed(true);
-        setStep("trim"); // Start at trim, but proof will be skipped in navigation
       } else {
-        setIsProofConfirmed(false);
+        // No annotations: classic trim-first flow
         setStep("trim");
+        let computedStartMs = 0;
+        let computedEndMs = (selectedSession.duration_seconds ?? 60) * 1000;
+        if (initialClipRange) {
+          computedStartMs = initialClipRange.start_ms;
+          computedEndMs = initialClipRange.end_ms;
+        }
+        setClipStartMs(computedStartMs);
+        setClipEndMs(computedEndMs);
+        setIsAnnotationPreExisting(false);
+        setIsProofConfirmed(false);
       }
 
       form.reset({
@@ -195,20 +194,22 @@ export function SubmissionModal({
     return annotationMs >= clipStartMs && annotationMs <= clipEndMs;
   }, [selectedAnnotation, clipStartMs, clipEndMs]);
 
-  // When annotation is pre-existing and in range, we use a 2-step flow (trim → metadata)
+  // When annotation is pre-existing and in range, we skip proof step
   const skipProofStep = isAnnotationPreExisting && annotationWithinClip;
 
   // Progress calculation
   const getProgress = () => {
-    if (skipProofStep) {
-      // 2-step flow: trim → metadata → success
+    if (sessionHasAnnotations) {
+      // Annotation-first: select → trim → metadata → success
       switch (step) {
-        case "trim": return 33;
-        case "metadata": return 66;
+        case "select": return 25;
+        case "trim": return 50;
+        case "metadata": return 75;
         case "success": return 100;
         default: return 0;
       }
     }
+    // No annotations: trim → proof → metadata → success
     switch (step) {
       case "trim": return 25;
       case "proof": return 50;
@@ -221,6 +222,8 @@ export function SubmissionModal({
   // Can advance to next step
   const canAdvance = useMemo(() => {
     switch (step) {
+      case "select":
+        return selectedAnnotation !== null;
       case "trim":
         return isClipValid;
       case "proof":
@@ -232,6 +235,18 @@ export function SubmissionModal({
     }
   }, [step, isClipValid, selectedAnnotation, isProofConfirmed, annotationWithinClip, form.formState.isValid]);
 
+  // Handle annotation selection from the selector
+  const handleAnnotationSelect = (annotation: Annotation) => {
+    setSelectedAnnotation(annotation);
+    // Auto-generate clip range: annotation ± 2s
+    const annotationMs = annotation.timestamp_seconds * 1000;
+    const totalMs = (selectedSession?.duration_seconds ?? 60) * 1000;
+    setClipStartMs(Math.max(0, annotationMs - 2000));
+    setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+    setIsProofConfirmed(true);
+    setIsAnnotationPreExisting(true);
+  };
+
   // Handle clip range change
   const handleRangeChange = (startMs: number, endMs: number) => {
     setClipStartMs(startMs);
@@ -241,9 +256,12 @@ export function SubmissionModal({
   // Navigate between steps
   const goToNextStep = () => {
     switch (step) {
+      case "select":
+        setStep("trim"); // Go to clip refinement
+        break;
       case "trim":
-        // Skip proof step when annotation is pre-existing and within clip
-        setStep(skipProofStep ? "metadata" : "proof");
+        // If annotation-first flow, skip proof (already selected)
+        setStep(skipProofStep ? "metadata" : (sessionHasAnnotations ? "metadata" : "proof"));
         break;
       case "proof":
         setStep("metadata");
@@ -256,11 +274,14 @@ export function SubmissionModal({
 
   const goToPreviousStep = () => {
     switch (step) {
+      case "trim":
+        if (sessionHasAnnotations) setStep("select");
+        break;
       case "proof":
         setStep("trim");
         break;
       case "metadata":
-        setStep(skipProofStep ? "trim" : "proof");
+        setStep("trim");
         break;
     }
   };
@@ -308,7 +329,7 @@ export function SubmissionModal({
   };
 
   const handleSubmitAnother = () => {
-    setStep("trim");
+    setStep(sessionHasAnnotations ? "select" : "trim");
     setIsProofConfirmed(false);
     form.reset({ title: "", description: "" });
     onChangeSession?.();
@@ -410,17 +431,31 @@ export function SubmissionModal({
             <div className="mt-4">
               <Progress value={getProgress()} className="h-1" />
               <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                <span className={cn(step === "trim" && "text-primary font-medium")}>
-                  Trim
-                </span>
-                {!skipProofStep && (
-                  <span className={cn(step === "proof" && "text-primary font-medium")}>
-                    Proof
-                  </span>
+                {sessionHasAnnotations ? (
+                  <>
+                    <span className={cn(step === "select" && "text-primary font-medium")}>
+                      Moment
+                    </span>
+                    <span className={cn(step === "trim" && "text-primary font-medium")}>
+                      Refine
+                    </span>
+                    <span className={cn(step === "metadata" && "text-primary font-medium")}>
+                      Details
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={cn(step === "trim" && "text-primary font-medium")}>
+                      Trim
+                    </span>
+                    <span className={cn(step === "proof" && "text-primary font-medium")}>
+                      Proof
+                    </span>
+                    <span className={cn(step === "metadata" && "text-primary font-medium")}>
+                      Details
+                    </span>
+                  </>
                 )}
-                <span className={cn(step === "metadata" && "text-primary font-medium")}>
-                  Details
-                </span>
               </div>
             </div>
           )}
@@ -439,10 +474,29 @@ export function SubmissionModal({
               />
             )}
 
-            {/* Step: Trim */}
+            {/* Step: Select Annotation (annotation-first flow) */}
+            {step === "select" && selectedSession?.annotations && (
+              <div className="space-y-4">
+                <h4 className="font-medium">Select a moment to submit</h4>
+                <p className="text-sm text-muted-foreground">
+                  Pick the moment that best proves your challenge entry. The clip will be auto-generated around it.
+                </p>
+                <AnnotationSelector
+                  annotations={selectedSession.annotations}
+                  selectedAnnotationId={selectedAnnotation?.id}
+                  onSelect={handleAnnotationSelect}
+                  thumbnailUrl={selectedSession.thumbnail_url}
+                  totalDuration={totalDuration}
+                />
+              </div>
+            )}
+
+            {/* Step: Trim / Refine */}
             {step === "trim" && (
               <div className="space-y-4">
-                <h4 className="font-medium">Select your clip range</h4>
+                <h4 className="font-medium">
+                  {sessionHasAnnotations ? "Refine your clip range" : "Select your clip range"}
+                </h4>
                 <ClipTrimmer
                   videoUrl={selectedSession.video_url}
                   thumbnailUrl={selectedSession.thumbnail_url}
@@ -455,7 +509,7 @@ export function SubmissionModal({
                   annotationTimestamp={selectedAnnotation?.timestamp_seconds}
                 />
                 
-                {/* Inline proof confirmation when skipping proof step */}
+                {/* Inline proof confirmation when annotation was pre-selected */}
                 {skipProofStep && selectedAnnotation && (
                   <ProofConfirmation
                     annotation={selectedAnnotation}
@@ -561,7 +615,7 @@ export function SubmissionModal({
           <div className="px-6 py-4 border-t border-border bg-muted/20">
             <div className="flex items-center justify-between gap-3">
               {/* Back / Cancel */}
-              {step === "trim" ? (
+              {(step === "trim" && !sessionHasAnnotations) || step === "select" ? (
                 <Button variant="ghost" onClick={handleClose}>
                   Cancel
                 </Button>
