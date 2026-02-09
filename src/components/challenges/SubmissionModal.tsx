@@ -110,6 +110,9 @@ export function SubmissionModal({
     initialAnnotation ?? selectedSession?.annotations?.[0] ?? null
   );
   const [isProofConfirmed, setIsProofConfirmed] = useState(false);
+  
+  // Track whether annotation was pre-existing (auto-detected, no manual confirmation needed)
+  const [isAnnotationPreExisting, setIsAnnotationPreExisting] = useState(false);
 
   // Form state
   const form = useForm<SubmissionFormData>({
@@ -123,29 +126,46 @@ export function SubmissionModal({
   // Reset state when modal opens with new session
   useEffect(() => {
     if (open && selectedSession) {
-      setStep("trim");
       setIsSubmitting(false);
-      setIsProofConfirmed(false);
 
       // Set annotation from session or initial prop
       const annotation = initialAnnotation ?? selectedSession.annotations?.[0] ?? null;
       setSelectedAnnotation(annotation);
 
       // Set initial clip range
+      let computedStartMs = 0;
+      let computedEndMs = (selectedSession.duration_seconds ?? 60) * 1000;
+      
       if (initialClipRange) {
-        setClipStartMs(initialClipRange.start_ms);
-        setClipEndMs(initialClipRange.end_ms);
+        computedStartMs = initialClipRange.start_ms;
+        computedEndMs = initialClipRange.end_ms;
       } else if (annotation) {
         // Auto-position around annotation
         const annotationMs = annotation.timestamp_seconds * 1000;
         const preRoll = 3000; // 3 seconds
         const postRoll = 12000; // 12 seconds
         const totalDurationMs = (selectedSession.duration_seconds ?? 60) * 1000;
-        setClipStartMs(Math.max(0, annotationMs - preRoll));
-        setClipEndMs(Math.min(totalDurationMs, annotationMs + postRoll));
+        computedStartMs = Math.max(0, annotationMs - preRoll);
+        computedEndMs = Math.min(totalDurationMs, annotationMs + postRoll);
+      }
+      
+      setClipStartMs(computedStartMs);
+      setClipEndMs(computedEndMs);
+
+      // Determine if annotation is pre-existing and within clip range
+      const hasPreExistingProof = annotation !== null && 
+        (annotation.timestamp_seconds * 1000) >= computedStartMs && 
+        (annotation.timestamp_seconds * 1000) <= computedEndMs;
+      
+      setIsAnnotationPreExisting(hasPreExistingProof);
+      
+      // If pre-existing annotation in range, auto-confirm and skip proof step
+      if (hasPreExistingProof) {
+        setIsProofConfirmed(true);
+        setStep("trim"); // Start at trim, but proof will be skipped in navigation
       } else {
-        setClipStartMs(0);
-        setClipEndMs((selectedSession.duration_seconds ?? 60) * 1000);
+        setIsProofConfirmed(false);
+        setStep("trim");
       }
 
       form.reset({
@@ -175,8 +195,20 @@ export function SubmissionModal({
     return annotationMs >= clipStartMs && annotationMs <= clipEndMs;
   }, [selectedAnnotation, clipStartMs, clipEndMs]);
 
+  // When annotation is pre-existing and in range, we use a 2-step flow (trim → metadata)
+  const skipProofStep = isAnnotationPreExisting && annotationWithinClip;
+
   // Progress calculation
   const getProgress = () => {
+    if (skipProofStep) {
+      // 2-step flow: trim → metadata → success
+      switch (step) {
+        case "trim": return 33;
+        case "metadata": return 66;
+        case "success": return 100;
+        default: return 0;
+      }
+    }
     switch (step) {
       case "trim": return 25;
       case "proof": return 50;
@@ -210,7 +242,8 @@ export function SubmissionModal({
   const goToNextStep = () => {
     switch (step) {
       case "trim":
-        setStep("proof");
+        // Skip proof step when annotation is pre-existing and within clip
+        setStep(skipProofStep ? "metadata" : "proof");
         break;
       case "proof":
         setStep("metadata");
@@ -227,7 +260,7 @@ export function SubmissionModal({
         setStep("trim");
         break;
       case "metadata":
-        setStep("proof");
+        setStep(skipProofStep ? "trim" : "proof");
         break;
     }
   };
@@ -380,9 +413,11 @@ export function SubmissionModal({
                 <span className={cn(step === "trim" && "text-primary font-medium")}>
                   Trim
                 </span>
-                <span className={cn(step === "proof" && "text-primary font-medium")}>
-                  Proof
-                </span>
+                {!skipProofStep && (
+                  <span className={cn(step === "proof" && "text-primary font-medium")}>
+                    Proof
+                  </span>
+                )}
                 <span className={cn(step === "metadata" && "text-primary font-medium")}>
                   Details
                 </span>
@@ -419,11 +454,24 @@ export function SubmissionModal({
                   onRangeChange={handleRangeChange}
                   annotationTimestamp={selectedAnnotation?.timestamp_seconds}
                 />
+                
+                {/* Inline proof confirmation when skipping proof step */}
+                {skipProofStep && selectedAnnotation && (
+                  <ProofConfirmation
+                    annotation={selectedAnnotation}
+                    isConfirmed={isProofConfirmed}
+                    onConfirmChange={setIsProofConfirmed}
+                    clipStartMs={clipStartMs}
+                    clipEndMs={clipEndMs}
+                    currentTimeMs={currentPlaybackMs || clipStartMs}
+                    isPreExisting
+                  />
+                )}
               </div>
             )}
 
-            {/* Step: Proof */}
-            {step === "proof" && (
+            {/* Step: Proof (only when no pre-existing annotation) */}
+            {step === "proof" && !skipProofStep && (
               <div className="space-y-4">
                 <h4 className="font-medium">Confirm your proof</h4>
                 <ProofConfirmation

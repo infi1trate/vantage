@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Video, Check, AlertCircle, Library } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Search, Video, Check, AlertCircle, Library, Tag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ interface Session {
   duration_seconds: number | null;
   game_name: string | null;
   created_at: string;
+  annotation_count?: number;
 }
 
 interface SessionPickerModalProps {
@@ -47,32 +49,46 @@ export function SessionPickerModal({
   const { data: sessions, isLoading, error: queryError } = useQuery({
     queryKey: ["user-sessions-for-challenge", user?.id],
     queryFn: async () => {
-      console.log("[SessionPicker] Querying capture_sessions", {
-        userId: user!.id,
-        filters: { status: "ready", deleted_at: null },
-      });
-
-      const { data, error, count } = await supabase
+      // Fetch sessions
+      const { data, error } = await supabase
         .from("capture_sessions")
-        .select("id, title, thumbnail_url, duration_seconds, game_name, created_at, status, video_url", { count: "exact" })
+        .select("id, title, thumbnail_url, duration_seconds, game_name, created_at, status, video_url")
         .eq("user_id", user!.id)
         .eq("status", "ready")
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(50);
 
-      if (error) {
-        console.error("[SessionPicker] Query error:", error);
-        throw error;
-      }
+      if (error) throw error;
+      if (!data || data.length === 0) return [] as Session[];
 
-      console.log("[SessionPicker] Query returned", {
-        count,
-        returnedRows: data?.length ?? 0,
-        firstRow: data?.[0] ? { id: data[0].id, title: data[0].title, status: (data[0] as any).status } : null,
+      // Fetch annotation counts per session
+      const sessionIds = data.map(s => s.id);
+      const { data: annotationCounts } = await supabase
+        .from("annotations")
+        .select("session_id")
+        .in("session_id", sessionIds)
+        .in("annotation_type", ["kill", "death", "highlight", "objective", "save"]);
+
+      const countMap = new Map<string, number>();
+      annotationCounts?.forEach(a => {
+        countMap.set(a.session_id, (countMap.get(a.session_id) || 0) + 1);
       });
 
-      return data as Session[];
+      // Sort: sessions with annotations first, then by date
+      const enriched = data.map(s => ({
+        ...s,
+        annotation_count: countMap.get(s.id) || 0,
+      })) as Session[];
+
+      enriched.sort((a, b) => {
+        const aHas = (a.annotation_count || 0) > 0 ? 1 : 0;
+        const bHas = (b.annotation_count || 0) > 0 ? 1 : 0;
+        if (bHas !== aHas) return bHas - aHas; // Annotated first
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      return enriched;
     },
     enabled: !!user?.id && open,
   });
@@ -189,9 +205,17 @@ export function SessionPickerModal({
 
                   {/* Info */}
                   <div className="p-3 space-y-1">
-                    <p className="text-sm font-medium line-clamp-1 group-hover:text-primary transition-colors">
-                      {session.title}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium line-clamp-1 group-hover:text-primary transition-colors flex-1">
+                        {session.title}
+                      </p>
+                      {(session.annotation_count || 0) > 0 && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 gap-0.5">
+                          <Tag className="h-2.5 w-2.5" />
+                          {session.annotation_count}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(session.created_at), { addSuffix: true })}
                     </p>

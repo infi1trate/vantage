@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, Navigate, Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +17,7 @@ import {
 import { useChallenge, useChallengeSubmissions, useUserSubmissions } from "@/hooks/useChallenges";
 import { useAuth } from "@/contexts/AuthContext";
 import { getChallengeStatus, type ChallengeSubmission } from "@/lib/challenges";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   TrendingUp, 
   Clock, 
@@ -32,6 +33,13 @@ interface SelectedSession {
   title: string;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
+  annotations?: Array<{
+    id: string;
+    annotation_type: string;
+    title?: string | null;
+    content?: string | null;
+    timestamp_seconds: number;
+  }>;
 }
 
 // Transform submission to entry card props
@@ -233,10 +241,31 @@ export default function ChallengeDetail() {
     setShowSessionPicker(true);
   };
 
-  const handleSessionSelected = (session: SelectedSession) => {
-    setSelectedSession(session);
+  const handleSessionSelected = useCallback(async (session: SelectedSession) => {
+    // Fetch annotations for this session so SubmissionModal can auto-detect proof
+    try {
+      const { data: annotations } = await supabase
+        .from("annotations")
+        .select("id, annotation_type, title, content, timestamp_seconds")
+        .eq("session_id", session.id)
+        .in("annotation_type", ["kill", "death", "highlight", "objective", "save"])
+        .order("timestamp_seconds", { ascending: true });
+
+      setSelectedSession({
+        ...session,
+        annotations: annotations?.map(a => ({
+          id: a.id,
+          annotation_type: a.annotation_type || "highlight",
+          title: a.title,
+          content: a.content,
+          timestamp_seconds: a.timestamp_seconds,
+        })) || [],
+      });
+    } catch {
+      setSelectedSession(session);
+    }
     setShowSubmissionModal(true);
-  };
+  }, []);
 
   const handleSubmissionSuccess = () => {
     setSelectedSession(null);
