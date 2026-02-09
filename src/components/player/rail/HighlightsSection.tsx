@@ -1,4 +1,5 @@
 import { useState, useMemo, memo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Annotation } from "@/lib/captures";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,11 @@ import {
   Film,
   Sparkles,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateReelModal } from "../CreateReelModal";
+import { useSessionReels } from "@/hooks/useReel";
 import {
   Tooltip,
   TooltipContent,
@@ -157,6 +160,10 @@ export const HighlightsSection = memo(function HighlightsSection({
   onViewSessionMedia,
 }: MomentsSectionProps) {
   const [reelModalOpen, setReelModalOpen] = useState(false);
+  const navigate = useNavigate();
+  
+  // Fetch existing reels for this session
+  const { data: sessionReels } = useSessionReels(sessionId || undefined);
   
   // Determine if reel creation is possible using centralized eligibility
   const canCreateReel = reelEligibility.ok;
@@ -245,6 +252,35 @@ export const HighlightsSection = memo(function HighlightsSection({
           )}
         </Tooltip>
       </div>
+
+      {/* Existing Reels */}
+      {sessionReels && sessionReels.length > 0 && (
+        <div className="shrink-0 px-3 pt-2 pb-1 border-b border-border/20">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+            Reels ({sessionReels.length})
+          </p>
+          <div className="space-y-1 pb-1">
+            {sessionReels.map((reel) => (
+              <button
+                key={reel.id}
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-muted/30 active:bg-muted/40 transition-colors text-left group touch-manipulation"
+                onClick={() => navigate(`/reel/${reel.id}`)}
+              >
+                <div className="shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                  <Film className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{reel.title}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {reel.aspect_ratio} • {reel.status}
+                  </p>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Scrollable moment list */}
       <ScrollArea className="flex-1">
