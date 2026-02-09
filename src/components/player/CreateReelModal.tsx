@@ -898,6 +898,10 @@ function ReelCreatorContent({
       } else {
         toast.error("Failed to create reel", {
           description: error instanceof Error ? error.message : "Please try again",
+          action: {
+            label: "Retry",
+            onClick: () => handleGenerate(),
+          },
         });
       }
       setIsPreparingLegacy(false);

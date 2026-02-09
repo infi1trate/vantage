@@ -68,6 +68,16 @@ export function SessionLibraryCard({ session, onDeleted, viewMode }: SessionLibr
     triggerOnce: true,
   });
 
+  // Instrumentation: log when thumbnail is missing
+  if (!session.thumbnail_url) {
+    console.warn("[LibraryCard] Missing thumbnail", {
+      sessionId: session.id,
+      title: session.title,
+      status: session.status,
+      createdAt: session.created_at,
+    });
+  }
+
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
