@@ -87,16 +87,18 @@ export const ManifestPlayer = memo(function ManifestPlayer({
   
   // Build cumulative timeline
   const cumulativeClips = buildCumulativeTimeline(manifest.clips, annotations);
+  const cumulativeClipsRef = useRef(cumulativeClips);
+  cumulativeClipsRef.current = cumulativeClips;
   const totalDurationSec = manifest.totalDurationMs / 1000;
   
   // Find current clip based on global time
   const getCurrentClipData = useCallback((globalTimeSec: number) => {
     const globalTimeMs = globalTimeSec * 1000;
     
-    return cumulativeClips.find(
+    return cumulativeClipsRef.current.find(
       c => globalTimeMs >= c.globalStartMs && globalTimeMs < c.globalEndMs
-    ) || cumulativeClips[cumulativeClips.length - 1] || null;
-  }, [cumulativeClips]);
+    ) || cumulativeClipsRef.current[cumulativeClipsRef.current.length - 1] || null;
+  }, []);
   
   const currentClipData = getCurrentClipData(currentTime);
   
@@ -127,35 +129,49 @@ export const ManifestPlayer = memo(function ManifestPlayer({
   }, [currentTime, currentClipData, videoReady, getSessionTime]);
   
   // Playback loop - update global time based on video playback
+  // Uses refs to avoid stale closures and effect churn during clip transitions
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  onTimeUpdateRef.current = onTimeUpdate;
+  const totalDurationSecRef = useRef(totalDurationSec);
+  totalDurationSecRef.current = totalDurationSec;
+  
   useEffect(() => {
-    if (!isPlaying || !videoReady || !currentClipData) return;
+    if (!isPlaying || !videoReady) return;
     
     const video = videoRef.current;
     if (!video) return;
     
     const updateTime = () => {
-      if (!video.paused && currentClipData) {
-        // Calculate global time from current video position
-        const videoCurrentTime = video.currentTime;
-        const clipDurationSec = currentClipData.sessionEndSec - currentClipData.sessionStartSec;
-        const clipProgress = (videoCurrentTime - currentClipData.sessionStartSec) / clipDurationSec;
-        const globalTimeMs = currentClipData.globalStartMs + (clipProgress * currentClipData.durationMs);
-        
-        // Check if we've reached end of current clip
-        if (videoCurrentTime >= currentClipData.sessionEndSec) {
-          // Move to next clip
-          const nextClip = cumulativeClips[currentClipData.index + 1];
-          if (nextClip) {
-            video.currentTime = nextClip.sessionStartSec;
-            onTimeUpdate(nextClip.globalStartMs / 1000);
-          } else {
-            // End of reel
-            setIsPlaying(false);
-            video.pause();
-            onTimeUpdate(totalDurationSec);
-          }
+      if (video.paused) {
+        animationRef.current = requestAnimationFrame(updateTime);
+        return;
+      }
+      
+      const videoCurrentTime = video.currentTime;
+      const clips = cumulativeClipsRef.current;
+      
+      // Find which clip the video is currently in by session time
+      const activeClip = clips.find(
+        c => videoCurrentTime >= c.sessionStartSec && videoCurrentTime < c.sessionEndSec
+      );
+      
+      if (activeClip) {
+        const clipDurationSec = activeClip.sessionEndSec - activeClip.sessionStartSec;
+        const clipProgress = (videoCurrentTime - activeClip.sessionStartSec) / clipDurationSec;
+        const globalTimeMs = activeClip.globalStartMs + (clipProgress * activeClip.durationMs);
+        onTimeUpdateRef.current(Math.min(globalTimeMs / 1000, totalDurationSecRef.current));
+      } else {
+        // Video time is outside any clip — find next clip to jump to
+        const nextClip = clips.find(c => videoCurrentTime < c.sessionStartSec);
+        if (nextClip) {
+          video.currentTime = nextClip.sessionStartSec;
+          onTimeUpdateRef.current(nextClip.globalStartMs / 1000);
         } else {
-          onTimeUpdate(Math.min(globalTimeMs / 1000, totalDurationSec));
+          // Past all clips — end of reel
+          setIsPlaying(false);
+          video.pause();
+          onTimeUpdateRef.current(totalDurationSecRef.current);
+          return; // Don't schedule another frame
         }
       }
       
@@ -169,7 +185,7 @@ export const ManifestPlayer = memo(function ManifestPlayer({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, videoReady, currentClipData, cumulativeClips, onTimeUpdate, totalDurationSec]);
+  }, [isPlaying, videoReady]);
   
   // Handle play/pause
   const togglePlayPause = useCallback(() => {
