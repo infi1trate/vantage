@@ -131,6 +131,8 @@ export interface SessionWithAssets {
   has_facecam: boolean;
   annotation_count: number;
   voice_note_count: number;
+  // Video URL (for thumbnail backfill when thumbnail is missing)
+  video_url: string | null;
   // Dropbox sync status
   dropbox_sync_status: "pending" | "synced" | "failed" | null;
   dropbox_synced_at: string | null;
@@ -222,6 +224,7 @@ export async function getSessionsWithAssets(userId: string): Promise<SessionWith
     has_facecam: facecamSessionIds.has(session.id),
     annotation_count: annotationCounts[session.id] || 0,
     voice_note_count: voiceNoteCounts[session.id] || 0,
+    video_url: session.video_url || null,
     dropbox_sync_status: dropboxStatusMap[session.id]?.status || null,
     dropbox_synced_at: dropboxStatusMap[session.id]?.syncedAt || null,
   }));

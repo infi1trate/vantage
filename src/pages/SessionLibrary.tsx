@@ -11,8 +11,11 @@ import { DropboxPromoBanner } from "@/components/library/DropboxPromoBanner";
 import { ChallengeSubmitPrompt } from "@/components/challenges/ChallengeSubmitPrompt";
 import { SubmissionModal } from "@/components/challenges/SubmissionModal";
 import { useCloudSessions } from "@/hooks/useSessionQueries";
+import { sessionKeys } from "@/hooks/useSessionQueries";
 import { supabase } from "@/integrations/supabase/client";
 import { getAllLocalSessions, getStorageUsage, LocalSession, formatBytes } from "@/lib/localSessionStorage";
+import { backfillSessionThumbnails } from "@/lib/sessionThumbnailBackfill";
+import { useQueryClient } from "@tanstack/react-query";
 import { markLibraryRendered } from "@/lib/processingTelemetry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,6 +185,39 @@ export default function SessionLibrary() {
   useEffect(() => {
     markLibraryRendered();
   }, []);
+
+  // Thumbnail backfill: generate thumbnails for sessions missing them
+  const queryClient = useQueryClient();
+  const backfillRanRef = useRef(false);
+  useEffect(() => {
+    if (!user || cloudLoading || cloudSessions.length === 0 || backfillRanRef.current) return;
+    backfillRanRef.current = true;
+
+    const needsBackfill = cloudSessions.some(
+      (s) => s.status === "ready" && s.video_url && (!s.thumbnail_url || s.thumbnail_url.startsWith("data:"))
+    );
+    if (!needsBackfill) return;
+
+    backfillSessionThumbnails(
+      cloudSessions.map((s) => ({
+        id: s.id,
+        thumbnail_url: s.thumbnail_url,
+        video_url: s.video_url,
+        user_id: s.user_id,
+        status: s.status,
+      }))
+    ).then((results) => {
+      if (results.size > 0) {
+        console.log(`[SessionLibrary] Backfilled ${results.size} thumbnails`);
+        // Update query cache so cards re-render with new thumbnails
+        queryClient.setQueryData(
+          sessionKeys.list(user.id),
+          (old: typeof cloudSessions | undefined) =>
+            old?.map((s) => (results.has(s.id) ? { ...s, thumbnail_url: results.get(s.id)! } : s))
+        );
+      }
+    });
+  }, [user, cloudLoading, cloudSessions, queryClient]);
 
   useEffect(() => {
     loadLocalSessions();
