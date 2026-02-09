@@ -32,6 +32,7 @@ import {
   AnnotationSelector,
   ChallengeContextBar,
   ClipTrimmer,
+  InlineAnnotationCreator,
   ProofConfirmation,
   SubmissionLimitsBar,
   SubmissionSuccess,
@@ -113,6 +114,7 @@ export function SubmissionModal({
   );
   const [isProofConfirmed, setIsProofConfirmed] = useState(false);
   const [isAnnotationPreExisting, setIsAnnotationPreExisting] = useState(false);
+  const [showInlineCreator, setShowInlineCreator] = useState(false);
 
   // Derived: does session have annotations?
   const sessionAnnotations = selectedSession?.annotations ?? [];
@@ -132,6 +134,7 @@ export function SubmissionModal({
   useEffect(() => {
     if (open && selectedSession) {
       setIsSubmitting(false);
+      setShowInlineCreator(false);
 
       const annotations = selectedSession.annotations ?? [];
       const annotation = initialAnnotation ?? annotations[0] ?? null;
@@ -473,45 +476,61 @@ export function SubmissionModal({
                     )
                   )
                 ) : (
-                  /* No annotations — helper text + CTAs */
+                  /* No annotations — helper text + inline creator */
                   <div className="space-y-4">
                     <h4 className="font-medium">Tag the moment</h4>
                     <p className="text-sm text-muted-foreground">
                       Tag the exact moment that proves this challenge. Add a quick annotation or use the full editor.
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => {
-                          const midpoint = (clipStartMs + clipEndMs) / 2 / 1000;
-                          handleCreateInlineAnnotation({
-                            type: "highlight",
-                            label: "Challenge Moment",
-                            timestamp_seconds: midpoint,
-                          });
-                        }}
-                        className="gap-2"
-                      >
-                        <Zap className="h-4 w-4" />
-                        Quick Annotation
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleAddAnnotation}
-                        className="gap-2"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        Open Full Editor
-                      </Button>
-                    </div>
-                    {selectedAnnotation && (
+
+                    {selectedAnnotation ? (
+                      /* Annotation just created — show confirmation */
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 text-sm">
                         <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                         <span className="truncate">
-                          Created: <strong>{selectedAnnotation.title || selectedAnnotation.annotation_type}</strong> at {formatTimestamp(selectedAnnotation.timestamp_seconds)}
+                          <strong>{selectedAnnotation.title || selectedAnnotation.annotation_type}</strong> at {formatTimestamp(selectedAnnotation.timestamp_seconds)}
                         </span>
+                      </div>
+                    ) : showInlineCreator ? (
+                      /* Inline annotation creator */
+                      <InlineAnnotationCreator
+                        currentTimeMs={(clipStartMs + clipEndMs) / 2}
+                        clipStartMs={0}
+                        clipEndMs={totalDuration * 1000}
+                        onCancel={() => setShowInlineCreator(false)}
+                        onSubmit={async (data) => {
+                          await handleCreateInlineAnnotation(data);
+                          setShowInlineCreator(false);
+                          // Auto-generate clip range around the new annotation
+                          const annotationMs = data.timestamp_seconds * 1000;
+                          const totalMs = totalDuration * 1000;
+                          setClipStartMs(Math.max(0, annotationMs - 2000));
+                          setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+                          setIsAnnotationPreExisting(true);
+                          setIsProofConfirmed(true);
+                        }}
+                      />
+                    ) : (
+                      /* CTAs to start annotation */
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => setShowInlineCreator(true)}
+                          className="gap-2"
+                        >
+                          <Zap className="h-4 w-4" />
+                          Quick Annotation
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddAnnotation}
+                          className="gap-2"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open Full Editor
+                        </Button>
                       </div>
                     )}
                   </div>
