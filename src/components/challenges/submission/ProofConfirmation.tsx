@@ -110,14 +110,14 @@ export function ProofConfirmation({
 
     return (
       <div className="space-y-3">
-        <div className="flex items-start gap-3 p-4 rounded-lg border border-destructive/30 bg-destructive/5">
-          <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/30">
+          <Tag className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
           <div className="flex-1 space-y-2">
-            <p className="text-sm font-medium text-destructive">
-              Annotation required
+            <p className="text-sm font-medium">
+              Tag a proof moment
             </p>
             <p className="text-sm text-muted-foreground">
-              To submit to this challenge, you must annotate the moment that proves you completed it.
+              Add an annotation marking the moment that proves you completed this challenge.
             </p>
             <div className="flex flex-wrap gap-2 mt-2">
               {onCreateInlineAnnotation && (
@@ -147,17 +147,17 @@ export function ProofConfirmation({
     );
   }
 
-  // Pre-existing annotation within clip — show auto-confirmed, no checkbox needed
+  // Pre-existing annotation within clip — show passive confirmation, no checkbox needed
   if (isPreExisting && isWithinClip) {
     return (
       <div className="space-y-3">
-        <div className="p-3 rounded-lg border bg-green-500/10 border-green-500/30">
+        <div className="p-3 rounded-lg border border-primary/20 bg-primary/5">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+            <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-medium text-green-600 dark:text-green-500">
-                  Proof auto-detected
+                <p className="text-sm font-medium text-primary">
+                  Proof moment selected ✓
                 </p>
                 <div
                   className={cn(
@@ -178,9 +178,6 @@ export function ProofConfirmation({
                   <span className="font-mono">{formatTime(annotation.timestamp_seconds)}</span>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Your existing moment is within the clip range and counts as proof.
-              </p>
             </div>
           </div>
         </div>
@@ -196,7 +193,7 @@ export function ProofConfirmation({
           "p-3 rounded-lg border",
           isWithinClip
             ? "bg-muted/50 border-border"
-            : "bg-yellow-500/10 border-yellow-500/30"
+            : "bg-accent/50 border-accent"
         )}
       >
         <div className="flex items-start gap-3">
@@ -228,20 +225,20 @@ export function ProofConfirmation({
         </div>
 
         {!isWithinClip && (
-          <div className="mt-3 pt-3 border-t border-yellow-500/20">
-            <p className="text-xs text-yellow-600 dark:text-yellow-500">
+          <div className="mt-3 pt-3 border-t border-accent">
+            <p className="text-xs text-muted-foreground">
               ⚠️ This annotation is outside your selected clip range. Adjust your trim to include it.
             </p>
           </div>
         )}
       </div>
 
-      {/* Confirmation checkbox */}
+      {/* Confirmation — passive when already selected */}
       <div
         className={cn(
           "flex items-start gap-3 p-3 rounded-lg border transition-colors",
           isConfirmed
-            ? "bg-green-500/10 border-green-500/30"
+            ? "bg-primary/5 border-primary/20"
             : "bg-muted/30 border-border hover:border-primary/50"
         )}
       >
@@ -256,7 +253,7 @@ export function ProofConfirmation({
             htmlFor="proof-confirmation"
             className={cn(
               "text-sm font-medium cursor-pointer",
-              isConfirmed ? "text-green-600 dark:text-green-500" : "text-foreground"
+              isConfirmed ? "text-primary" : "text-foreground"
             )}
           >
             This clip clearly shows me completing the challenge.
@@ -266,7 +263,7 @@ export function ProofConfirmation({
           </p>
         </div>
         {isConfirmed && (
-          <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+          <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
         )}
       </div>
     </div>
