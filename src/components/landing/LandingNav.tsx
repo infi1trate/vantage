@@ -46,19 +46,14 @@ export function LandingNav() {
           {/* Right side actions */}
           <div className="flex items-center gap-4" role="group" aria-label="Account actions">
             <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground focus-visible:ring-offset-background"
-            >
-              <Link to="/auth">Log in</Link>
-            </Button>
-            <Button
-              asChild
               size="sm"
               className="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-offset-background"
+              onClick={() => {
+                const el = document.getElementById("waitlist-input");
+                if (el) { el.scrollIntoView({ behavior: "smooth" }); setTimeout(() => el.focus(), 500); }
+              }}
             >
-              <Link to="/auth">Start Recording</Link>
+              Join Waitlist
             </Button>
           </div>
         </div>
