@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   CheckCircle2,
   Clock,
@@ -16,8 +22,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AnnotationSelector } from "./AnnotationSelector";
-import { ClipTrimmer } from "./ClipTrimmer";
 import { InlineAnnotationCreator } from "./InlineAnnotationCreator";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -40,7 +44,9 @@ interface Annotation {
 }
 
 interface MomentCollectorProps {
-  requiredCount: number;
+  requiredMin: number;
+  requiredMax: number;
+  momentLabel?: string | null;
   moments: MomentData[];
   onMomentsChange: (moments: MomentData[]) => void;
   annotations: Annotation[];
@@ -76,84 +82,62 @@ function formatTimestamp(seconds: number) {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-// ── Sub-steps within the collector ─────────────────────────────────
-
-type CollectorPhase = "list" | "pick-annotation" | "trim-clip";
+function annotationToMoment(annotation: Annotation, totalDurationMs: number): MomentData {
+  const annotationMs = annotation.timestamp_seconds * 1000;
+  return {
+    annotationId: annotation.id,
+    annotationType: annotation.annotation_type,
+    label: annotation.title || annotation.annotation_type,
+    timestampSeconds: annotation.timestamp_seconds,
+    clipStartMs: Math.max(0, annotationMs - 2000),
+    clipEndMs: Math.min(totalDurationMs, annotationMs + 2000),
+  };
+}
 
 // ── Component ─────────────────────────────────────────────────────
 
 export function MomentCollector({
-  requiredCount,
+  requiredMin,
+  requiredMax,
+  momentLabel,
   moments,
   onMomentsChange,
   annotations,
   thumbnailUrl,
-  videoUrl,
   totalDuration,
-  minClipDuration = 5,
-  maxClipDuration = 60,
   onCreateInlineAnnotation,
   onOpenFullEditor,
 }: MomentCollectorProps) {
-  const [phase, setPhase] = useState<CollectorPhase>(
-    moments.length === 0 && annotations.length > 0 ? "pick-annotation" : "list"
-  );
-  const [draftAnnotation, setDraftAnnotation] = useState<Annotation | null>(null);
-  const [draftClipStart, setDraftClipStart] = useState(0);
-  const [draftClipEnd, setDraftClipEnd] = useState(0);
   const [showInlineCreator, setShowInlineCreator] = useState(false);
+  // Track annotations created inline so they appear in the list
+  const [inlineAnnotations, setInlineAnnotations] = useState<Annotation[]>([]);
 
-  const isFull = moments.length >= requiredCount;
+  const totalDurationMs = totalDuration * 1000;
+  const displayLabel = momentLabel || "moments";
+  const targetCount = requiredMin === requiredMax ? requiredMin : requiredMax;
+  const isMaxReached = moments.length >= requiredMax;
+  const isMinMet = moments.length >= requiredMin;
 
-  // Annotations already used in collected moments
-  const usedAnnotationIds = new Set(moments.map((m) => m.annotationId));
-  const availableAnnotations = annotations.filter((a) => !usedAnnotationIds.has(a.id));
-
-  // ── Handlers ──
-
-  const startAddMoment = () => {
-    setDraftAnnotation(null);
-    setDraftClipStart(0);
-    setDraftClipEnd(0);
-    if (availableAnnotations.length > 0) {
-      setPhase("pick-annotation");
-    } else {
-      // No remaining annotations — show inline creator or prompt
-      setShowInlineCreator(true);
-      setPhase("pick-annotation");
+  // Combine original + inline-created annotations
+  const allAnnotations = useMemo(() => {
+    const ids = new Set(annotations.map((a) => a.id));
+    const merged = [...annotations];
+    for (const ia of inlineAnnotations) {
+      if (!ids.has(ia.id)) merged.push(ia);
     }
-  };
+    return merged.sort((a, b) => a.timestamp_seconds - b.timestamp_seconds);
+  }, [annotations, inlineAnnotations]);
 
-  const handleAnnotationSelect = (annotation: Annotation) => {
-    setDraftAnnotation(annotation);
-    const annotationMs = annotation.timestamp_seconds * 1000;
-    const totalMs = totalDuration * 1000;
-    setDraftClipStart(Math.max(0, annotationMs - 2000));
-    setDraftClipEnd(Math.min(totalMs, annotationMs + 2000));
-    setPhase("trim-clip");
-  };
+  const selectedIds = new Set(moments.map((m) => m.annotationId));
 
-  const handleClipConfirm = () => {
-    if (!draftAnnotation) return;
-    const newMoment: MomentData = {
-      annotationId: draftAnnotation.id,
-      annotationType: draftAnnotation.annotation_type,
-      label: draftAnnotation.title || draftAnnotation.annotation_type,
-      timestampSeconds: draftAnnotation.timestamp_seconds,
-      clipStartMs: draftClipStart,
-      clipEndMs: draftClipEnd,
-    };
-    const updated = [...moments, newMoment];
-    onMomentsChange(updated);
-    setDraftAnnotation(null);
-
-    // If still need more, stay on list; otherwise go to list
-    setPhase("list");
-  };
-
-  const removeMoment = (index: number) => {
-    const updated = moments.filter((_, i) => i !== index);
-    onMomentsChange(updated);
+  const handleToggle = (annotation: Annotation, checked: boolean) => {
+    if (checked) {
+      if (isMaxReached) return;
+      const newMoment = annotationToMoment(annotation, totalDurationMs);
+      onMomentsChange([...moments, newMoment]);
+    } else {
+      onMomentsChange(moments.filter((m) => m.annotationId !== annotation.id));
+    }
   };
 
   const handleInlineCreated = async (data: {
@@ -163,221 +147,194 @@ export function MomentCollector({
   }) => {
     if (!onCreateInlineAnnotation) return;
     const annotation = await onCreateInlineAnnotation(data);
+    setInlineAnnotations((prev) => [...prev, annotation]);
     setShowInlineCreator(false);
-    handleAnnotationSelect(annotation);
+
+    // Auto-select the newly created annotation if not at max
+    if (moments.length < requiredMax) {
+      const newMoment = annotationToMoment(annotation, totalDurationMs);
+      onMomentsChange([...moments, newMoment]);
+    }
   };
 
-  // ── Render: Collected Moments List ──
+  // ── Counter display ──
+  const counterText = requiredMin === requiredMax
+    ? `${moments.length} / ${requiredMin} ${displayLabel} added`
+    : `${moments.length} / ${requiredMin}–${requiredMax} ${displayLabel} added`;
 
-  if (phase === "list") {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="font-medium">
-            Moments ({moments.length}/{requiredCount})
-          </h4>
-          <Badge
-            variant={isFull ? "default" : "secondary"}
-            className={cn(
-              "text-xs",
-              isFull && "bg-green-500/20 text-green-500 border-green-500/30"
-            )}
-          >
-            {isFull ? "All moments added" : `${requiredCount - moments.length} more needed`}
-          </Badge>
-        </div>
+  // ── Has annotations to show? ──
+  const hasAnnotations = allAnnotations.length > 0;
 
-        {moments.length > 0 && (
+  return (
+    <div className="space-y-4">
+      {/* Title */}
+      <h4 className="font-medium">Add moments that prove this challenge</h4>
+
+      {/* Counter */}
+      <div className="flex items-center justify-between">
+        <Badge
+          variant={isMinMet ? "default" : "secondary"}
+          className={cn(
+            "text-xs",
+            isMinMet && "bg-primary/20 text-primary border-primary/30"
+          )}
+        >
+          {counterText}
+        </Badge>
+        {isMaxReached && (
+          <span className="text-xs text-muted-foreground">Maximum reached</span>
+        )}
+      </div>
+
+      {/* Helper text */}
+      <p className="text-sm text-muted-foreground">
+        Your submission will include multiple moments. We'll stitch them as a sequence.
+      </p>
+
+      {/* ── Annotation checkbox list ── */}
+      {hasAnnotations && (
+        <TooltipProvider delayDuration={200}>
           <div className="space-y-2">
-            {moments.map((moment, idx) => {
-              const meta = getTypeMeta(moment.annotationType);
+            {allAnnotations.map((ann) => {
+              const meta = getTypeMeta(ann.annotation_type);
               const Icon = meta.icon;
-              return (
-                <div
-                  key={moment.annotationId + idx}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-primary/20 bg-primary/5"
+              const isSelected = selectedIds.has(ann.id);
+              const isDisabled = !isSelected && isMaxReached;
+              const positionPct = totalDuration > 0
+                ? (ann.timestamp_seconds / totalDuration) * 100
+                : 0;
+
+              const row = (
+                <label
+                  key={ann.id}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-3 rounded-lg border text-left transition-all",
+                    isSelected
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card",
+                    isDisabled
+                      ? "opacity-50 cursor-not-allowed"
+                      : "cursor-pointer hover:bg-accent/50"
+                  )}
                 >
-                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
-                    {idx + 1}
+                  {/* Checkbox */}
+                  <Checkbox
+                    checked={isSelected}
+                    disabled={isDisabled}
+                    onCheckedChange={(checked) => handleToggle(ann, !!checked)}
+                    className="shrink-0"
+                  />
+
+                  {/* Thumbnail with position marker */}
+                  <div className="relative h-10 w-16 shrink-0 rounded-md overflow-hidden bg-muted">
+                    {thumbnailUrl ? (
+                      <img
+                        src={thumbnailUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-gradient-to-br from-muted to-background" />
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-background/60">
+                      <div
+                        className="absolute top-0 h-full w-1.5 rounded-full bg-primary"
+                        style={{ left: `${Math.min(positionPct, 97)}%` }}
+                      />
+                    </div>
+                    <div className="absolute top-0.5 right-0.5">
+                      <Badge
+                        variant="secondary"
+                        className="h-4 px-1 text-[10px] font-mono leading-none bg-background/80 backdrop-blur-sm"
+                      >
+                        {formatTimestamp(ann.timestamp_seconds)}
+                      </Badge>
+                    </div>
                   </div>
-                  <Icon className={cn("h-4 w-4 shrink-0", meta.color)} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{moment.label}</p>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {formatTimestamp(moment.timestampSeconds)} ·{" "}
-                      {formatTimestamp(moment.clipStartMs / 1000)}–
-                      {formatTimestamp(moment.clipEndMs / 1000)}
-                    </p>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className={cn("h-3.5 w-3.5 shrink-0", meta.color)} />
+                      <span className="text-sm font-medium truncate">
+                        {ann.title || ann.annotation_type}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatTimestamp(ann.timestamp_seconds)}
+                      </span>
+                      {ann.content && (
+                        <span className="truncate">{ann.content}</span>
+                      )}
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeMoment(idx)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                </label>
               );
+
+              // Wrap disabled rows in tooltip
+              if (isDisabled) {
+                return (
+                  <Tooltip key={ann.id}>
+                    <TooltipTrigger asChild>
+                      <div>{row}</div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>This challenge allows up to {requiredMax} {displayLabel}.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
+
+              return row;
             })}
           </div>
-        )}
+        </TooltipProvider>
+      )}
 
-        {!isFull && (
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            onClick={startAddMoment}
-          >
-            <Plus className="h-4 w-4" />
-            Add Moment {moments.length + 1} of {requiredCount}
-          </Button>
-        )}
-
-        {moments.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-2">
-            This challenge requires {requiredCount} moment{requiredCount !== 1 ? "s" : ""}. Add each one by selecting an annotation and trimming its clip.
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // ── Render: Pick Annotation ──
-
-  if (phase === "pick-annotation") {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="font-medium">
-            Select moment {moments.length + 1} of {requiredCount}
-          </h4>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setShowInlineCreator(false);
-              setPhase("list");
-            }}
-          >
-            Back
-          </Button>
-        </div>
-
-        {showInlineCreator && onCreateInlineAnnotation ? (
-          <InlineAnnotationCreator
-            currentTimeMs={0}
-            clipStartMs={0}
-            clipEndMs={totalDuration * 1000}
-            onCancel={() => setShowInlineCreator(false)}
-            onSubmit={handleInlineCreated}
-          />
-        ) : availableAnnotations.length > 0 ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Pick the annotation for this moment.
-            </p>
-            <AnnotationSelector
-              annotations={availableAnnotations}
-              selectedAnnotationId={null}
-              onSelect={handleAnnotationSelect}
-              thumbnailUrl={thumbnailUrl}
-              totalDuration={totalDuration}
-            />
-          </>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              No unused annotations remaining. Create a new one:
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              {onCreateInlineAnnotation && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => setShowInlineCreator(true)}
-                  className="gap-2"
-                >
-                  <Zap className="h-4 w-4" />
-                  Quick Annotation
-                </Button>
-              )}
-              {onOpenFullEditor && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpenFullEditor}
-                  className="gap-2"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Open Full Editor
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Render: Trim Clip ──
-
-  if (phase === "trim-clip" && draftAnnotation) {
-    const clipDuration = (draftClipEnd - draftClipStart) / 1000;
-    const isClipValid = clipDuration >= minClipDuration && clipDuration <= maxClipDuration;
-
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="font-medium">
-            Trim clip for moment {moments.length + 1}
-          </h4>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPhase("pick-annotation")}
-          >
-            Back
-          </Button>
-        </div>
-
-        {/* Selected annotation summary */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
-          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-          <span className="truncate">
-            {draftAnnotation.title || draftAnnotation.annotation_type}
-          </span>
-          <span className="text-xs text-muted-foreground ml-auto font-mono">
-            {formatTimestamp(draftAnnotation.timestamp_seconds)}
-          </span>
-        </div>
-
-        <ClipTrimmer
-          videoUrl={videoUrl}
-          thumbnailUrl={thumbnailUrl}
-          totalDuration={totalDuration}
-          minDuration={minClipDuration}
-          maxDuration={maxClipDuration}
-          startMs={draftClipStart}
-          endMs={draftClipEnd}
-          onRangeChange={(s, e) => {
-            setDraftClipStart(s);
-            setDraftClipEnd(e);
-          }}
-          annotationTimestamp={draftAnnotation.timestamp_seconds}
+      {/* ── No annotations / add more ── */}
+      {showInlineCreator && onCreateInlineAnnotation ? (
+        <InlineAnnotationCreator
+          currentTimeMs={0}
+          clipStartMs={0}
+          clipEndMs={totalDurationMs}
+          onCancel={() => setShowInlineCreator(false)}
+          onSubmit={handleInlineCreated}
         />
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-2">
+          {!isMaxReached && onCreateInlineAnnotation && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowInlineCreator(true)}
+              className="gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              {hasAnnotations ? "Add another moment" : "Quick Annotation"}
+            </Button>
+          )}
+          {!hasAnnotations && onOpenFullEditor && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenFullEditor}
+              className="gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open Full Editor
+            </Button>
+          )}
+        </div>
+      )}
 
-        <Button
-          className="w-full"
-          onClick={handleClipConfirm}
-          disabled={!isClipValid}
-        >
-          <CheckCircle2 className="mr-2 h-4 w-4" />
-          Add Moment {moments.length + 1}
-        </Button>
-      </div>
-    );
-  }
-
-  return null;
+      {/* Empty state when no annotations and no moments */}
+      {!hasAnnotations && moments.length === 0 && !showInlineCreator && (
+        <p className="text-sm text-muted-foreground text-center py-2">
+          No moments tagged yet. Use Quick Annotation to mark each {displayLabel.replace(/s$/, "")} in your recording.
+        </p>
+      )}
+    </div>
+  );
 }
