@@ -17,7 +17,7 @@ import {
   Medal,
   Play,
 } from "lucide-react";
-import { type ChallengeSubmission } from "@/lib/challenges";
+import { type ChallengeSubmission, type SubmissionMoment } from "@/lib/challenges";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
@@ -167,6 +167,16 @@ function SubmissionCardEnhanced({
               Pending
             </Badge>
           </div>
+        )}
+
+        {/* Moments count badge */}
+        {submission.moments && (submission.moments as unknown as SubmissionMoment[]).length > 1 && (
+          <Badge
+            variant="secondary"
+            className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm text-xs"
+          >
+            {(submission.moments as unknown as SubmissionMoment[]).length} moments
+          </Badge>
         )}
       </div>
 
