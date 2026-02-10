@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, Clock, Flame, ChevronRight } from "lucide-react";
+import { Trophy, Clock, Flame, ChevronRight, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Challenge } from "@/lib/challenges";
 import { useChallenges } from "@/hooks/useChallenges";
@@ -77,11 +77,14 @@ export function SuggestedChallenges({
     []
   );
 
-  // Build the pre-selected annotation based on count
+  // Build the pre-selected annotation based on count and challenge requirements
   const preSelectedAnnotation = useMemo(() => {
-    if (annotations.length === 1) return annotations[0];
+    if (!selectedChallenge) return null;
+    const minMoments = selectedChallenge.required_moments_min ?? 1;
+    // Only pre-select if single-moment challenge with exactly one annotation
+    if (minMoments <= 1 && annotations.length === 1) return annotations[0];
     return null; // multiple or zero — let the modal handle it
-  }, [annotations]);
+  }, [annotations, selectedChallenge]);
 
   const submissionSession = useMemo(
     () => ({
@@ -111,6 +114,9 @@ export function SuggestedChallenges({
           <div className="flex gap-3 pb-2">
             {suggested.map((challenge) => {
               const timeLeft = getTimeRemaining(challenge.ends_at);
+              const minMoments = challenge.required_moments_min ?? 1;
+              const hasEnoughMoments = annotations.length >= minMoments;
+              const isMultiMoment = minMoments > 1;
 
               return (
                 <div
@@ -153,6 +159,29 @@ export function SuggestedChallenges({
                       </Badge>
                     )}
                   </div>
+
+                  {/* Multi-moment requirement */}
+                  {isMultiMoment && (
+                    <div className="flex items-center gap-1.5">
+                      <Badge
+                        variant={hasEnoughMoments ? "secondary" : "outline"}
+                        className={cn(
+                          "text-[11px] px-1.5 py-0 h-5 gap-1",
+                          hasEnoughMoments
+                            ? "bg-primary/10 text-primary border-primary/20"
+                            : "text-muted-foreground border-border"
+                        )}
+                      >
+                        <Layers className="h-3 w-3" />
+                        Requires {minMoments} moments
+                      </Badge>
+                      {!hasEnoughMoments && (
+                        <span className="text-[10px] text-muted-foreground">
+                          ({annotations.length}/{minMoments})
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* CTA */}
                   <Button
