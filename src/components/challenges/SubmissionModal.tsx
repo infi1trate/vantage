@@ -103,9 +103,10 @@ export function SubmissionModal({
   const createSubmission = useCreateSubmission();
   const { data: userSubmissions = [] } = useUserSubmissions(challenge.id);
 
-  // Multi-moment detection
-  const requiredMoments = challenge.required_moments_count ?? 1;
-  const isMultiMoment = requiredMoments > 1;
+  const requiredMin = challenge.required_moments_min ?? 1;
+  const requiredMax = challenge.required_moments_max ?? 1;
+  const momentLabel = challenge.moment_label ?? null;
+  const isMultiMoment = requiredMax > 1;
 
   // Step management
   const [step, setStep] = useState<SubmissionStep>("moment");
@@ -222,20 +223,20 @@ export function SubmissionModal({
     switch (step) {
       case "moment":
         if (isMultiMoment) {
-          return collectedMoments.length >= requiredMoments;
+          return collectedMoments.length >= requiredMin;
         }
         return true;
       case "clip":
         return isClipValid;
       case "metadata":
         if (isMultiMoment) {
-          return form.formState.isValid && collectedMoments.length >= requiredMoments;
+          return form.formState.isValid && collectedMoments.length >= requiredMin;
         }
         return form.formState.isValid && selectedAnnotation !== null;
       default:
         return false;
     }
-  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMoments]);
+  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMin]);
 
   // ── Navigation ──
   const goToNextStep = () => {
@@ -512,7 +513,7 @@ export function SubmissionModal({
                 minClipDuration={minClipDuration}
                 maxClipDuration={maxClipDuration}
                 endsAt={challenge.ends_at}
-                requiredMoments={requiredMoments}
+                requiredMoments={requiredMin}
               />
             )}
 
@@ -521,7 +522,9 @@ export function SubmissionModal({
                  ══════════════════════════════════════════════════════════ */}
             {step === "moment" && isMultiMoment && (
               <MomentCollector
-                requiredCount={requiredMoments}
+                requiredMin={requiredMin}
+                requiredMax={requiredMax}
+                momentLabel={momentLabel}
                 moments={collectedMoments}
                 onMomentsChange={setCollectedMoments}
                 annotations={sessionAnnotations}
