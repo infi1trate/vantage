@@ -27,6 +27,8 @@ import {
   SubmissionLimitsBar,
   SubmissionSuccess,
 } from "./submission";
+import { ClipConfirmationSingle } from "./submission/ClipConfirmationSingle";
+import { ClipConfirmationMulti } from "./submission/ClipConfirmationMulti";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -576,10 +578,10 @@ export function SubmissionModal({
             )}
 
             {/* ══════════════════════════════════════════════════════════
-                 STEP: CLIP
+                 STEP: CLIP (passive confirmation with optional adjust)
                  ══════════════════════════════════════════════════════════ */}
             {step === "clip" && isMultiMoment && (
-              <MomentPlaylist
+              <ClipConfirmationMulti
                 moments={collectedMoments}
                 onMomentsChange={setCollectedMoments}
                 videoUrl={selectedSession.video_url}
@@ -587,40 +589,23 @@ export function SubmissionModal({
                 totalDuration={totalDuration}
                 minClipDuration={minClipDuration}
                 maxClipDuration={maxClipDuration}
+                formatTimestamp={formatTimestamp}
               />
             )}
 
             {step === "clip" && !isMultiMoment && (
-              <div className="space-y-4">
-                <h4 className="font-medium">
-                  {selectedAnnotation ? "Clip looks good" : "Select your clip range"}
-                </h4>
-                {selectedAnnotation && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">Moment selected</span>
-                    <span className="text-xs text-muted-foreground ml-auto font-mono tabular-nums">
-                      {formatTimestamp(selectedAnnotation.timestamp_seconds)}
-                    </span>
-                  </div>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  {selectedAnnotation
-                    ? "Auto-positioned around your moment. Adjust if needed."
-                    : "Drag the trim handles to select the clip you want to submit."}
-                </p>
-                <ClipTrimmer
-                  videoUrl={selectedSession.video_url}
-                  thumbnailUrl={selectedSession.thumbnail_url}
-                  totalDuration={totalDuration}
-                  minDuration={minClipDuration}
-                  maxDuration={maxClipDuration}
-                  startMs={clipStartMs}
-                  endMs={clipEndMs}
-                  onRangeChange={handleRangeChange}
-                  annotationTimestamp={selectedAnnotation?.timestamp_seconds}
-                />
-              </div>
+              <ClipConfirmationSingle
+                selectedAnnotation={selectedAnnotation}
+                videoUrl={selectedSession.video_url}
+                thumbnailUrl={selectedSession.thumbnail_url}
+                totalDuration={totalDuration}
+                minClipDuration={minClipDuration}
+                maxClipDuration={maxClipDuration}
+                clipStartMs={clipStartMs}
+                clipEndMs={clipEndMs}
+                onRangeChange={handleRangeChange}
+                formatTimestamp={formatTimestamp}
+              />
             )}
 
             {/* ══════════════════════════════════════════════════════════
