@@ -1,31 +1,18 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Trophy, Send, CheckCircle2, Tag, Zap, ExternalLink, Clock } from "lucide-react";
+import { Loader2, Trophy, Send, CheckCircle2, Tag, Zap, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { type Challenge } from "@/lib/challenges";
 import { useCreateSubmission, useUserSubmissions } from "@/hooks/useChallenges";
@@ -48,12 +35,11 @@ import { cn } from "@/lib/utils";
 
 type SubmissionStep = "moment" | "clip" | "metadata" | "success";
 
-const submissionSchema = z.object({
-  title: z.string().min(1, "Title is required").max(100, "Title is too long"),
-  description: z.string().max(500, "Description is too long").optional(),
-});
-
-type SubmissionFormData = z.infer<typeof submissionSchema>;
+// Auto-generate title: "[Challenge Title] — [Session Name]"
+function generateAutoTitle(challengeTitle: string, sessionTitle?: string, gameName?: string): string {
+  const suffix = gameName || sessionTitle || "Submission";
+  return `${challengeTitle} — ${suffix}`;
+}
 
 // ── Local types ───────────────────────────────────────────────────
 
@@ -122,27 +108,25 @@ export function SubmissionModal({
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(
     initialAnnotation ?? selectedSession?.annotations?.[0] ?? null
   );
-  const [isProofConfirmed, setIsProofConfirmed] = useState(false);
-  const [isAnnotationPreExisting, setIsAnnotationPreExisting] = useState(false);
   const [showInlineCreator, setShowInlineCreator] = useState(false);
 
   // ── Multi-moment state ──
   const [collectedMoments, setCollectedMoments] = useState<MomentData[]>([]);
-  const [isMultiMomentProofConfirmed, setIsMultiMomentProofConfirmed] = useState(false);
+
+  // ── Editable moment labels (inline chip editing) ──
+  const [editingChipIndex, setEditingChipIndex] = useState<number | null>(null);
+  const chipInputRef = useRef<HTMLInputElement>(null);
 
   // Session annotations
   const sessionAnnotations = selectedSession?.annotations ?? [];
   const sessionHasAnnotations = sessionAnnotations.length > 0;
   const sessionHasMultipleAnnotations = sessionAnnotations.length > 1;
 
-  // Form
-  const form = useForm<SubmissionFormData>({
-    resolver: zodResolver(submissionSchema),
-    defaultValues: {
-      title: selectedSession?.title || "",
-      description: "",
-    },
-  });
+  // Auto-generated title
+  const autoTitle = useMemo(
+    () => generateAutoTitle(challenge.title, selectedSession?.title, challenge.game_name),
+    [challenge.title, selectedSession?.title, challenge.game_name]
+  );
 
   // ── Reset on open ──
   useEffect(() => {
@@ -150,7 +134,7 @@ export function SubmissionModal({
       setIsSubmitting(false);
       setShowInlineCreator(false);
       setCollectedMoments([]);
-      setIsMultiMomentProofConfirmed(false);
+      setEditingChipIndex(null);
 
       const annotations = selectedSession.annotations ?? [];
       const annotation = initialAnnotation ?? annotations[0] ?? null;
@@ -163,26 +147,15 @@ export function SubmissionModal({
         const totalMs = (selectedSession.duration_seconds ?? 60) * 1000;
         setClipStartMs(Math.max(0, annotationMs - 2000));
         setClipEndMs(Math.min(totalMs, annotationMs + 2000));
-        setIsAnnotationPreExisting(true);
-        setIsProofConfirmed(true);
       } else if (initialClipRange) {
         setClipStartMs(initialClipRange.start_ms);
         setClipEndMs(initialClipRange.end_ms);
-        setIsAnnotationPreExisting(false);
-        setIsProofConfirmed(false);
       } else {
         setClipStartMs(0);
         setClipEndMs((selectedSession.duration_seconds ?? 60) * 1000);
-        setIsAnnotationPreExisting(false);
-        setIsProofConfirmed(false);
       }
-
-      form.reset({
-        title: selectedSession.title || "",
-        description: "",
-      });
     }
-  }, [open, selectedSession, initialAnnotation, initialClipRange, form, isMultiMoment]);
+  }, [open, selectedSession, initialAnnotation, initialClipRange, isMultiMoment]);
 
   // ── Derived ──
   const totalDuration = selectedSession?.duration_seconds ?? 60;
@@ -237,13 +210,13 @@ export function SubmissionModal({
         return isClipValid;
       case "metadata":
         if (isMultiMoment) {
-          return form.formState.isValid && collectedMoments.length >= requiredMin && allMomentClipsValid && isMultiMomentProofConfirmed;
+          return collectedMoments.length >= requiredMin && allMomentClipsValid;
         }
-        return form.formState.isValid && selectedAnnotation !== null;
+        return selectedAnnotation !== null;
       default:
         return false;
     }
-  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMin, allMomentClipsValid]);
+  }, [step, isClipValid, selectedAnnotation, isMultiMoment, collectedMoments, requiredMin, allMomentClipsValid]);
 
   // ── Navigation ──
   const goToNextStep = () => {
@@ -278,8 +251,6 @@ export function SubmissionModal({
     const totalMs = (selectedSession?.duration_seconds ?? 60) * 1000;
     setClipStartMs(Math.max(0, annotationMs - 2000));
     setClipEndMs(Math.min(totalMs, annotationMs + 2000));
-    setIsProofConfirmed(true);
-    setIsAnnotationPreExisting(true);
   };
 
   const handleRangeChange = (startMs: number, endMs: number) => {
@@ -335,7 +306,6 @@ export function SubmissionModal({
   const handleSubmit = async () => {
     if (!selectedSession || hasReachedLimit) return;
 
-    const data = form.getValues();
     setIsSubmitting(true);
 
     try {
@@ -347,8 +317,8 @@ export function SubmissionModal({
           session_id: selectedSession.id,
           clip_start_ms: firstMoment?.clipStartMs ?? 0,
           clip_end_ms: firstMoment?.clipEndMs ?? 0,
-          title: data.title,
-          description: data.description,
+          title: autoTitle,
+          description: undefined,
           moments: collectedMoments.map((m, i) => ({
             annotation_id: m.annotationId,
             start_ms: m.clipStartMs,
@@ -364,8 +334,8 @@ export function SubmissionModal({
           session_id: selectedSession.id,
           clip_start_ms: clipStartMs,
           clip_end_ms: clipEndMs,
-          title: data.title,
-          description: data.description,
+          title: autoTitle,
+          description: undefined,
           proof_notes: selectedAnnotation
             ? `Annotation: ${selectedAnnotation.title || selectedAnnotation.annotation_type} at ${selectedAnnotation.timestamp_seconds}s`
             : undefined,
@@ -395,10 +365,8 @@ export function SubmissionModal({
 
   const handleSubmitAnother = () => {
     setStep("moment");
-    setIsProofConfirmed(false);
-    setIsMultiMomentProofConfirmed(false);
     setCollectedMoments([]);
-    form.reset({ title: "", description: "" });
+    setEditingChipIndex(null);
     onChangeSession?.();
   };
 
@@ -578,8 +546,6 @@ export function SubmissionModal({
                           const totalMs = totalDuration * 1000;
                           setClipStartMs(Math.max(0, annotationMs - 2000));
                           setClipEndMs(Math.min(totalMs, annotationMs + 2000));
-                          setIsAnnotationPreExisting(true);
-                          setIsProofConfirmed(true);
                         }}
                       />
                     ) : (
@@ -662,144 +628,84 @@ export function SubmissionModal({
                  ══════════════════════════════════════════════════════════ */}
             {step === "metadata" && (
               <div className="space-y-4">
-                <h4 className="font-medium">Ready to submit</h4>
+                {/* Summary card */}
+                <div className="px-4 py-4 rounded-lg border border-primary/20 bg-primary/5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium">
+                      {isMultiMoment
+                        ? `You're submitting ${collectedMoments.length} moment${collectedMoments.length !== 1 ? "s" : ""}:`
+                        : selectedAnnotation
+                          ? "Moment selected · Clip looks good"
+                          : "Ready to submit"
+                      }
+                    </span>
+                  </div>
 
-                {/* Proof summary */}
-                {isMultiMoment && collectedMoments.length >= requiredMin ? (
-                  <div className="space-y-3">
-                    {/* Moment list summary */}
-                    <div className="px-3 py-3 rounded-lg border border-primary/20 bg-primary/5 text-sm space-y-2">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                        <span className="font-medium">
-                          You're submitting {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""}:
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pl-6">
-                        {collectedMoments.map((m, i) => (
-                          <Badge key={m.annotationId} variant="secondary" className="text-xs gap-1 font-normal">
+                  {/* Editable moment chips */}
+                  {isMultiMoment && collectedMoments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pl-6">
+                      {collectedMoments.map((m, i) => (
+                        editingChipIndex === i ? (
+                          <Input
+                            key={m.annotationId}
+                            ref={chipInputRef}
+                            value={m.label}
+                            onChange={(e) => {
+                              const updated = collectedMoments.map((cm, ci) =>
+                                ci === i ? { ...cm, label: e.target.value } : cm
+                              );
+                              setCollectedMoments(updated);
+                            }}
+                            onBlur={() => setEditingChipIndex(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "Escape") {
+                                setEditingChipIndex(null);
+                              }
+                            }}
+                            className="h-6 w-32 text-xs px-2 py-0"
+                            autoFocus
+                          />
+                        ) : (
+                          <Badge
+                            key={m.annotationId}
+                            variant="secondary"
+                            className="text-xs gap-1 font-normal cursor-pointer hover:bg-secondary/80 transition-colors"
+                            onClick={() => setEditingChipIndex(i)}
+                          >
                             {m.label}
                             <span className="text-muted-foreground flex items-center gap-0.5">
-                              <Clock className="h-2.5 w-2.5" />
+                              •
                               {formatTimestamp(m.timestampSeconds)}
                             </span>
                           </Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Confirmation checkbox */}
-                    <div
-                      className={cn(
-                        "flex items-start gap-3 p-3 rounded-lg border transition-colors",
-                        isMultiMomentProofConfirmed
-                          ? "bg-primary/5 border-primary/20"
-                          : "bg-muted/30 border-border hover:border-primary/50"
-                      )}
-                    >
-                      <Checkbox
-                        id="multi-moment-proof"
-                        checked={isMultiMomentProofConfirmed}
-                        onCheckedChange={(checked) => setIsMultiMomentProofConfirmed(checked === true)}
-                        className="mt-0.5"
-                      />
-                      <label
-                        htmlFor="multi-moment-proof"
-                        className={cn(
-                          "text-sm cursor-pointer",
-                          isMultiMomentProofConfirmed ? "text-primary font-medium" : "text-foreground"
-                        )}
-                      >
-                        These moments clearly prove I completed the challenge.
-                      </label>
-                    </div>
-                  </div>
-                ) : isMultiMoment ? (
-                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm">
-                    <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <p className="text-sm text-muted-foreground">
-                      Go back and select at least {requiredMin} moment{requiredMin !== 1 ? "s" : ""} to continue.
-                    </p>
-                  </div>
-                ) : selectedAnnotation ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">Moment selected · Clip looks good</span>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm">
-                    <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <p className="text-sm text-muted-foreground">
-                      Almost there — go back to tag the exact moment that proves this challenge.
-                    </p>
-                  </div>
-                )}
-
-                <Form {...form}>
-                  <form className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="title"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Title *</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Give your submission a title"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Describe what makes this clip special..."
-                              className="resize-none"
-                              rows={3}
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>Optional</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </form>
-                </Form>
-
-                {/* Per-moment labels (multi-moment only) */}
-                {isMultiMoment && collectedMoments.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Moment labels</p>
-                    <p className="text-xs text-muted-foreground">Auto-generated — edit if you'd like.</p>
-                    <div className="space-y-1.5">
-                      {collectedMoments.map((m, i) => (
-                        <Input
-                          key={m.annotationId}
-                          value={m.label}
-                          onChange={(e) => {
-                            const updated = collectedMoments.map((cm, ci) =>
-                              ci === i ? { ...cm, label: e.target.value } : cm
-                            );
-                            setCollectedMoments(updated);
-                          }}
-                          className="h-8 text-sm"
-                          placeholder={`Moment ${i + 1}`}
-                        />
+                        )
                       ))}
                     </div>
-                  </div>
+                  )}
+
+                  {/* Single-moment chip */}
+                  {!isMultiMoment && selectedAnnotation && (
+                    <div className="flex flex-wrap gap-1.5 pl-6">
+                      <Badge variant="secondary" className="text-xs gap-1 font-normal">
+                        {selectedAnnotation.title || selectedAnnotation.annotation_type}
+                        <span className="text-muted-foreground flex items-center gap-0.5">
+                          •
+                          {formatTimestamp(selectedAnnotation.timestamp_seconds)}
+                        </span>
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tap to rename hint (multi-moment only) */}
+                {isMultiMoment && collectedMoments.length > 0 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Tap a chip to rename it
+                  </p>
                 )}
 
+                {/* Submissions remaining — subtle */}
                 <SubmissionLimitsBar
                   currentSubmissions={currentSubmissions}
                   maxSubmissions={maxSubmissions}
@@ -813,7 +719,7 @@ export function SubmissionModal({
             {step === "success" && (
               <SubmissionSuccess
                 challengeTitle={challenge.title}
-                submissionTitle={form.getValues().title}
+                submissionTitle={autoTitle}
                 remainingSubmissions={remainingSubmissions - 1}
                 maxSubmissions={maxSubmissions}
                 onViewChallenge={handleViewChallenge}
@@ -857,11 +763,15 @@ export function SubmissionModal({
                       </>
                     )}
                   </Button>
-                  {isMultiMoment && collectedMoments.length > 0 && (
+                  {isMultiMoment && collectedMoments.length > 0 ? (
                     <span className="text-xs text-muted-foreground">
                       Includes {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""}
                     </span>
-                  )}
+                  ) : !isMultiMoment && selectedAnnotation ? (
+                    <span className="text-xs text-muted-foreground">
+                      Includes 1 moment
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <Button onClick={goToNextStep} disabled={!canAdvance}>
