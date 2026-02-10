@@ -21,10 +21,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Trophy, Send, CheckCircle2, Tag, Zap, ExternalLink } from "lucide-react";
+import { Loader2, Trophy, Send, CheckCircle2, Tag, Zap, ExternalLink, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { type Challenge } from "@/lib/challenges";
 import { useCreateSubmission, useUserSubmissions } from "@/hooks/useChallenges";
@@ -127,6 +128,7 @@ export function SubmissionModal({
 
   // ── Multi-moment state ──
   const [collectedMoments, setCollectedMoments] = useState<MomentData[]>([]);
+  const [isMultiMomentProofConfirmed, setIsMultiMomentProofConfirmed] = useState(false);
 
   // Session annotations
   const sessionAnnotations = selectedSession?.annotations ?? [];
@@ -148,6 +150,7 @@ export function SubmissionModal({
       setIsSubmitting(false);
       setShowInlineCreator(false);
       setCollectedMoments([]);
+      setIsMultiMomentProofConfirmed(false);
 
       const annotations = selectedSession.annotations ?? [];
       const annotation = initialAnnotation ?? annotations[0] ?? null;
@@ -234,7 +237,7 @@ export function SubmissionModal({
         return isClipValid;
       case "metadata":
         if (isMultiMoment) {
-          return form.formState.isValid && collectedMoments.length >= requiredMin && allMomentClipsValid;
+          return form.formState.isValid && collectedMoments.length >= requiredMin && allMomentClipsValid && isMultiMomentProofConfirmed;
         }
         return form.formState.isValid && selectedAnnotation !== null;
       default:
@@ -417,6 +420,7 @@ export function SubmissionModal({
   const handleSubmitAnother = () => {
     setStep("moment");
     setIsProofConfirmed(false);
+    setIsMultiMomentProofConfirmed(false);
     setCollectedMoments([]);
     form.reset({ title: "", description: "" });
     onChangeSession?.();
@@ -684,13 +688,62 @@ export function SubmissionModal({
               <div className="space-y-4">
                 <h4 className="font-medium">Ready to submit</h4>
 
-                {/* Summary badge */}
-                {isMultiMoment ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">
-                      {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""} selected · Clips trimmed
-                    </span>
+                {/* Proof summary */}
+                {isMultiMoment && collectedMoments.length >= requiredMin ? (
+                  <div className="space-y-3">
+                    {/* Moment list summary */}
+                    <div className="px-3 py-3 rounded-lg border border-primary/20 bg-primary/5 text-sm space-y-2">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                        <span className="font-medium">
+                          You're submitting {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""}:
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pl-6">
+                        {collectedMoments.map((m, i) => (
+                          <Badge key={m.annotationId} variant="secondary" className="text-xs gap-1 font-normal">
+                            {m.label}
+                            <span className="text-muted-foreground flex items-center gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />
+                              {formatTimestamp(m.timestampSeconds)}
+                            </span>
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Confirmation checkbox */}
+                    <div
+                      className={cn(
+                        "flex items-start gap-3 p-3 rounded-lg border transition-colors",
+                        isMultiMomentProofConfirmed
+                          ? "bg-primary/5 border-primary/20"
+                          : "bg-muted/30 border-border hover:border-primary/50"
+                      )}
+                    >
+                      <Checkbox
+                        id="multi-moment-proof"
+                        checked={isMultiMomentProofConfirmed}
+                        onCheckedChange={(checked) => setIsMultiMomentProofConfirmed(checked === true)}
+                        className="mt-0.5"
+                      />
+                      <label
+                        htmlFor="multi-moment-proof"
+                        className={cn(
+                          "text-sm cursor-pointer",
+                          isMultiMomentProofConfirmed ? "text-primary font-medium" : "text-foreground"
+                        )}
+                      >
+                        These moments clearly prove I completed the challenge.
+                      </label>
+                    </div>
+                  </div>
+                ) : isMultiMoment ? (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm">
+                    <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Go back and select at least {requiredMin} moment{requiredMin !== 1 ? "s" : ""} to continue.
+                    </p>
                   </div>
                 ) : selectedAnnotation ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
