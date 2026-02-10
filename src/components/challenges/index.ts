@@ -1,3 +1,4 @@
+export { BundleEntryViewer } from "./BundleEntryViewer";
 export { ChallengeCard } from "./ChallengeCard";
 export { ChallengeEmptyState } from "./ChallengeEmptyState";
 export { ChallengeEntryCard } from "./ChallengeEntryCard";

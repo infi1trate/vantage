@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
+import type { SubmissionMoment } from "@/lib/challenges";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ interface ChallengeEntryCardProps {
   status?: EntryStatus;
   isOwnEntry?: boolean;
   rejectionReason?: string;
+  moments?: SubmissionMoment[] | null;
   onVote?: (entryId: string) => void;
   onReport?: (entryId: string) => Promise<void> | void;
   onClick?: (entryId: string) => void;
@@ -159,6 +161,7 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
   status = "approved",
   isOwnEntry = false,
   rejectionReason,
+  moments,
   onVote,
   onReport,
   onClick,
@@ -446,9 +449,45 @@ export const ChallengeEntryCard = memo(function ChallengeEntryCard({
             </Badge>
           )}
 
+          {/* Moments Badge */}
+          {moments && moments.length > 1 && !isRejectedOrRemoved && (
+            <Badge
+              variant="secondary"
+              className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm text-xs"
+            >
+              {moments.length} moments
+            </Badge>
+          )}
+
           {/* Gradient overlay for text readability */}
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/80 to-transparent pointer-events-none" />
         </AspectRatio>
+
+        {/* Thumbnail strip for bundled moments */}
+        {moments && moments.length > 1 && !isRejectedOrRemoved && thumbnailUrl && (
+          <div className="flex gap-0.5 px-1 py-1 bg-muted/50">
+            {moments.slice(0, 3).map((m, i) => (
+              <div
+                key={`${m.annotation_id}-${i}`}
+                className="flex-1 h-8 rounded-sm overflow-hidden bg-muted"
+              >
+                <img
+                  src={thumbnailUrl}
+                  alt={m.label || `Moment ${i + 1}`}
+                  className="w-full h-full object-cover opacity-80"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+            {moments.length > 3 && (
+              <div className="flex-1 h-8 rounded-sm bg-muted flex items-center justify-center">
+                <span className="text-[10px] text-muted-foreground font-medium">
+                  +{moments.length - 3}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Content */}
         <div className="p-3 space-y-2">
