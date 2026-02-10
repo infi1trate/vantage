@@ -7,13 +7,10 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Toggle } from "@/components/ui/toggle";
 import { 
   Wand2, 
   Frame, 
   Sparkles,
-  Eye,
-  EyeOff,
 } from "lucide-react";
 
 type EditorTab = "effects" | "frames" | "package";
@@ -21,8 +18,6 @@ type EditorTab = "effects" | "frames" | "package";
 interface ReelEditorToolbarProps {
   activeTab: EditorTab;
   onTabChange: (tab: EditorTab) => void;
-  showEffects: boolean;
-  onShowEffectsChange: (show: boolean) => void;
   disabled?: boolean;
   className?: string;
 }
@@ -36,14 +31,12 @@ const TABS: { id: EditorTab; label: string; icon: React.ElementType }[] = [
 export const ReelEditorToolbar = memo(function ReelEditorToolbar({
   activeTab,
   onTabChange,
-  showEffects,
-  onShowEffectsChange,
   disabled = false,
   className,
 }: ReelEditorToolbarProps) {
   return (
     <div className={cn(
-      "flex items-center justify-between px-4 py-2 border-t border-border/40 bg-card/50",
+      "flex items-center px-4 py-2 border-t border-border/40 bg-card/50",
       disabled && "opacity-50 pointer-events-none",
       className
     )}>
@@ -71,27 +64,6 @@ export const ReelEditorToolbar = memo(function ReelEditorToolbar({
           );
         })}
       </div>
-
-      {/* Effects Toggle */}
-      <Toggle
-        pressed={showEffects}
-        onPressedChange={onShowEffectsChange}
-        size="sm"
-        disabled={disabled}
-        className="gap-1.5"
-      >
-        {showEffects ? (
-          <>
-            <Eye className="h-3.5 w-3.5" />
-            Effects On
-          </>
-        ) : (
-          <>
-            <EyeOff className="h-3.5 w-3.5" />
-            Effects Off
-          </>
-        )}
-      </Toggle>
     </div>
   );
 });
