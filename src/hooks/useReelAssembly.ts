@@ -38,10 +38,19 @@ import { getErrorCategory, getReasonLabel, ClipValidationError, parseClipValidat
 
 export type AssemblyState = "idle" | "preparing_legacy" | "waiting_for_source" | "assembling" | "ready" | "failed" | "needs_attention";
 
-const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max
+const ASSEMBLY_TIMEOUT_MS = 45_000; // 45 seconds max (global fallback)
 const POLL_INTERVAL_MS = 2_000; // Poll every 2s as backup
 const MAX_RETRY_ATTEMPTS = 3;
 const MAX_AUTO_RETRIES = 1; // Only 1 auto-retry before transitioning to needs_attention
+
+/**
+ * Per-step timeout caps (ms)
+ * If a step exceeds its cap → needs_attention with Retry/Skip actions
+ */
+const STEP_TIMEOUT_MS: Record<string, number> = {
+  collecting_clips: 20_000,      // 20s cap
+  finalizing_manifest: 45_000,   // 45s cap (includes writing to DB)
+};
 
 /**
  * Step-based progress configuration (MANIFEST-FIRST)
@@ -328,6 +337,7 @@ export function useReelAssembly(
   const [displayProgress, setDisplayProgress] = useState<number>(0);
   
   const timeoutRef = useRef<number | null>(null);
+  const stepTimeoutRef = useRef<number | null>(null);
   const pollRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const assemblyStartRef = useRef<number | null>(null);
@@ -340,6 +350,10 @@ export function useReelAssembly(
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
+    }
+    if (stepTimeoutRef.current) {
+      clearTimeout(stepTimeoutRef.current);
+      stepTimeoutRef.current = null;
     }
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -575,6 +589,20 @@ export function useReelAssembly(
         logAssemblyTelemetry("start", reelId, { attemptId: attemptId || undefined });
         ensureRenderJob();
       }
+      
+      // Start per-step timeout if applicable
+      if (stepTimeoutRef.current) {
+        clearTimeout(stepTimeoutRef.current);
+        stepTimeoutRef.current = null;
+      }
+      if (newStep && STEP_TIMEOUT_MS[newStep]) {
+        const stepCap = STEP_TIMEOUT_MS[newStep];
+        console.log(`[ReelAssembly] Starting ${stepCap}ms timeout for step: ${newStep}`);
+        stepTimeoutRef.current = window.setTimeout(() => {
+          console.warn(`[ReelAssembly] Step '${newStep}' exceeded ${stepCap}ms cap`);
+          failWithTimeout(`step_timeout_${newStep}`);
+        }, stepCap);
+      }
     } else if (newStatus === "failed") {
       setState("failed");
       clearTimers();
@@ -622,30 +650,39 @@ export function useReelAssembly(
     queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
   }, [reelId, queryClient, clearTimers, retryCount, ensureRenderJob, updateJobProgress, completeJob, failJob, markJobNeedsAttention, currentAttemptId]);
   
-  // Fail the assembly with timeout
-  const failWithTimeout = useCallback(async () => {
+  // Fail the assembly with timeout — transitions to needs_attention in DB
+  const failWithTimeout = useCallback(async (reason?: string) => {
     if (!reelId || !mountedRef.current) return;
     
     const durationMs = assemblyStartRef.current 
       ? Date.now() - assemblyStartRef.current 
       : ASSEMBLY_TIMEOUT_MS;
     
+    const timeoutReason = reason || "timeout_global";
+    
     logAssemblyTelemetry("timeout", reelId, { 
       durationMs, 
-      reason: "timeout_45s",
+      reason: timeoutReason,
       retryCount,
       attemptId: currentAttemptId || undefined,
     });
     
-    console.warn("[ReelAssembly] Assembly timed out after 45s");
+    console.warn(`[ReelAssembly] Assembly timed out (${timeoutReason}), step: ${currentStep}`);
     
     markJobNeedsAttention("This is taking longer than expected.");
     
     try {
+      // CRITICAL: Write status: "needs_attention" to DB so reel never stays "compiling" forever
       await supabase
         .from("reels")
         .update({ 
-          render_error: "This is taking longer than expected.",
+          status: "needs_attention",
+          render_error: JSON.stringify({
+            reason: timeoutReason,
+            step: currentStep || "unknown",
+            message: "This is taking longer than expected.",
+            timestamp: new Date().toISOString(),
+          }),
           updated_at: new Date().toISOString(),
         })
         .eq("id", reelId);
@@ -660,7 +697,7 @@ export function useReelAssembly(
     } catch (err) {
       console.error("[ReelAssembly] Failed to update timeout status:", err);
     }
-  }, [reelId, queryClient, clearTimers, retryCount, markJobNeedsAttention, currentAttemptId]);
+  }, [reelId, queryClient, clearTimers, retryCount, markJobNeedsAttention, currentAttemptId, currentStep]);
   
   // Poll for status as a backup mechanism
   const pollStatus = useCallback(async () => {
@@ -727,7 +764,7 @@ export function useReelAssembly(
       
       ensureRenderJob();
       
-      timeoutRef.current = window.setTimeout(failWithTimeout, ASSEMBLY_TIMEOUT_MS);
+      timeoutRef.current = window.setTimeout(() => failWithTimeout("timeout_global_45s"), ASSEMBLY_TIMEOUT_MS);
       pollRef.current = window.setInterval(pollStatus, POLL_INTERVAL_MS);
     }
     
