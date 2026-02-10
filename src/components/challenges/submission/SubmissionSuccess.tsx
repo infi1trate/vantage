@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ExternalLink, Share2, Plus, Trophy, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
+
+interface MomentChip {
+  label: string;
+  timestampDisplay: string; // e.g. "2:30"
+}
 
 interface SponsorInfo {
   name: string;
@@ -9,10 +15,11 @@ interface SponsorInfo {
 
 interface SubmissionSuccessProps {
   challengeTitle: string;
-  submissionTitle?: string;
+  submissionTitle?: string; // kept for backward compat, no longer rendered
   remainingSubmissions: number;
   maxSubmissions: number;
   sponsor?: SponsorInfo | null;
+  moments?: MomentChip[];
   onViewChallenge: () => void;
   onShare: () => void;
   onSubmitAnother?: () => void;
@@ -21,16 +28,17 @@ interface SubmissionSuccessProps {
 
 export function SubmissionSuccess({
   challengeTitle,
-  submissionTitle,
   remainingSubmissions,
   maxSubmissions,
   sponsor,
+  moments,
   onViewChallenge,
   onShare,
   onSubmitAnother,
   onClose,
 }: SubmissionSuccessProps) {
   const canSubmitMore = remainingSubmissions > 0;
+  const momentCount = moments?.length || 0;
 
   return (
     <motion.div
@@ -71,10 +79,19 @@ export function SubmissionSuccess({
         "{challengeTitle}"
       </p>
 
-      {submissionTitle && (
-        <div className="px-4 py-2 rounded-lg bg-muted/50 border border-border mb-4">
-          <p className="text-sm text-muted-foreground">Submission title:</p>
-          <p className="font-medium">{submissionTitle}</p>
+      {/* Moments summary */}
+      {momentCount > 0 && (
+        <div className="mb-4 space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Includes {momentCount} moment{momentCount !== 1 ? "s" : ""}
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {moments!.map((m, i) => (
+              <Badge key={i} variant="secondary" className="text-xs font-mono">
+                {m.label} • {m.timestampDisplay}
+              </Badge>
+            ))}
+          </div>
         </div>
       )}
 
@@ -82,8 +99,8 @@ export function SubmissionSuccess({
       {sponsor && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
           {sponsor.logoUrl ? (
-            <img 
-              src={sponsor.logoUrl} 
+            <img
+              src={sponsor.logoUrl}
               alt={sponsor.name}
               className="h-4 w-4 object-contain opacity-70"
             />
@@ -110,39 +127,24 @@ export function SubmissionSuccess({
 
       {/* Actions */}
       <div className="w-full space-y-3">
-        {/* Primary actions */}
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={onViewChallenge}
-          >
+          <Button variant="outline" className="flex-1" onClick={onViewChallenge}>
             <ExternalLink className="h-4 w-4 mr-2" />
             View Challenge
           </Button>
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={onShare}
-          >
+          <Button variant="outline" className="flex-1" onClick={onShare}>
             <Share2 className="h-4 w-4 mr-2" />
             Share Entry
           </Button>
         </div>
 
-        {/* Submit another */}
         {canSubmitMore && onSubmitAnother && (
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={onSubmitAnother}
-          >
+          <Button variant="secondary" className="w-full" onClick={onSubmitAnother}>
             <Plus className="h-4 w-4 mr-2" />
             Submit Another
           </Button>
         )}
 
-        {/* Done */}
         <Button className="w-full" onClick={onClose}>
           Done
         </Button>
