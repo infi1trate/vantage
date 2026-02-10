@@ -265,9 +265,50 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
   console.log(`[createReel] ReelSource ready, creating reel for session ${input.sessionId}`);
   // ============ END REEL SOURCE GATE ============
 
-  // Create with "compiling" status and initial assembly step
+  // ============ BUILD MANIFEST IMMEDIATELY ============
+  // Fetch annotations for the selected moments to build the manifest synchronously
+  const { data: annotationRows, error: annError } = await supabase
+    .from("annotations")
+    .select("id, timestamp_seconds, end_timestamp_seconds, annotation_type, title, content")
+    .in("id", input.momentIds)
+    .order("timestamp_seconds", { ascending: true });
+  
+  if (annError) throw annError;
+  
+  const DEFAULT_CLIP_DURATION_MS = 5_000; // 5s default if no end timestamp
+  
+  const clips: ManifestClip[] = (annotationRows || []).map((ann, i) => {
+    const startMs = Math.round(ann.timestamp_seconds * 1000);
+    const endMs = ann.end_timestamp_seconds
+      ? Math.round(ann.end_timestamp_seconds * 1000)
+      : startMs + DEFAULT_CLIP_DURATION_MS;
+    const durationMs = endMs - startMs;
+    
+    return {
+      momentId: ann.id,
+      startMs,
+      endMs,
+      durationMs,
+      order: i,
+    };
+  });
+  
+  if (clips.length === 0) {
+    throw new Error("No valid moments found for the selected IDs");
+  }
+  
+  const totalDurationMs = clips.reduce((sum, c) => sum + c.durationMs, 0);
+  
+  const manifest: ReelManifest = {
+    clips,
+    totalDurationMs,
+    aspectRatio: input.aspectRatio,
+    createdAt: new Date().toISOString(),
+  };
+  // ============ END BUILD MANIFEST ============
+
+  // Create reel as "draft" with manifest pre-populated — no async assembly needed
   const now = new Date().toISOString();
-  const attemptId = crypto.randomUUID();
   
   const { data, error } = await supabase
     .from("reels")
@@ -277,19 +318,28 @@ export async function createReel(input: CreateReelInput): Promise<Reel> {
       title: input.title || "Untitled Reel",
       aspect_ratio: input.aspectRatio,
       source_moment_ids: input.momentIds,
-      status: "compiling",
-      assembly_step: "collecting_clips",
+      status: "draft",
+      assembly_step: "ready",
       step_started_at: now,
-      assembly_attempt_id: attemptId,
+      step_completed_at: now,
+      manifest: JSON.parse(JSON.stringify(manifest)),
+      total_duration_ms: totalDurationMs,
+      duration_seconds: Math.round(totalDurationMs / 1000),
+      playback_mode: "manifest",
+      preview_status: "pending",
     })
     .select()
     .single();
 
   if (error) throw error;
   
-  // Return immediately - assembly will be triggered by the hook
-  // The reel is in "compiling" status with "collecting_clips" step
-  // The Reel Editor will detect this and show the compiling placeholder
+  console.log(`[createReel] Reel created with pre-built manifest: ${data.id}, ${clips.length} clips, ${totalDurationMs}ms`);
+  
+  // Start preview generation in background (non-blocking)
+  startPreviewGeneration(data.id, input.sessionId).catch((err) => {
+    console.warn(`[createReel] Background preview generation failed:`, err);
+  });
+  
   return toReel(data);
 }
 
