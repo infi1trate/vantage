@@ -20,16 +20,16 @@ export function FooterSection() {
               Features
             </a>
             <a 
-              href="#features" 
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
-            >
-              Features
-            </a>
-            <a 
               href="#how-it-works" 
               className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-offset-background"
             >
               How It Works
+            </a>
+            <a 
+              href="/auth" 
+              className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            >
+              Login
             </a>
           </nav>
         </div>
