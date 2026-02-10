@@ -1,14 +1,10 @@
 /**
- * Reel Editor Page
+ * Reel Editor Page (Moments-Only)
  * 
- * Dedicated editing environment for Reels. Contains:
- * - Reel-only preview player
- * - Effects Lane (VFX/SFX)
- * - Frames configuration
- * - Reel Package tools (intro/outro/transitions)
- * - Export / Share
+ * Consolidated editing environment for Reels. Uses ManifestPlayer to play
+ * only the selected moments/clips from the reel manifest.
  * 
- * Session Detail remains read-only; all editing happens here.
+ * All entry points (Create Reel, Session Detail, /reel/:id) route here.
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -22,15 +18,12 @@ import { useReelPackage } from "@/hooks/useReelPackageConfig";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { useEditorState } from "@/hooks/useEditorState";
-import { PlayerWithEffects } from "@/components/player/PlayerWithEffects";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
 import { ReelEditorIntroModal } from "@/components/reel/ReelEditorIntroModal";
 import { CaptureTipsModal } from "@/components/reel/CaptureTipsModal";
 import { EditorStateBadge } from "@/components/reel/EditorStateBadge";
-import { PreviewUnavailableBanner } from "@/components/reel/PreviewUnavailableBanner";
-import { PreviewRenderingPill } from "@/components/reel/PreviewRenderingPill";
 import { ManifestPlayer } from "@/components/reel/ManifestPlayer";
 import { ReelErrorBoundary } from "@/components/reel/ReelErrorBoundary";
 import { ExportButton } from "@/components/export/ExportButton";
@@ -43,10 +36,9 @@ import {
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useSafeBack } from "@/hooks/useSafeBack";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
-import { ReelStatus, PreviewStatus, retryPreviewGeneration, getEffectivePlaybackMode, hasPlaybackAvailable, GameplayVideoStatus } from "@/lib/reels";
+import { ReelStatus, GameplayVideoStatus } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
 
 function ReelEditorContent() {
@@ -87,7 +79,6 @@ function ReelEditorContent() {
   } | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [previewUnavailable, setPreviewUnavailable] = useState(false);
 
   // Reel assembly state with real-time subscription + timeout
   // Pass metadata for global render queue integration AND step tracking
@@ -118,10 +109,8 @@ function ReelEditorContent() {
 
   // Editor state
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
-  const [showEffects, setShowEffects] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [isReloadingPreview, setIsReloadingPreview] = useState(false);
   const [showCaptureTipsModal, setShowCaptureTipsModal] = useState(false);
   
   // Derive video loaded state
@@ -174,31 +163,10 @@ function ReelEditorContent() {
   // Clear effects mutation
   const clearEffectsMutation = useClearSessionEffects();
 
-  // Compute effective playback mode
-  const effectivePlaybackMode = useMemo(() => {
-    return getEffectivePlaybackMode(reel || null);
-  }, [reel?.preview_url, reel?.preview_status, reel?.preview_ref]);
-  
-  // Check if we have playback available (no "No video" state)
+  // Manifest-only playback: check if we can play
   const canPlayback = useMemo(() => {
-    return hasPlaybackAvailable(reel || null, sessionData?.videoUrl);
-  }, [reel, sessionData?.videoUrl]);
-
-  // Determine the best video source for stitched preview mode
-  // Only used when effectivePlaybackMode === "stitched_preview"
-  const getPreviewSource = useCallback(() => {
-    // Use stitched preview when available
-    if (effectivePlaybackMode === "stitched_preview" && reel?.preview_url) {
-      return { url: reel.preview_url, isFallback: false };
-    }
-    // Fallback to session's source video (for PlayerWithEffects when no manifest)
-    if (sessionData?.videoUrl) {
-      return { url: sessionData.videoUrl, isFallback: true };
-    }
-    return { url: null, isFallback: false };
-  }, [effectivePlaybackMode, reel?.preview_url, sessionData?.videoUrl]);
-
-  const previewSource = getPreviewSource();
+    return Boolean(reel?.manifest && sessionData?.videoUrl);
+  }, [reel?.manifest, sessionData?.videoUrl]);
 
   // Load session data when reel is loaded
   useEffect(() => {
@@ -232,47 +200,6 @@ function ReelEditorContent() {
     loadSessionData();
   }, [reel?.session_id]);
 
-  // Reload preview handler
-  const handleReloadPreview = useCallback(async () => {
-    if (!reelId) return;
-    
-    setIsReloadingPreview(true);
-    try {
-      // Re-fetch the reel to get updated preview_url
-      const { data: freshReel } = await supabase
-        .from("reels")
-        .select("preview_url")
-        .eq("id", reelId)
-        .single();
-      
-      if (freshReel?.preview_url) {
-        // Force a refresh of the reel query
-        window.location.reload();
-      } else {
-        toast.info("Preview still not ready. Using source video.");
-      }
-    } catch (err) {
-      console.error("Failed to reload preview:", err);
-      toast.error("Failed to reload preview");
-    } finally {
-      setIsReloadingPreview(false);
-    }
-  }, [reelId]);
-
-  // Show preview unavailable warning when ready but using fallback
-  useEffect(() => {
-    if (editorState.state === "ready" && previewSource.isFallback && !previewUnavailable) {
-      setPreviewUnavailable(true);
-      toast.warning("Preview unavailable — export will still work.", {
-        description: "Showing source video instead of assembled preview.",
-        action: {
-          label: "Reload preview",
-          onClick: handleReloadPreview,
-        },
-        duration: 8000,
-      });
-    }
-  }, [editorState.state, previewSource.isFallback, previewUnavailable, handleReloadPreview]);
 
   // Auth redirect
   useEffect(() => {
@@ -646,40 +573,12 @@ function ReelEditorContent() {
                   }}
                 />
               ) : (
-                // Ready state - show player with effects
-                // Uses manifest player when no preview available, otherwise PlayerWithEffects
+                // Ready state - show manifest player (moments-only)
                 <div className="h-full flex flex-col">
-                  {/* Show banner ONLY for failed preview - failed is actionable */}
-                  {reel.preview_status === "failed" && (
-                    <PreviewUnavailableBanner
-                      className="mx-4 mt-4"
-                      previewStatus="failed"
-                      onGeneratePreview={async () => {
-                        toast.info("Generating preview...", {
-                          description: "This may take a moment.",
-                        });
-                        await retryPreviewGeneration(reelId!);
-                        // Invalidate to refresh
-                        queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
-                      }}
-                    />
-                  )}
-                  
                   <div className="flex-1 min-h-0 relative">
-                    {/* Subtle pill for rendering/pending preview - overlaid on player */}
-                    {(reel.preview_status === "rendering" || reel.preview_status === "pending") && (
-                      <PreviewRenderingPill 
-                        previewStatus={reel.preview_status as PreviewStatus}
-                      />
-                    )}
                     
-                    {/* Playback mode selection:
-                        - "manifest" mode: Use ManifestPlayer to sequence clips
-                        - "stitched_preview" mode: Use PlayerWithEffects with preview video
-                        
-                        Seamless switch: effectivePlaybackMode auto-updates when preview becomes ready
-                    */}
-                    {effectivePlaybackMode === "manifest" && reel.manifest && sessionData?.videoUrl ? (
+                    {/* Manifest-only playback: ManifestPlayer sequences clips from the reel manifest */}
+                    {reel.manifest && sessionData?.videoUrl ? (
                       <ManifestPlayer
                         manifest={reel.manifest}
                         sessionVideoUrl={sessionData.videoUrl}
@@ -690,28 +589,7 @@ function ReelEditorContent() {
                         onVideoLoaded={handleVideoLoaded}
                         className="h-full"
                       />
-                    ) : effectivePlaybackMode === "stitched_preview" && previewSource.url ? (
-                      <PlayerWithEffects
-                        sessionId={reel.session_id || ""}
-                        videoUrl={previewSource.url}
-                        duration={duration}
-                        currentTime={currentTime}
-                        onTimeUpdate={handleTimeUpdate}
-                        onSeek={handleSeek}
-                        annotations={reelMoments}
-                        voiceNotes={[]}
-                        onVideoLoaded={handleVideoLoaded}
-                        showEffects={showEffects}
-                        externalEffectsState={{
-                          effects,
-                          isDragging,
-                          handleDrop,
-                          handleEffectUpdate,
-                          handleEffectDelete,
-                          handleEffectDuplicate,
-                        }}
-                      />
-                    ) : !canPlayback ? (
+                    ) : (
                       // No playback available - show placeholder
                       <div className="flex-1 flex items-center justify-center bg-muted/20 rounded-lg">
                         <div className="text-center p-8">
@@ -724,7 +602,7 @@ function ReelEditorContent() {
                           </p>
                         </div>
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               )}
@@ -735,8 +613,6 @@ function ReelEditorContent() {
           <ReelEditorToolbar
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            showEffects={showEffects}
-            onShowEffectsChange={setShowEffects}
             disabled={!editorState.timelineInteractive}
           />
         </div>
