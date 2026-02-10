@@ -82,15 +82,23 @@ function formatTimestamp(seconds: number) {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function annotationToMoment(annotation: Annotation, totalDurationMs: number): MomentData {
+function annotationToMoment(
+  annotation: Annotation,
+  totalDurationMs: number,
+  minClipDuration = 5,
+  maxClipDuration = 60,
+): MomentData {
   const annotationMs = annotation.timestamp_seconds * 1000;
+  // Ensure the auto-generated clip always satisfies the minimum duration
+  const halfDuration = Math.max(minClipDuration * 1000 / 2, 2000);
+  const clampedHalf = Math.min(halfDuration, (maxClipDuration * 1000) / 2);
   return {
     annotationId: annotation.id,
     annotationType: annotation.annotation_type,
     label: annotation.title || annotation.annotation_type,
     timestampSeconds: annotation.timestamp_seconds,
-    clipStartMs: Math.max(0, annotationMs - 2000),
-    clipEndMs: Math.min(totalDurationMs, annotationMs + 2000),
+    clipStartMs: Math.max(0, annotationMs - clampedHalf),
+    clipEndMs: Math.min(totalDurationMs, annotationMs + clampedHalf),
   };
 }
 
@@ -105,6 +113,8 @@ export function MomentCollector({
   annotations,
   thumbnailUrl,
   totalDuration,
+  minClipDuration = 5,
+  maxClipDuration = 60,
   onCreateInlineAnnotation,
   onOpenFullEditor,
 }: MomentCollectorProps) {
@@ -133,7 +143,7 @@ export function MomentCollector({
   const handleToggle = (annotation: Annotation, checked: boolean) => {
     if (checked) {
       if (isMaxReached) return;
-      const newMoment = annotationToMoment(annotation, totalDurationMs);
+      const newMoment = annotationToMoment(annotation, totalDurationMs, minClipDuration, maxClipDuration);
       onMomentsChange([...moments, newMoment]);
     } else {
       onMomentsChange(moments.filter((m) => m.annotationId !== annotation.id));
