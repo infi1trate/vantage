@@ -800,6 +800,30 @@ export function SubmissionModal({
                   </form>
                 </Form>
 
+                {/* Per-moment labels (multi-moment only) */}
+                {isMultiMoment && collectedMoments.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Moment labels</p>
+                    <p className="text-xs text-muted-foreground">Auto-generated — edit if you'd like.</p>
+                    <div className="space-y-1.5">
+                      {collectedMoments.map((m, i) => (
+                        <Input
+                          key={m.annotationId}
+                          value={m.label}
+                          onChange={(e) => {
+                            const updated = collectedMoments.map((cm, ci) =>
+                              ci === i ? { ...cm, label: e.target.value } : cm
+                            );
+                            setCollectedMoments(updated);
+                          }}
+                          className="h-8 text-sm"
+                          placeholder={`Moment ${i + 1}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <SubmissionLimitsBar
                   currentSubmissions={currentSubmissions}
                   maxSubmissions={maxSubmissions}
@@ -840,22 +864,29 @@ export function SubmissionModal({
               )}
 
               {step === "metadata" ? (
-                <Button
-                  onClick={goToNextStep}
-                  disabled={!canAdvance || isSubmitting || hasReachedLimit}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-4 w-4" />
-                      Submit Entry
-                    </>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    onClick={goToNextStep}
+                    disabled={!canAdvance || isSubmitting || hasReachedLimit}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Submit Entry
+                      </>
+                    )}
+                  </Button>
+                  {isMultiMoment && collectedMoments.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      Includes {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""}
+                    </span>
                   )}
-                </Button>
+                </div>
               ) : (
                 <Button onClick={goToNextStep} disabled={!canAdvance}>
                   Continue
