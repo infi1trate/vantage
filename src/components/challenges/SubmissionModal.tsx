@@ -147,8 +147,9 @@ export function SubmissionModal({
       if (!isMultiMoment && annotation) {
         const annotationMs = annotation.timestamp_seconds * 1000;
         const totalMs = (selectedSession.duration_seconds ?? 60) * 1000;
-        setClipStartMs(Math.max(0, annotationMs - 2000));
-        setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+        const halfDuration = Math.max(minClipDuration * 1000 / 2, 2000);
+        setClipStartMs(Math.max(0, annotationMs - halfDuration));
+        setClipEndMs(Math.min(totalMs, annotationMs + halfDuration));
       } else if (initialClipRange) {
         setClipStartMs(initialClipRange.start_ms);
         setClipEndMs(initialClipRange.end_ms);
@@ -251,8 +252,9 @@ export function SubmissionModal({
     setSelectedAnnotation(annotation);
     const annotationMs = annotation.timestamp_seconds * 1000;
     const totalMs = (selectedSession?.duration_seconds ?? 60) * 1000;
-    setClipStartMs(Math.max(0, annotationMs - 2000));
-    setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+    const halfDuration = Math.max(minClipDuration * 1000 / 2, 2000);
+    setClipStartMs(Math.max(0, annotationMs - halfDuration));
+    setClipEndMs(Math.min(totalMs, annotationMs + halfDuration));
   };
 
   const handleRangeChange = (startMs: number, endMs: number) => {
@@ -546,8 +548,9 @@ export function SubmissionModal({
                           setShowInlineCreator(false);
                           const annotationMs = data.timestamp_seconds * 1000;
                           const totalMs = totalDuration * 1000;
-                          setClipStartMs(Math.max(0, annotationMs - 2000));
-                          setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+                          const halfDuration = Math.max(minClipDuration * 1000 / 2, 2000);
+                          setClipStartMs(Math.max(0, annotationMs - halfDuration));
+                          setClipEndMs(Math.min(totalMs, annotationMs + halfDuration));
                         }}
                       />
                     ) : (
