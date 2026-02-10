@@ -1,70 +1,37 @@
 
 
-## Problem: "Create Reel" CTA Creates Reels But Never Navigates
+## Plan: Fix Coach Summary Layout Push and Speed Up Analysis
 
-### Root Cause
+### Problem 1: Coach Summary Expanding Pushes Content
 
-There is a race condition in `CreateReelModal`. When a reel is successfully created, `handleReelCreated` does three things in order:
+The right rail container (`div` at SessionReview.tsx line 1166) lacks height and overflow constraints. When the coach summary collapsible expands, it grows the rail beyond the viewport instead of scrolling within it. The fix is to add `overflow-hidden` and proper flex sizing to the right rail container so `ScrollArea` inside the coach tab works correctly.
 
-1. Sets `pendingReelId` to the new reel ID
-2. Sets `isTransitioning` to `true` (starts the fade overlay)
-3. Calls `onOpenChange(false)` to close the modal
+### Problem 2: Coach Analysis Speed
 
-However, there is a `useEffect` that watches the `open` prop:
+The `analyze-gameplay` edge function makes **3 sequential AI API calls**:
+1. Analyst phase (gemini-3-flash-preview)
+2. Coach phase (gemini-3-flash-preview) -- waits for #1
+3. Summarizer phase (gemini-2.5-flash) -- waits for #2
 
-```text
-useEffect(() => {
-  if (!open) {
-    setIsTransitioning(false);   // <-- cancels the transition
-    setPendingReelId(null);       // <-- clears the reel ID
-  }
-}, [open]);
-```
+The Summarizer only needs the coaching cards (not full analyst output), so it must stay sequential with #2. However, we can optimize:
+- Switch the Analyst phase to `gemini-2.5-flash-lite` (fastest model, sufficient for factual observation extraction)
+- Switch the Coach phase to `gemini-2.5-flash` (balanced, sufficient for coaching cards)
+- Keep Summarizer on `gemini-2.5-flash` (already the lightest option)
+- Lower `max_tokens` on analyst/coach to reduce generation time
 
-Step 3 sets `open` to `false`, which triggers this effect, which immediately cancels the transition and clears the reel ID. The `PageTransitionOverlay` never gets a chance to fire `onFadeInComplete`, so navigation to `/reel/:id` never happens.
+---
 
-**Evidence:** The database has 10+ reels all stuck at `status: compiling` for the same session -- they were created successfully but navigation always failed.
+### Technical Changes
 
-### Additional Issue
+**1. `src/pages/SessionReview.tsx`** (line 1166-1168)
+- Add `overflow-hidden` and `flex flex-col` to the right rail container div so children can use flex-based height constraints properly.
 
-There are now 10+ orphaned reels in the database from repeated attempts. These should be cleaned up, and a session's reels should be visible on the session detail page so users know reels were created.
+**2. `src/components/player/rail/CoachSection.tsx`**
+- Ensure the `ScrollArea` in the "complete" state has a bounded height (it already uses `flex-1` which should work once the parent is constrained).
 
-### Fix Plan
-
-**File: `src/components/player/CreateReelModal.tsx`**
-
-1. **Fix the race condition** -- In `handleReelCreated`, do NOT close the modal immediately. Instead, let the `PageTransitionOverlay` handle the visual transition. The modal closing should happen after transition completes, or the cleanup effect should skip resetting when a transition is actively pending.
-
-   Specifically, change the cleanup `useEffect` to not reset transition state when a transition is in progress:
-
-   ```text
-   useEffect(() => {
-     if (!open && !isTransitioning) {
-       setPendingReelId(null);
-     }
-   }, [open, isTransitioning]);
-   ```
-
-   And in `handleReelCreated`, set the transition state BEFORE closing the modal, and defer modal close:
-
-   ```text
-   const handleReelCreated = useCallback((reelId: string) => {
-     setPendingReelId(reelId);
-     setIsTransitioning(true);
-     // Close modal AFTER a tick so transition state is established
-     setTimeout(() => onOpenChange(false), 0);
-   }, [onOpenChange]);
-   ```
-
-2. **Show session reels on the Session Detail page** -- Add a "Reels" section to the Session Right Rail (or Highlights section) that lists existing reels for the session using the `useSessionReels` hook, so users can see and access previously created reels.
-
-3. **Clean up orphaned reels** -- Delete the duplicate stuck reels from the database, keeping only the most recent one.
-
-### Technical Details
-
-| Change | File |
-|--------|------|
-| Fix race condition in modal close vs transition | `src/components/player/CreateReelModal.tsx` (lines 1124-1130, 1148-1155) |
-| Add session reels list to Highlights section | `src/components/player/rail/HighlightsSection.tsx` |
-| Clean up orphaned reels | Database query (delete duplicates) |
+**3. `supabase/functions/analyze-gameplay/index.ts`**
+- Change Analyst model from `google/gemini-3-flash-preview` to `google/gemini-2.5-flash` for faster response.
+- Change Coach model from `google/gemini-3-flash-preview` to `google/gemini-2.5-flash`.
+- Keep Summarizer on `google/gemini-2.5-flash`.
+- This reduces total latency by using faster models for all 3 phases while maintaining quality.
 
