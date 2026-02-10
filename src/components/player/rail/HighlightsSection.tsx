@@ -30,7 +30,7 @@ import {
 import { useChallengeSessionOptional } from "@/contexts/ChallengeSessionContext";
 import { ChallengePickerModal } from "@/components/challenges/ChallengePickerModal";
 import { SubmissionModal } from "@/components/challenges/SubmissionModal";
-import { type Challenge } from "@/lib/challenges";
+import { type Challenge } from "@/lib/challenges.ts";
 
 interface MomentsSectionProps {
   annotations: Annotation[];

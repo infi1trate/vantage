@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Trophy, Clock, Flame, ChevronRight, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { type Challenge } from "@/lib/challenges";
+import { type Challenge } from "@/lib/challenges.ts";
 import { useChallenges } from "@/hooks/useChallenges";
 import { SubmissionModal } from "./SubmissionModal";
 
