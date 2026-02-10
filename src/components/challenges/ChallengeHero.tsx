@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, Trophy, Gamepad2, ArrowLeft, Flame, Crown, Medal, Sparkles } from "lucide-react";
+import { Clock, Trophy, Gamepad2, ArrowLeft, Flame, Crown, Medal, Sparkles, Target } from "lucide-react";
 import { type Challenge, getChallengeStatus } from "@/lib/challenges";
 import { cn } from "@/lib/utils";
 
@@ -347,6 +347,19 @@ export function ChallengeHero({
               prizeCrypto={challenge.prize_crypto}
               prizeCryptoAmount={challenge.prize_crypto_amount}
             />
+
+            {/* Required Moments */}
+            {(challenge.required_moments_min > 1 || challenge.required_moments_max > 1) && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 text-sm font-medium">
+                <Target className="h-4 w-4 text-primary" />
+                <span>
+                  Submit:{" "}
+                  {challenge.required_moments_min === challenge.required_moments_max
+                    ? `${challenge.required_moments_min} ${challenge.moment_label || "moments"}`
+                    : `${challenge.required_moments_min}–${challenge.required_moments_max} ${challenge.moment_label || "moments"}`}
+                </span>
+              </div>
+            )}
 
             {/* Submission Stats */}
             <div className="flex items-center gap-4 text-sm text-muted-foreground">

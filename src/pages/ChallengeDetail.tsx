@@ -321,6 +321,9 @@ export default function ChallengeDetail() {
           rules={challenge.rules}
           clipDurationMin={5}
           clipDurationMax={60}
+          requiredMomentsMin={challenge.required_moments_min}
+          requiredMomentsMax={challenge.required_moments_max}
+          momentLabel={challenge.moment_label}
         />
 
         {/* How to Participate (Collapsible) */}
