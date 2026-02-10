@@ -32,14 +32,33 @@ import { ReelErrorBoundary } from "@/components/reel/ReelErrorBoundary";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { 
   ArrowLeft, 
   Film, 
   Loader2,
+  MoreHorizontal,
   Save,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSafeBack } from "@/hooks/useSafeBack";
+import { useDeleteReel } from "@/hooks/useReel";
 import { getAnnotations, Annotation, getCaptureSession } from "@/lib/captures";
 import { ReelStatus, GameplayVideoStatus } from "@/lib/reels";
 import { supabase } from "@/integrations/supabase/client";
@@ -116,6 +135,10 @@ function ReelEditorContent() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [showCaptureTipsModal, setShowCaptureTipsModal] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Delete reel mutation
+  const deleteReelMutation = useDeleteReel();
   
   // Derive video loaded state
   const isVideoLoaded = Boolean(sessionData?.videoUrl && duration > 0 && !loading);
@@ -441,6 +464,26 @@ function ReelEditorContent() {
     });
   }, [reel?.session_id, clearEffectsMutation]);
 
+  // Delete reel handler
+  const handleDeleteReel = useCallback(async () => {
+    if (!reelId) return;
+    
+    try {
+      await deleteReelMutation.mutateAsync(reelId);
+      toast.success("Reel deleted");
+      
+      // Navigate: session detail if came from session, otherwise library
+      if (reel?.session_id) {
+        navigate(`/session/${reel.session_id}`, { replace: true });
+      } else {
+        navigate("/library", { replace: true });
+      }
+    } catch (err) {
+      console.error("[ReelEditor] Failed to delete reel:", err);
+      toast.error("Failed to delete reel");
+    }
+  }, [reelId, reel?.session_id, deleteReelMutation, navigate]);
+
   // Loading states
   if (authLoading || reelLoading || loading) {
     return (
@@ -542,6 +585,49 @@ function ReelEditorContent() {
                 });
               }}
             />
+
+            {/* Overflow menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete reel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Delete confirmation dialog */}
+            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this reel?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This can't be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteReel}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={deleteReelMutation.isPending}
+                  >
+                    {deleteReelMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </div>

@@ -409,6 +409,17 @@ export async function updateReel(
  * Delete a reel
  */
 export async function deleteReel(reelId: string): Promise<void> {
+  // Best-effort cleanup: remove associated effect events
+  const { error: fxError } = await supabase
+    .from("effect_events")
+    .delete()
+    .eq("reel_id", reelId);
+
+  if (fxError) {
+    console.warn("[deleteReel] Failed to clean up effect_events:", fxError);
+  }
+
+  // Delete the reel record (cascades will handle other FK refs)
   const { error } = await supabase
     .from("reels")
     .delete()
