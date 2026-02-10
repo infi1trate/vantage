@@ -159,8 +159,13 @@ export function MomentCollector({
 
   // ── Counter display ──
   const counterText = requiredMin === requiredMax
-    ? `${moments.length} / ${requiredMin} ${displayLabel} added`
-    : `${moments.length} / ${requiredMin}–${requiredMax} ${displayLabel} added`;
+    ? `${moments.length} / ${requiredMin} ${displayLabel} selected`
+    : `${moments.length} / ${requiredMin}–${requiredMax} ${displayLabel} selected`;
+
+  // ── Header copy ──
+  const headerText = requiredMin === requiredMax
+    ? `Add ${requiredMin} ${displayLabel} that prove this challenge`
+    : `Add ${requiredMin}–${requiredMax} ${displayLabel} that prove this challenge`;
 
   // ── Has annotations to show? ──
   const hasAnnotations = allAnnotations.length > 0;
@@ -168,7 +173,7 @@ export function MomentCollector({
   return (
     <div className="space-y-4">
       {/* Title */}
-      <h4 className="font-medium">Add moments that prove this challenge</h4>
+      <h4 className="font-medium">{headerText}</h4>
 
       {/* Counter */}
       <div className="flex items-center justify-between">
@@ -188,7 +193,7 @@ export function MomentCollector({
 
       {/* Helper text */}
       <p className="text-sm text-muted-foreground">
-        Your submission will include multiple moments. We'll stitch them as a sequence.
+        Select the moments from your recording. They'll be included as a sequence in your submission.
       </p>
 
       {/* ── Annotation checkbox list ── */}
@@ -281,7 +286,7 @@ export function MomentCollector({
                       <div>{row}</div>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      <p>This challenge allows up to {requiredMax} {displayLabel}.</p>
+                      <p>This challenge allows {requiredMax} {displayLabel}.</p>
                     </TooltipContent>
                   </Tooltip>
                 );
