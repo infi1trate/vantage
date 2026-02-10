@@ -13,6 +13,17 @@ import { ManifestClip, ReelManifest } from "@/lib/reels";
 import { Annotation } from "@/lib/captures";
 import { supabase } from "@/integrations/supabase/client";
 import { EffectEvent } from "@/lib/effectEvents";
+import { toast } from "sonner";
+
+/**
+ * Describes a single effect position update after clip trimming.
+ */
+export interface EffectRealignment {
+  effectId: string;
+  newStartTimeMs: number;
+  clamped: boolean;
+  removed: boolean;
+}
 
 /** Minimum clip length in ms */
 const MIN_CLIP_MS = 1500;
@@ -42,7 +53,7 @@ interface UseClipTrimmingOptions {
   annotations: Annotation[];
   sessionDurationSec: number;
   effects: EffectEvent[];
-  onEffectsShift?: (shiftMs: number, afterReelTimeMs: number) => void;
+  onEffectsRealign?: (realignments: EffectRealignment[]) => void;
 }
 
 /**
@@ -114,10 +125,12 @@ export function useClipTrimming({
   annotations,
   sessionDurationSec,
   effects,
-  onEffectsShift,
+  onEffectsRealign,
 }: UseClipTrimmingOptions) {
   const sessionDurationMs = sessionDurationSec * 1000;
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Snapshot of trimmedClips before the current drag, used for effect realignment */
+  const preEditClipsRef = useRef<TrimmedClip[] | null>(null);
 
   // Local trim overrides: clipIndex → { trimInMs, trimOutMs }
   const [localTrims, setLocalTrims] = useState<
@@ -169,6 +182,11 @@ export function useClipTrimming({
     (clipIndex: number, edge: "in" | "out", trimMs: number) => {
       if (!manifest || !manifest.clips[clipIndex]) return;
 
+      // Snapshot pre-edit state on first applyTrim of a drag gesture
+      if (!preEditClipsRef.current) {
+        preEditClipsRef.current = [...trimmedClips];
+      }
+
       const clip = manifest.clips[clipIndex];
       const prev = localTrims[clipIndex] || { trimInMs: 0, trimOutMs: 0 };
 
@@ -206,7 +224,7 @@ export function useClipTrimming({
         [clipIndex]: { trimInMs: newTrimIn, trimOutMs: newTrimOut },
       }));
     },
-    [manifest, localTrims, sessionDurationMs],
+    [manifest, localTrims, sessionDurationMs, trimmedClips],
   );
 
   /**
@@ -256,6 +274,81 @@ export function useClipTrimming({
   }, []);
 
   /**
+   * Compute effect realignments by comparing old vs new cumulative timelines.
+   * Effects are reel-time-based, so when a clip changes duration everything
+   * after it shifts in reel time.
+   */
+  const computeRealignments = useCallback(
+    (oldClips: TrimmedClip[], newClips: TrimmedClip[]): EffectRealignment[] => {
+      if (effects.length === 0) return [];
+
+      // Build cumulative boundaries for old timeline
+      const oldBounds: { startMs: number; endMs: number; durMs: number }[] = [];
+      let cumOld = 0;
+      for (const c of oldClips) {
+        oldBounds.push({ startMs: cumOld, endMs: cumOld + c.effectiveDurationMs, durMs: c.effectiveDurationMs });
+        cumOld += c.effectiveDurationMs;
+      }
+
+      // Build cumulative boundaries for new timeline
+      const newBounds: { startMs: number; endMs: number; durMs: number }[] = [];
+      let cumNew = 0;
+      for (const c of newClips) {
+        newBounds.push({ startMs: cumNew, endMs: cumNew + c.effectiveDurationMs, durMs: c.effectiveDurationMs });
+        cumNew += c.effectiveDurationMs;
+      }
+
+      const realignments: EffectRealignment[] = [];
+
+      for (const effect of effects) {
+        const t = effect.start_time_ms;
+
+        // Find which old clip this effect is in
+        let clipIdx = oldBounds.findIndex(b => t >= b.startMs && t < b.endMs);
+        if (clipIdx === -1) {
+          // Effect is past the last clip — clamp to end of new timeline
+          if (t >= cumOld && cumNew > 0) {
+            realignments.push({
+              effectId: effect.id,
+              newStartTimeMs: Math.max(0, cumNew - 1),
+              clamped: true,
+              removed: false,
+            });
+          }
+          continue;
+        }
+
+        // Local offset within the old clip
+        const localOffset = t - oldBounds[clipIdx].startMs;
+
+        // Map to new clip
+        if (clipIdx >= newBounds.length) {
+          // Clip no longer exists — remove
+          realignments.push({ effectId: effect.id, newStartTimeMs: 0, clamped: false, removed: true });
+          continue;
+        }
+
+        const newClipBound = newBounds[clipIdx];
+
+        if (localOffset >= newClipBound.durMs) {
+          // Effect falls in trimmed-away tail — clamp to clip end
+          const clampedTime = Math.max(newClipBound.startMs, newClipBound.endMs - 1);
+          realignments.push({ effectId: effect.id, newStartTimeMs: clampedTime, clamped: true, removed: false });
+        } else {
+          // Normal remap
+          const newTime = newClipBound.startMs + localOffset;
+          if (newTime !== t) {
+            realignments.push({ effectId: effect.id, newStartTimeMs: newTime, clamped: false, removed: false });
+          }
+        }
+      }
+
+      return realignments;
+    },
+    [effects],
+  );
+
+  /**
    * Persist current trims to the reel manifest (debounced)
    */
   const persistTrims = useCallback(async () => {
@@ -265,6 +358,23 @@ export function useClipTrimming({
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
+
+    // Compute effect realignments before persisting
+    const oldClips = preEditClipsRef.current;
+    if (oldClips && onEffectsRealign) {
+      const realignments = computeRealignments(oldClips, trimmedClips);
+      if (realignments.length > 0) {
+        const clampedCount = realignments.filter(r => r.clamped && !r.removed).length;
+        onEffectsRealign(realignments);
+        if (clampedCount > 0) {
+          toast.info(`${clampedCount} effect${clampedCount > 1 ? "s" : ""} clamped to clip boundary`, {
+            duration: 3000,
+          });
+        }
+      }
+    }
+    // Clear pre-edit snapshot
+    preEditClipsRef.current = null;
 
     const newManifest = recomputeManifest(manifest, trimmedClips);
 
@@ -282,7 +392,7 @@ export function useClipTrimming({
     } else {
       console.log("[ClipTrimming] Trims persisted to manifest");
     }
-  }, [reelId, manifest, trimmedClips]);
+  }, [reelId, manifest, trimmedClips, effects, onEffectsRealign, computeRealignments]);
 
   /**
    * Debounced persist — call after drag ends

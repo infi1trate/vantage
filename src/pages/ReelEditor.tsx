@@ -20,7 +20,7 @@ import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { useEditorState } from "@/hooks/useEditorState";
 import { EffectsLane } from "@/components/player/effects/EffectsLane";
 import { ReelClipTimeline } from "@/components/reel/ReelClipTimeline";
-import { useClipTrimming } from "@/hooks/useClipTrimming";
+import { useClipTrimming, EffectRealignment } from "@/hooks/useClipTrimming";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
@@ -167,6 +167,17 @@ function ReelEditorContent() {
     duration: baseReelDurationMs,
   });
 
+  // Handle effect realignment after clip trims
+  const handleEffectsRealign = useCallback((realignments: EffectRealignment[]) => {
+    for (const r of realignments) {
+      if (r.removed) {
+        handleEffectDelete(r.effectId);
+      } else if (r.newStartTimeMs !== undefined) {
+        handleEffectUpdate(r.effectId, { start_time_ms: r.newStartTimeMs });
+      }
+    }
+  }, [handleEffectUpdate, handleEffectDelete]);
+
   // Clip trimming state (after effects so we can reference them)
   const {
     trimmedClips,
@@ -183,6 +194,7 @@ function ReelEditorContent() {
     annotations: reelMoments,
     sessionDurationSec: duration,
     effects,
+    onEffectsRealign: handleEffectsRealign,
   });
 
   // Reel duration from trimmed manifest (for effects lane + display)
