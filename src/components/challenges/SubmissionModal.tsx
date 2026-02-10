@@ -35,6 +35,7 @@ import {
   InlineAnnotationCreator,
   MomentCollector,
   type MomentData,
+  MomentPlaylist,
   SubmissionLimitsBar,
   SubmissionSuccess,
 } from "./submission";
@@ -198,17 +199,17 @@ export function SubmissionModal({
     return annotationMs >= clipStartMs && annotationMs <= clipEndMs;
   }, [selectedAnnotation, clipStartMs, clipEndMs]);
 
+  // ── Per-moment clip validation (multi-moment) ──
+  const allMomentClipsValid = useMemo(() => {
+    if (!isMultiMoment) return true;
+    return collectedMoments.every((m) => {
+      const dur = (m.clipEndMs - m.clipStartMs) / 1000;
+      return dur >= minClipDuration && dur <= maxClipDuration;
+    });
+  }, [collectedMoments, isMultiMoment, minClipDuration, maxClipDuration]);
+
   // ── Progress ──
   const getProgress = () => {
-    if (isMultiMoment) {
-      // moment → metadata (no separate clip step for multi-moment)
-      switch (step) {
-        case "moment": return 50;
-        case "metadata": return 100;
-        case "success": return 100;
-        default: return 0;
-      }
-    }
     switch (step) {
       case "moment": return 33;
       case "clip": return 66;
@@ -227,27 +228,25 @@ export function SubmissionModal({
         }
         return true;
       case "clip":
+        if (isMultiMoment) {
+          return allMomentClipsValid && collectedMoments.length >= requiredMin;
+        }
         return isClipValid;
       case "metadata":
         if (isMultiMoment) {
-          return form.formState.isValid && collectedMoments.length >= requiredMin;
+          return form.formState.isValid && collectedMoments.length >= requiredMin && allMomentClipsValid;
         }
         return form.formState.isValid && selectedAnnotation !== null;
       default:
         return false;
     }
-  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMin]);
+  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMin, allMomentClipsValid]);
 
   // ── Navigation ──
   const goToNextStep = () => {
     switch (step) {
       case "moment":
-        if (isMultiMoment) {
-          // Skip clip step — clips are trimmed per-moment in the collector
-          setStep("metadata");
-        } else {
-          setStep("clip");
-        }
+        setStep("clip");
         break;
       case "clip":
         setStep("metadata");
@@ -264,11 +263,7 @@ export function SubmissionModal({
         setStep("moment");
         break;
       case "metadata":
-        if (isMultiMoment) {
-          setStep("moment");
-        } else {
-          setStep("clip");
-        }
+        setStep("clip");
         break;
     }
   };
@@ -459,7 +454,7 @@ export function SubmissionModal({
 
   // ── Step labels ──
   const stepLabels = isMultiMoment
-    ? ["Moments", "Details"]
+    ? ["Moments", "Clips", "Details"]
     : ["Moment", "Clip", "Details"];
 
   return (
@@ -491,7 +486,7 @@ export function SubmissionModal({
                     key={label}
                     className={cn(
                       (label === "Moments" || label === "Moment") && step === "moment" && "text-primary font-medium",
-                      label === "Clip" && step === "clip" && "text-primary font-medium",
+                      (label === "Clip" || label === "Clips") && step === "clip" && "text-primary font-medium",
                       label === "Details" && step === "metadata" && "text-primary font-medium"
                     )}
                   >
@@ -635,8 +630,20 @@ export function SubmissionModal({
             )}
 
             {/* ══════════════════════════════════════════════════════════
-                 STEP: CLIP (single-moment only)
+                 STEP: CLIP
                  ══════════════════════════════════════════════════════════ */}
+            {step === "clip" && isMultiMoment && (
+              <MomentPlaylist
+                moments={collectedMoments}
+                onMomentsChange={setCollectedMoments}
+                videoUrl={selectedSession.video_url}
+                thumbnailUrl={selectedSession.thumbnail_url}
+                totalDuration={totalDuration}
+                minClipDuration={minClipDuration}
+                maxClipDuration={maxClipDuration}
+              />
+            )}
+
             {step === "clip" && !isMultiMoment && (
               <div className="space-y-4">
                 <h4 className="font-medium">
