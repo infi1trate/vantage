@@ -293,43 +293,46 @@ export function MomentCollector({
         </TooltipProvider>
       )}
 
-      {/* ── No annotations / add more ── */}
+      {/* ── Inline creator ── */}
       {showInlineCreator && onCreateInlineAnnotation ? (
         <InlineAnnotationCreator
+          key={`inline-${moments.length}`}
           currentTimeMs={0}
           clipStartMs={0}
           clipEndMs={totalDurationMs}
           onCancel={() => setShowInlineCreator(false)}
           onSubmit={handleInlineCreated}
         />
-      ) : (
-        <div className="flex flex-col sm:flex-row gap-2">
-          {!isMaxReached && onCreateInlineAnnotation && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowInlineCreator(true)}
-              className="gap-2"
-            >
-              <Zap className="h-4 w-4" />
-              {hasAnnotations ? "Add another moment" : "Quick Annotation"}
-            </Button>
-          )}
-          {!hasAnnotations && onOpenFullEditor && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onOpenFullEditor}
-              className="gap-2"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Open Full Editor
-            </Button>
-          )}
-        </div>
+      ) : !isMaxReached && onCreateInlineAnnotation ? (
+        <Button
+          variant={!isMinMet && !hasAnnotations ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowInlineCreator(true)}
+          className="w-full gap-2"
+        >
+          <Zap className="h-4 w-4" />
+          {moments.length === 0
+            ? "Tag your first moment"
+            : !isMinMet
+              ? `Add another moment (${requiredMin - moments.length} more needed)`
+              : "Add another moment"}
+        </Button>
+      ) : null}
+
+      {/* Full editor fallback — only when no annotations exist */}
+      {!hasAnnotations && moments.length === 0 && !showInlineCreator && onOpenFullEditor && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenFullEditor}
+          className="w-full gap-2"
+        >
+          <ExternalLink className="h-4 w-4" />
+          Open Full Editor
+        </Button>
       )}
 
-      {/* Empty state when no annotations and no moments */}
+      {/* Empty state guidance */}
       {!hasAnnotations && moments.length === 0 && !showInlineCreator && (
         <p className="text-sm text-muted-foreground text-center py-2">
           No moments tagged yet. Use Quick Annotation to mark each {displayLabel.replace(/s$/, "")} in your recording.
