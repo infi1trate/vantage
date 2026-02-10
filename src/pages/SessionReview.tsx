@@ -1164,7 +1164,7 @@ export default function SessionReview() {
 
         {/* Right: Annotations / Drawer (~30%) */}
         <div className={cn(
-          "shrink-0 border-l border-border/30 bg-card/50 overflow-hidden flex flex-col",
+          "shrink-0 border-l border-border/30 bg-card/50 overflow-hidden flex flex-col min-h-0",
           focusMode ? "w-80" : "w-[340px]"
         )}>
           {panelMode === "drawer" && drawerAnnotation ? (
