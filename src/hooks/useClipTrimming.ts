@@ -54,6 +54,8 @@ interface UseClipTrimmingOptions {
   sessionDurationSec: number;
   effects: EffectEvent[];
   onEffectsRealign?: (realignments: EffectRealignment[]) => void;
+  /** Push to unified editor history on trim commit */
+  onHistoryPush?: (command: import("@/hooks/useReelEditorHistory").EditCommand) => void;
 }
 
 /**
@@ -124,11 +126,14 @@ export function useClipTrimming({
   sessionDurationSec,
   effects,
   onEffectsRealign,
+  onHistoryPush,
 }: UseClipTrimmingOptions) {
   const sessionDurationMs = sessionDurationSec * 1000;
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Snapshot of trimmedClips before the current drag, used for effect realignment */
   const preEditClipsRef = useRef<TrimmedClip[] | null>(null);
+  /** Snapshot of localTrims before the current drag, used for undo */
+  const preEditTrimsRef = useRef<Record<number, { trimInMs: number; trimOutMs: number }> | null>(null);
 
   // Local trim overrides: clipIndex → { trimInMs, trimOutMs }
   const [localTrims, setLocalTrims] = useState<
@@ -183,6 +188,7 @@ export function useClipTrimming({
       // Snapshot pre-edit state on first applyTrim of a drag gesture
       if (!preEditClipsRef.current) {
         preEditClipsRef.current = [...trimmedClips];
+        preEditTrimsRef.current = { ...localTrims };
       }
 
       const clip = manifest.clips[clipIndex];
@@ -304,8 +310,22 @@ export function useClipTrimming({
         }
       }
     }
-    // Clear pre-edit snapshot
+
+    // Push to unified history (one entry per completed drag)
+    const prevTrims = preEditTrimsRef.current;
+    const afterTrims = { ...localTrims };
+    if (onHistoryPush && prevTrims) {
+      onHistoryPush({
+        type: "trim_change",
+        label: "Trim clip",
+        undo: () => setLocalTrims(prevTrims),
+        redo: () => setLocalTrims(afterTrims),
+      });
+    }
+
+    // Clear pre-edit snapshots
     preEditClipsRef.current = null;
+    preEditTrimsRef.current = null;
 
     const newManifest = recomputeManifestFromTrimmed(manifest, trimmedClips);
 

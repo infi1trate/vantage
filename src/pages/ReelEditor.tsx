@@ -18,6 +18,7 @@ import { useReelPackage } from "@/hooks/useReelPackageConfig";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { useEditorState } from "@/hooks/useEditorState";
+import { useReelEditorHistory } from "@/hooks/useReelEditorHistory";
 import { EffectsLane } from "@/components/player/effects/EffectsLane";
 import { ReelClipTimeline } from "@/components/reel/ReelClipTimeline";
 import { useClipTrimming, EffectRealignment } from "@/hooks/useClipTrimming";
@@ -32,6 +33,7 @@ import { ReelErrorBoundary } from "@/components/reel/ReelErrorBoundary";
 import { ExportButton } from "@/components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,8 +55,10 @@ import {
   Film, 
   Loader2,
   MoreHorizontal,
+  Redo2,
   Save,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSafeBack } from "@/hooks/useSafeBack";
@@ -163,7 +167,10 @@ function ReelEditorContent() {
   // Reel base duration from manifest (before trims)
   const baseReelDurationMs = reel?.manifest?.totalDurationMs || duration * 1000;
 
-  // Effects timeline state - uses base reel duration
+  // Unified editor history stack
+  const editorHistory = useReelEditorHistory();
+
+  // Effects timeline state - uses base reel duration, connected to unified history
   const {
     effects,
     isDragging,
@@ -175,10 +182,6 @@ function ReelEditorContent() {
     handleEffectUpdate,
     handleEffectDelete,
     handleEffectDuplicate,
-    canUndo,
-    canRedo,
-    undo,
-    redo,
     proposedEffects,
     isAutoEnhancing,
     generateSuggestions,
@@ -188,6 +191,7 @@ function ReelEditorContent() {
     sessionId: reel?.session_id,
     annotations: reelMoments,
     duration: baseReelDurationMs,
+    onHistoryPush: editorHistory.pushCommand,
   });
 
   // Handle effect realignment after clip trims
@@ -218,6 +222,7 @@ function ReelEditorContent() {
     sessionDurationSec: duration,
     effects,
     onEffectsRealign: handleEffectsRealign,
+    onHistoryPush: editorHistory.pushCommand,
   });
 
   // Reel duration from trimmed manifest (for effects lane + display)
@@ -286,24 +291,31 @@ function ReelEditorContent() {
     return () => window.removeEventListener("dragend", handleGlobalDragEnd);
   }, [isDragging, handleDragEnd]);
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo (unified)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
-        if (e.shiftKey && canRedo) {
-          redo();
-        } else if (canUndo) {
-          undo();
+        if (e.shiftKey && editorHistory.canRedo) {
+          editorHistory.redo();
+        } else if (editorHistory.canUndo) {
+          editorHistory.undo();
+        }
+      }
+      // Ctrl+Y as alternative redo
+      if ((e.metaKey || e.ctrlKey) && e.key === "y") {
+        e.preventDefault();
+        if (editorHistory.canRedo) {
+          editorHistory.redo();
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canUndo, canRedo, undo, redo]);
+  }, [editorHistory.canUndo, editorHistory.canRedo, editorHistory.undo, editorHistory.redo]);
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
@@ -563,6 +575,38 @@ function ReelEditorContent() {
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
+            {/* Undo / Redo */}
+            <div className="flex items-center gap-0.5 mr-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={!editorHistory.canUndo}
+                    onClick={editorHistory.undo}
+                  >
+                    <Undo2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">Undo (Ctrl+Z)</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={!editorHistory.canRedo}
+                    onClick={editorHistory.redo}
+                  >
+                    <Redo2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">Redo (Ctrl+Shift+Z)</TooltipContent>
+              </Tooltip>
+            </div>
+
             {hasUnsavedChanges && (
               <Button
                 variant="outline"
