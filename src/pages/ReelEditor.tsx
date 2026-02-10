@@ -542,8 +542,8 @@ function ReelEditorContent() {
           {/* Player Area - Show placeholder when not ready */}
           <div className="flex-1 min-h-0 p-4">
             <div className="h-full bg-black/20 rounded-lg overflow-hidden">
-              {!editorState.previewAvailable ? (
-                // Compiling/failed/needs_attention/waiting_for_source/exporting state - show friendly placeholder
+              {editorState.state !== "ready" && editorState.state !== "exporting" ? (
+                // Compiling/failed/needs_attention/waiting_for_source state - show friendly placeholder
                 <ReelCompilingPlaceholder
                   clipCount={reel.source_moment_ids?.length || 0}
                   aspectRatio={reel.aspect_ratio as "16:9" | "9:16" | "1:1"}
@@ -602,6 +602,26 @@ function ReelEditorContent() {
                 <div className="h-full flex flex-col">
                   <div className="flex-1 min-h-0 relative">
                     
+                    {/* Preview fallback banner — shown when manifest exists but video isn't available */}
+                    {reel.manifest && !sessionData?.videoUrl && (
+                      <div className="absolute top-0 left-0 right-0 z-10 px-4 py-2 bg-muted/80 border-b border-border/30 flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">
+                          Preview unavailable — export will still work. Showing source video instead.
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => {
+                            queryClient.invalidateQueries({ queryKey: ["reel", reelId] });
+                            toast.info("Reloading preview...");
+                          }}
+                        >
+                          Reload preview
+                        </Button>
+                      </div>
+                    )}
+                    
                     {/* Manifest-only playback: ManifestPlayer sequences clips from the reel manifest */}
                     {reel.manifest && sessionData?.videoUrl ? (
                       <ManifestPlayer
@@ -616,15 +636,17 @@ function ReelEditorContent() {
                         className="h-full"
                       />
                     ) : (
-                      // No playback available - show placeholder
+                      // No playback available - show placeholder but editing is still enabled
                       <div className="flex-1 flex items-center justify-center bg-muted/20 rounded-lg">
                         <div className="text-center p-8">
                           <Film className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
                           <p className="text-muted-foreground">
-                            Waiting for video...
+                            {reel.manifest ? "Preview loading..." : "Waiting for video..."}
                           </p>
                           <p className="text-xs text-muted-foreground/70 mt-1">
-                            Preview will appear when ready
+                            {reel.manifest 
+                              ? "You can still edit effects and trim clips while the preview loads."
+                              : "Preview will appear when ready"}
                           </p>
                         </div>
                       </div>
