@@ -388,11 +388,14 @@ export type Database = {
           id: string
           is_sponsored: boolean | null
           max_submissions_per_user: number | null
+          moment_label: string | null
           preview_video_url: string | null
           prize_crypto: string | null
           prize_crypto_amount: number | null
           prize_description: string | null
           required_moments_count: number
+          required_moments_max: number
+          required_moments_min: number
           rules: string | null
           sponsor_name: string | null
           starts_at: string | null
@@ -414,11 +417,14 @@ export type Database = {
           id?: string
           is_sponsored?: boolean | null
           max_submissions_per_user?: number | null
+          moment_label?: string | null
           preview_video_url?: string | null
           prize_crypto?: string | null
           prize_crypto_amount?: number | null
           prize_description?: string | null
           required_moments_count?: number
+          required_moments_max?: number
+          required_moments_min?: number
           rules?: string | null
           sponsor_name?: string | null
           starts_at?: string | null
@@ -440,11 +446,14 @@ export type Database = {
           id?: string
           is_sponsored?: boolean | null
           max_submissions_per_user?: number | null
+          moment_label?: string | null
           preview_video_url?: string | null
           prize_crypto?: string | null
           prize_crypto_amount?: number | null
           prize_description?: string | null
           required_moments_count?: number
+          required_moments_max?: number
+          required_moments_min?: number
           rules?: string | null
           sponsor_name?: string | null
           starts_at?: string | null

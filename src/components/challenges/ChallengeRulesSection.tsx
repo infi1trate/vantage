@@ -2,19 +2,25 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ScrollText, ChevronDown, Clock } from "lucide-react";
+import { ScrollText, ChevronDown, Clock, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChallengeRulesSectionProps {
   rules: string | null;
   clipDurationMin?: number | null;
   clipDurationMax?: number | null;
+  requiredMomentsMin?: number;
+  requiredMomentsMax?: number;
+  momentLabel?: string | null;
 }
 
 export function ChallengeRulesSection({ 
   rules, 
   clipDurationMin = 5,
   clipDurationMax = 60,
+  requiredMomentsMin = 1,
+  requiredMomentsMax = 1,
+  momentLabel,
 }: ChallengeRulesSectionProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -41,6 +47,19 @@ export function ChallengeRulesSection({
             {clipDurationMin}s – {clipDurationMax}s
           </span>
         </div>
+
+        {/* Required Moments */}
+        {(requiredMomentsMin > 1 || requiredMomentsMax > 1) && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border/50 text-sm">
+            <Target className="h-4 w-4 text-primary" />
+            <span className="text-muted-foreground">Required Moments:</span>
+            <span className="font-medium">
+              {requiredMomentsMin === requiredMomentsMax
+                ? `${requiredMomentsMin} ${momentLabel || "moments"}`
+                : `${requiredMomentsMin}–${requiredMomentsMax} ${momentLabel || "moments"}`}
+            </span>
+          </div>
+        )}
 
         {/* Rules Content */}
         <Collapsible open={isOpen} onOpenChange={setIsOpen}>
