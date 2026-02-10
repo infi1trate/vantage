@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Trophy, Send, CheckCircle2, Tag, Zap, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { type Challenge } from "@/lib/challenges";
+import type { Challenge } from "@/lib/challenges.ts";
 import { useCreateSubmission, useUserSubmissions } from "@/hooks/useChallenges";
 import {
   AnnotationSelector,
