@@ -665,7 +665,7 @@ Remember: You are an ANALYST. Report facts and interpretations with evidence. Do
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -844,7 +844,7 @@ For each event_analysis:
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
+            model: "google/gemini-2.5-flash",
             messages: [
               { role: "system", content: coachSystemPrompt },
               { role: "user", content: coachUserPrompt }
