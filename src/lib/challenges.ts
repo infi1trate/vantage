@@ -14,6 +14,7 @@ export interface Challenge {
   ends_at: string | null;
   winner_announced_at: string | null;
   max_submissions_per_user: number;
+  required_moments_count: number;
   tags: string[];
   prize_description: string | null;
   prize_crypto: string | null;

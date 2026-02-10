@@ -33,7 +33,8 @@ import {
   ChallengeContextBar,
   ClipTrimmer,
   InlineAnnotationCreator,
-  ProofConfirmation,
+  MomentCollector,
+  type MomentData,
   SubmissionLimitsBar,
   SubmissionSuccess,
 } from "./submission";
@@ -41,7 +42,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
-// Submission steps
+// ── Steps ─────────────────────────────────────────────────────────
+
 type SubmissionStep = "moment" | "clip" | "metadata" | "success";
 
 const submissionSchema = z.object({
@@ -50,6 +52,8 @@ const submissionSchema = z.object({
 });
 
 type SubmissionFormData = z.infer<typeof submissionSchema>;
+
+// ── Local types ───────────────────────────────────────────────────
 
 interface Annotation {
   id: string;
@@ -82,6 +86,8 @@ interface SubmissionModalProps {
   onChangeSession?: () => void;
 }
 
+// ── Component ─────────────────────────────────────────────────────
+
 export function SubmissionModal({
   open,
   onOpenChange,
@@ -97,18 +103,19 @@ export function SubmissionModal({
   const createSubmission = useCreateSubmission();
   const { data: userSubmissions = [] } = useUserSubmissions(challenge.id);
 
-  // Step management — always: moment → clip → metadata → success
+  // Multi-moment detection
+  const requiredMoments = challenge.required_moments_count ?? 1;
+  const isMultiMoment = requiredMoments > 1;
+
+  // Step management
   const [step, setStep] = useState<SubmissionStep>("moment");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Clip trim state
+  // ── Single-moment state (used when requiredMoments === 1) ──
   const [clipStartMs, setClipStartMs] = useState(initialClipRange?.start_ms ?? 0);
   const [clipEndMs, setClipEndMs] = useState(
     initialClipRange?.end_ms ?? (selectedSession?.duration_seconds ?? 60) * 1000
   );
-  const [currentPlaybackMs, setCurrentPlaybackMs] = useState(0);
-
-  // Annotation state
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(
     initialAnnotation ?? selectedSession?.annotations?.[0] ?? null
   );
@@ -116,12 +123,15 @@ export function SubmissionModal({
   const [isAnnotationPreExisting, setIsAnnotationPreExisting] = useState(false);
   const [showInlineCreator, setShowInlineCreator] = useState(false);
 
-  // Derived: does session have annotations?
+  // ── Multi-moment state ──
+  const [collectedMoments, setCollectedMoments] = useState<MomentData[]>([]);
+
+  // Session annotations
   const sessionAnnotations = selectedSession?.annotations ?? [];
   const sessionHasAnnotations = sessionAnnotations.length > 0;
   const sessionHasMultipleAnnotations = sessionAnnotations.length > 1;
 
-  // Form state
+  // Form
   const form = useForm<SubmissionFormData>({
     resolver: zodResolver(submissionSchema),
     defaultValues: {
@@ -130,21 +140,20 @@ export function SubmissionModal({
     },
   });
 
-  // Reset state when modal opens with new session
+  // ── Reset on open ──
   useEffect(() => {
     if (open && selectedSession) {
       setIsSubmitting(false);
       setShowInlineCreator(false);
+      setCollectedMoments([]);
 
       const annotations = selectedSession.annotations ?? [];
       const annotation = initialAnnotation ?? annotations[0] ?? null;
       setSelectedAnnotation(annotation);
 
-      // Always start at moment step
       setStep("moment");
 
-      // Pre-compute clip range if we have an annotation
-      if (annotation) {
+      if (!isMultiMoment && annotation) {
         const annotationMs = annotation.timestamp_seconds * 1000;
         const totalMs = (selectedSession.duration_seconds ?? 60) * 1000;
         setClipStartMs(Math.max(0, annotationMs - 2000));
@@ -168,32 +177,37 @@ export function SubmissionModal({
         description: "",
       });
     }
-  }, [open, selectedSession, initialAnnotation, initialClipRange, form]);
+  }, [open, selectedSession, initialAnnotation, initialClipRange, form, isMultiMoment]);
 
-  // Derived values
+  // ── Derived ──
   const totalDuration = selectedSession?.duration_seconds ?? 60;
   const minClipDuration = 5;
   const maxClipDuration = 60;
   const clipDuration = (clipEndMs - clipStartMs) / 1000;
   const isClipValid = clipDuration >= minClipDuration && clipDuration <= maxClipDuration;
 
-  // Submission limits
   const currentSubmissions = userSubmissions.length;
   const maxSubmissions = challenge.max_submissions_per_user ?? 1;
   const remainingSubmissions = maxSubmissions - currentSubmissions;
   const hasReachedLimit = remainingSubmissions <= 0;
 
-  // Check if annotation is within clip
   const annotationWithinClip = useMemo(() => {
     if (!selectedAnnotation) return false;
     const annotationMs = selectedAnnotation.timestamp_seconds * 1000;
     return annotationMs >= clipStartMs && annotationMs <= clipEndMs;
   }, [selectedAnnotation, clipStartMs, clipEndMs]);
 
-  const skipProofStep = isAnnotationPreExisting && annotationWithinClip;
-
-  // Progress: moment → clip → metadata (always 3 steps)
+  // ── Progress ──
   const getProgress = () => {
+    if (isMultiMoment) {
+      // moment → metadata (no separate clip step for multi-moment)
+      switch (step) {
+        case "moment": return 50;
+        case "metadata": return 100;
+        case "success": return 100;
+        default: return 0;
+      }
+    }
     switch (step) {
       case "moment": return 33;
       case "clip": return 66;
@@ -203,45 +217,36 @@ export function SubmissionModal({
     }
   };
 
-  // Can advance to next step
+  // ── Can advance ──
   const canAdvance = useMemo(() => {
     switch (step) {
       case "moment":
-        // If annotations exist, one must be selected. If none, user can still proceed
-        // (they'll need to create one inline or via full editor, but we don't block moment step)
+        if (isMultiMoment) {
+          return collectedMoments.length >= requiredMoments;
+        }
         return true;
       case "clip":
         return isClipValid;
       case "metadata":
-        // Only block at final step if no annotation at all
-        return form.formState.isValid && (selectedAnnotation !== null);
+        if (isMultiMoment) {
+          return form.formState.isValid && collectedMoments.length >= requiredMoments;
+        }
+        return form.formState.isValid && selectedAnnotation !== null;
       default:
         return false;
     }
-  }, [step, isClipValid, selectedAnnotation, form.formState.isValid]);
+  }, [step, isClipValid, selectedAnnotation, form.formState.isValid, isMultiMoment, collectedMoments, requiredMoments]);
 
-  // Handle annotation selection from the selector
-  const handleAnnotationSelect = (annotation: Annotation) => {
-    setSelectedAnnotation(annotation);
-    const annotationMs = annotation.timestamp_seconds * 1000;
-    const totalMs = (selectedSession?.duration_seconds ?? 60) * 1000;
-    setClipStartMs(Math.max(0, annotationMs - 2000));
-    setClipEndMs(Math.min(totalMs, annotationMs + 2000));
-    setIsProofConfirmed(true);
-    setIsAnnotationPreExisting(true);
-  };
-
-  // Handle clip range change
-  const handleRangeChange = (startMs: number, endMs: number) => {
-    setClipStartMs(startMs);
-    setClipEndMs(endMs);
-  };
-
-  // Navigate between steps
+  // ── Navigation ──
   const goToNextStep = () => {
     switch (step) {
       case "moment":
-        setStep("clip");
+        if (isMultiMoment) {
+          // Skip clip step — clips are trimmed per-moment in the collector
+          setStep("metadata");
+        } else {
+          setStep("clip");
+        }
         break;
       case "clip":
         setStep("metadata");
@@ -258,76 +263,32 @@ export function SubmissionModal({
         setStep("moment");
         break;
       case "metadata":
-        setStep("clip");
+        if (isMultiMoment) {
+          setStep("moment");
+        } else {
+          setStep("clip");
+        }
         break;
     }
   };
 
-  // Handle submission
-  const handleSubmit = async () => {
-    if (!selectedSession || hasReachedLimit) return;
-
-    const data = form.getValues();
-    setIsSubmitting(true);
-
-    try {
-      await createSubmission.mutateAsync({
-        challenge_id: challenge.id,
-        session_id: selectedSession.id,
-        clip_start_ms: clipStartMs,
-        clip_end_ms: clipEndMs,
-        title: data.title,
-        description: data.description,
-        proof_notes: selectedAnnotation
-          ? `Annotation: ${selectedAnnotation.title || selectedAnnotation.annotation_type} at ${selectedAnnotation.timestamp_seconds}s`
-          : undefined,
-      });
-
-      setStep("success");
-    } catch (error) {
-      console.error("Failed to create submission:", error);
-      toast.error("Failed to submit", {
-        description: "Please try again later.",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+  // ── Annotation handlers (single-moment) ──
+  const handleAnnotationSelect = (annotation: Annotation) => {
+    setSelectedAnnotation(annotation);
+    const annotationMs = annotation.timestamp_seconds * 1000;
+    const totalMs = (selectedSession?.duration_seconds ?? 60) * 1000;
+    setClipStartMs(Math.max(0, annotationMs - 2000));
+    setClipEndMs(Math.min(totalMs, annotationMs + 2000));
+    setIsProofConfirmed(true);
+    setIsAnnotationPreExisting(true);
   };
 
-  // Success state actions
-  const handleViewChallenge = () => {
-    onOpenChange(false);
-    navigate(`/challenges/${challenge.id}`);
+  const handleRangeChange = (startMs: number, endMs: number) => {
+    setClipStartMs(startMs);
+    setClipEndMs(endMs);
   };
 
-  const handleShare = () => {
-    // TODO: Implement share functionality
-    toast.info("Share functionality coming soon!");
-  };
-
-  const handleSubmitAnother = () => {
-    setStep("moment");
-    setIsProofConfirmed(false);
-    form.reset({ title: "", description: "" });
-    onChangeSession?.();
-  };
-
-  const handleClose = () => {
-    onOpenChange(false);
-    if (step === "success") {
-      onSuccess?.();
-    }
-  };
-
-  // Handle add annotation action (full editor)
-  const handleAddAnnotation = () => {
-    if (selectedSession) {
-      onOpenChange(false);
-      navigate(`/session/${selectedSession.id}?action=annotate`);
-    }
-  };
-
-  // Handle inline annotation creation
+  // ── Inline annotation creation ──
   const handleCreateInlineAnnotation = async (data: {
     type: string;
     label: string;
@@ -359,12 +320,124 @@ export function SubmissionModal({
       timestamp_seconds: annotation.timestamp_seconds,
     };
 
-    setSelectedAnnotation(newAnnotation);
+    // For single-moment flow, also set as selected
+    if (!isMultiMoment) {
+      setSelectedAnnotation(newAnnotation);
+    }
+
     toast.success("Annotation created!", {
       description: `"${data.label}" at ${formatTimestamp(data.timestamp_seconds)}`,
     });
 
     return newAnnotation;
+  };
+
+  // ── Submit ──
+  const handleSubmit = async () => {
+    if (!selectedSession || hasReachedLimit) return;
+
+    const data = form.getValues();
+    setIsSubmitting(true);
+
+    try {
+      if (isMultiMoment) {
+        // Multi-moment: use first moment's clip range as primary, store all in moments JSONB
+        const firstMoment = collectedMoments[0];
+        await createSubmission.mutateAsync({
+          challenge_id: challenge.id,
+          session_id: selectedSession.id,
+          clip_start_ms: firstMoment?.clipStartMs ?? 0,
+          clip_end_ms: firstMoment?.clipEndMs ?? 0,
+          title: data.title,
+          description: data.description,
+          proof_notes: collectedMoments
+            .map((m, i) => `Moment ${i + 1}: ${m.label} at ${m.timestampSeconds}s`)
+            .join(" | "),
+        });
+
+        // Update the submission with moments JSONB via direct supabase call
+        // (the createSubmission hook doesn't know about `moments` column yet)
+        // We'll patch it after creation — find the latest submission
+        const { data: latestSub } = await supabase
+          .from("challenge_submissions")
+          .select("id")
+          .eq("challenge_id", challenge.id)
+          .eq("user_id", user!.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (latestSub) {
+          await supabase
+            .from("challenge_submissions")
+            .update({
+              moments: collectedMoments.map((m) => ({
+                annotation_id: m.annotationId,
+                annotation_type: m.annotationType,
+                label: m.label,
+                timestamp_seconds: m.timestampSeconds,
+                clip_start_ms: m.clipStartMs,
+                clip_end_ms: m.clipEndMs,
+              })),
+            } as any)
+            .eq("id", latestSub.id);
+        }
+      } else {
+        // Single-moment: original flow
+        await createSubmission.mutateAsync({
+          challenge_id: challenge.id,
+          session_id: selectedSession.id,
+          clip_start_ms: clipStartMs,
+          clip_end_ms: clipEndMs,
+          title: data.title,
+          description: data.description,
+          proof_notes: selectedAnnotation
+            ? `Annotation: ${selectedAnnotation.title || selectedAnnotation.annotation_type} at ${selectedAnnotation.timestamp_seconds}s`
+            : undefined,
+        });
+      }
+
+      setStep("success");
+    } catch (error) {
+      console.error("Failed to create submission:", error);
+      toast.error("Failed to submit", {
+        description: "Please try again later.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Success actions ──
+  const handleViewChallenge = () => {
+    onOpenChange(false);
+    navigate(`/challenges/${challenge.id}`);
+  };
+
+  const handleShare = () => {
+    toast.info("Share functionality coming soon!");
+  };
+
+  const handleSubmitAnother = () => {
+    setStep("moment");
+    setIsProofConfirmed(false);
+    setCollectedMoments([]);
+    form.reset({ title: "", description: "" });
+    onChangeSession?.();
+  };
+
+  const handleClose = () => {
+    onOpenChange(false);
+    if (step === "success") {
+      onSuccess?.();
+    }
+  };
+
+  const handleAddAnnotation = () => {
+    if (selectedSession) {
+      onOpenChange(false);
+      navigate(`/session/${selectedSession.id}?action=annotate`);
+    }
   };
 
   const formatTimestamp = (seconds: number) => {
@@ -373,7 +446,6 @@ export function SubmissionModal({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Get rule summary (first line of rules or description)
   const ruleSummary = useMemo(() => {
     const source = challenge.rules || challenge.description || "";
     const firstLine = source.split("\n")[0];
@@ -383,6 +455,11 @@ export function SubmissionModal({
   if (!selectedSession) {
     return null;
   }
+
+  // ── Step labels ──
+  const stepLabels = isMultiMoment
+    ? ["Moments", "Details"]
+    : ["Moment", "Clip", "Details"];
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -408,15 +485,18 @@ export function SubmissionModal({
             <div className="mt-4">
               <Progress value={getProgress()} className="h-1" />
               <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                <span className={cn(step === "moment" && "text-primary font-medium")}>
-                  Moment
-                </span>
-                <span className={cn(step === "clip" && "text-primary font-medium")}>
-                  Clip
-                </span>
-                <span className={cn(step === "metadata" && "text-primary font-medium")}>
-                  Details
-                </span>
+                {stepLabels.map((label) => (
+                  <span
+                    key={label}
+                    className={cn(
+                      (label === "Moments" || label === "Moment") && step === "moment" && "text-primary font-medium",
+                      label === "Clip" && step === "clip" && "text-primary font-medium",
+                      label === "Details" && step === "metadata" && "text-primary font-medium"
+                    )}
+                  >
+                    {label}
+                  </span>
+                ))}
               </div>
             </div>
           )}
@@ -425,18 +505,37 @@ export function SubmissionModal({
         {/* Content */}
         <ScrollArea className="flex-1 max-h-[calc(90vh-180px)]">
           <div className="p-6 space-y-6">
-            {/* Challenge context bar - always visible except success */}
+            {/* Challenge context bar */}
             {step !== "success" && (
               <ChallengeContextBar
                 ruleSummary={ruleSummary}
                 minClipDuration={minClipDuration}
                 maxClipDuration={maxClipDuration}
                 endsAt={challenge.ends_at}
+                requiredMoments={requiredMoments}
               />
             )}
 
-            {/* Step 1: Moment */}
-            {step === "moment" && (
+            {/* ══════════════════════════════════════════════════════════
+                 STEP: MOMENT
+                 ══════════════════════════════════════════════════════════ */}
+            {step === "moment" && isMultiMoment && (
+              <MomentCollector
+                requiredCount={requiredMoments}
+                moments={collectedMoments}
+                onMomentsChange={setCollectedMoments}
+                annotations={sessionAnnotations}
+                thumbnailUrl={selectedSession.thumbnail_url}
+                videoUrl={selectedSession.video_url}
+                totalDuration={totalDuration}
+                minClipDuration={minClipDuration}
+                maxClipDuration={maxClipDuration}
+                onCreateInlineAnnotation={handleCreateInlineAnnotation}
+                onOpenFullEditor={handleAddAnnotation}
+              />
+            )}
+
+            {step === "moment" && !isMultiMoment && (
               <div className="space-y-4">
                 {sessionHasAnnotations ? (
                   sessionHasMultipleAnnotations ? (
@@ -454,7 +553,6 @@ export function SubmissionModal({
                       />
                     </>
                   ) : (
-                    /* Single annotation — show confirmation card */
                     selectedAnnotation && (
                       <div className="space-y-3">
                         <h4 className="font-medium">Moment selected</h4>
@@ -476,7 +574,6 @@ export function SubmissionModal({
                     )
                   )
                 ) : (
-                  /* No annotations — helper text + inline creator */
                   <div className="space-y-4">
                     <h4 className="font-medium">Tag your moment</h4>
                     <p className="text-sm text-muted-foreground">
@@ -484,7 +581,6 @@ export function SubmissionModal({
                     </p>
 
                     {selectedAnnotation ? (
-                      /* Annotation just created — show confirmation */
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 text-sm">
                         <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                         <span className="truncate">
@@ -492,7 +588,6 @@ export function SubmissionModal({
                         </span>
                       </div>
                     ) : showInlineCreator ? (
-                      /* Inline annotation creator */
                       <InlineAnnotationCreator
                         currentTimeMs={(clipStartMs + clipEndMs) / 2}
                         clipStartMs={0}
@@ -501,7 +596,6 @@ export function SubmissionModal({
                         onSubmit={async (data) => {
                           await handleCreateInlineAnnotation(data);
                           setShowInlineCreator(false);
-                          // Auto-generate clip range around the new annotation
                           const annotationMs = data.timestamp_seconds * 1000;
                           const totalMs = totalDuration * 1000;
                           setClipStartMs(Math.max(0, annotationMs - 2000));
@@ -511,7 +605,6 @@ export function SubmissionModal({
                         }}
                       />
                     ) : (
-                      /* CTAs to start annotation */
                       <div className="flex flex-col sm:flex-row gap-2">
                         <Button
                           variant="default"
@@ -538,8 +631,10 @@ export function SubmissionModal({
               </div>
             )}
 
-            {/* Step 2: Clip */}
-            {step === "clip" && (
+            {/* ══════════════════════════════════════════════════════════
+                 STEP: CLIP (single-moment only)
+                 ══════════════════════════════════════════════════════════ */}
+            {step === "clip" && !isMultiMoment && (
               <div className="space-y-4">
                 <h4 className="font-medium">
                   {selectedAnnotation ? "Clip looks good" : "Select your clip range"}
@@ -572,13 +667,22 @@ export function SubmissionModal({
               </div>
             )}
 
-            {/* Step: Metadata */}
+            {/* ══════════════════════════════════════════════════════════
+                 STEP: METADATA
+                 ══════════════════════════════════════════════════════════ */}
             {step === "metadata" && (
               <div className="space-y-4">
                 <h4 className="font-medium">Ready to submit</h4>
 
-                {/* Passive progress confirmation or gentle nudge */}
-                {selectedAnnotation ? (
+                {/* Summary badge */}
+                {isMultiMoment ? (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-muted-foreground">
+                      {collectedMoments.length} moment{collectedMoments.length !== 1 ? "s" : ""} selected · Clips trimmed
+                    </span>
+                  </div>
+                ) : selectedAnnotation ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-sm">
                     <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                     <span className="text-muted-foreground">Moment selected · Clip looks good</span>
@@ -633,7 +737,6 @@ export function SubmissionModal({
                   </form>
                 </Form>
 
-                {/* Submission limits */}
                 <SubmissionLimitsBar
                   currentSubmissions={currentSubmissions}
                   maxSubmissions={maxSubmissions}
@@ -641,7 +744,9 @@ export function SubmissionModal({
               </div>
             )}
 
-            {/* Step: Success */}
+            {/* ══════════════════════════════════════════════════════════
+                 STEP: SUCCESS
+                 ══════════════════════════════════════════════════════════ */}
             {step === "success" && (
               <SubmissionSuccess
                 challengeTitle={challenge.title}
@@ -657,11 +762,10 @@ export function SubmissionModal({
           </div>
         </ScrollArea>
 
-        {/* Footer - Navigation buttons */}
+        {/* Footer */}
         {step !== "success" && (
           <div className="px-6 py-4 border-t border-border bg-muted/20">
             <div className="flex items-center justify-between gap-3">
-              {/* Back / Cancel */}
               {step === "moment" ? (
                 <Button variant="ghost" onClick={handleClose}>
                   Cancel
@@ -672,7 +776,6 @@ export function SubmissionModal({
                 </Button>
               )}
 
-              {/* Next / Submit */}
               {step === "metadata" ? (
                 <Button
                   onClick={goToNextStep}

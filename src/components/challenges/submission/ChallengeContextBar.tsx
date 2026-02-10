@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Clock, AlertTriangle, Scissors, Info } from "lucide-react";
+import { Clock, AlertTriangle, Scissors, Info, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChallengeContextBarProps {
@@ -7,6 +7,7 @@ interface ChallengeContextBarProps {
   minClipDuration?: number; // in seconds
   maxClipDuration?: number; // in seconds
   endsAt?: string | null;
+  requiredMoments?: number;
 }
 
 export function ChallengeContextBar({
@@ -14,6 +15,7 @@ export function ChallengeContextBar({
   minClipDuration = 5,
   maxClipDuration = 60,
   endsAt,
+  requiredMoments = 1,
 }: ChallengeContextBarProps) {
   const getTimeRemaining = () => {
     if (!endsAt) return null;
@@ -47,7 +49,10 @@ export function ChallengeContextBar({
   const timeRemaining = getTimeRemaining();
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 rounded-lg bg-muted/30 border border-border">
+    <div className={cn(
+      "grid grid-cols-1 gap-2 p-3 rounded-lg bg-muted/30 border border-border",
+      requiredMoments > 1 ? "sm:grid-cols-4" : "sm:grid-cols-3"
+    )}>
       {/* Rule summary */}
       <div className="flex items-start gap-2 sm:col-span-1">
         <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -66,6 +71,17 @@ export function ChallengeContextBar({
           </span>
         </span>
       </div>
+
+      {/* Required moments */}
+      {requiredMoments > 1 && (
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm">
+            <span className="text-muted-foreground">Moments: </span>
+            <span className="font-medium">{requiredMoments} required</span>
+          </span>
+        </div>
+      )}
 
       {/* Time remaining */}
       {timeRemaining && (

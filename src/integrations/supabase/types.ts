@@ -317,6 +317,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          moments: Json | null
           proof_notes: string | null
           rank: number | null
           session_id: string | null
@@ -333,6 +334,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          moments?: Json | null
           proof_notes?: string | null
           rank?: number | null
           session_id?: string | null
@@ -349,6 +351,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          moments?: Json | null
           proof_notes?: string | null
           rank?: number | null
           session_id?: string | null
@@ -389,6 +392,7 @@ export type Database = {
           prize_crypto: string | null
           prize_crypto_amount: number | null
           prize_description: string | null
+          required_moments_count: number
           rules: string | null
           sponsor_name: string | null
           starts_at: string | null
@@ -414,6 +418,7 @@ export type Database = {
           prize_crypto?: string | null
           prize_crypto_amount?: number | null
           prize_description?: string | null
+          required_moments_count?: number
           rules?: string | null
           sponsor_name?: string | null
           starts_at?: string | null
@@ -439,6 +444,7 @@ export type Database = {
           prize_crypto?: string | null
           prize_crypto_amount?: number | null
           prize_description?: string | null
+          required_moments_count?: number
           rules?: string | null
           sponsor_name?: string | null
           starts_at?: string | null
