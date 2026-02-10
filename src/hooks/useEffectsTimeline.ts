@@ -25,6 +25,8 @@ interface UseEffectsTimelineOptions {
   duration: number;
   audioPeaks?: number[];
   clipBoundaries?: number[];
+  /** External history push — when provided, effects undo/redo delegates to the unified stack */
+  onHistoryPush?: (command: import("@/hooks/useReelEditorHistory").EditCommand) => void;
 }
 
 interface UseEffectsTimelineResult {
@@ -80,6 +82,7 @@ export function useEffectsTimeline({
   duration,
   audioPeaks = [],
   clipBoundaries = [],
+  onHistoryPush,
 }: UseEffectsTimelineOptions): UseEffectsTimelineResult {
   // Query effects
   const { data: effects = [], isLoading } = useSessionEffectEvents(sessionId);
@@ -146,15 +149,39 @@ export function useEffectsTimeline({
     return { timeMs, snapSource: "manual" };
   }, [snapSettings.snapToMoments, annotations]);
   
-  // Push to history
+  // Push to local history
   const pushHistory = useCallback((entry: HistoryEntry) => {
     historyRef.current.push(entry);
     if (historyRef.current.length > MAX_HISTORY) {
       historyRef.current.shift();
     }
-    redoStackRef.current = []; // Clear redo stack on new action
+    redoStackRef.current = [];
     setHistoryIndex(historyRef.current.length);
   }, []);
+
+  // Execute undo/redo for a single history entry (shared logic)
+  const executeUndoRef = useRef<(entry: HistoryEntry) => void>(() => {});
+  const executeRedoRef = useRef<(entry: HistoryEntry) => void>(() => {});
+
+  /**
+   * Push to unified history when available, otherwise just local.
+   */
+  const pushToHistory = useCallback((entry: HistoryEntry, label: string) => {
+    pushHistory(entry);
+    
+    if (onHistoryPush) {
+      // Capture the entry for the unified command closures
+      const capturedEntry = { ...entry };
+      onHistoryPush({
+        type: (entry.action === "create" ? "effect_create" 
+          : entry.action === "update" ? "effect_update" 
+          : "effect_delete") as any,
+        label,
+        undo: () => executeUndoRef.current(capturedEntry),
+        redo: () => executeRedoRef.current(capturedEntry),
+      });
+    }
+  }, [pushHistory, onHistoryPush]);
   
   // Drag handlers
   const handleDragStart = useCallback((e: React.DragEvent, effectKey: string, type: EffectType) => {
@@ -190,11 +217,11 @@ export function useEffectsTimeline({
     }, {
       onSuccess: (data) => {
         if (data) {
-          pushHistory({
+          pushToHistory({
             action: "create",
             effectId: data.id,
             effectData: data,
-          });
+          }, `Add ${effectKey} effect`);
           
           // Show smart pairing toast for VFX effects
           if (type === "vfx") {
@@ -203,7 +230,6 @@ export function useEffectsTimeline({
               vfxKey: effectKey,
               startTimeMs: snapped.timeMs,
               onApply: (sfxKey, sfxStartTimeMs) => {
-                // Create the paired SFX
                 createMutation.mutate({
                   sessionId,
                   type: "sfx",
@@ -219,20 +245,19 @@ export function useEffectsTimeline({
     });
     
     handleDragEnd();
-  }, [sessionId, snapToMoments, createMutation, pushHistory, handleDragEnd]);
+  }, [sessionId, snapToMoments, createMutation, pushToHistory, handleDragEnd]);
   
   // Effect CRUD handlers
   const handleEffectUpdate = useCallback((effectId: string, updates: Partial<EffectEvent>) => {
     if (!sessionId) return;
     
-    // Find current state for undo
     const current = effects.find(e => e.id === effectId);
     if (current) {
-      pushHistory({
+      pushToHistory({
         action: "update",
         effectId,
         previousState: current,
-      });
+      }, `Update effect`);
     }
     
     updateMutation.mutate({
@@ -240,23 +265,22 @@ export function useEffectsTimeline({
       sessionId,
       updates,
     });
-  }, [sessionId, effects, updateMutation, pushHistory]);
+  }, [sessionId, effects, updateMutation, pushToHistory]);
   
   const handleEffectDelete = useCallback((effectId: string) => {
     if (!sessionId) return;
     
-    // Find current state for undo
     const current = effects.find(e => e.id === effectId);
     if (current) {
-      pushHistory({
+      pushToHistory({
         action: "delete",
         effectId,
         effectData: current,
-      });
+      }, `Delete effect`);
     }
     
     deleteMutation.mutate({ eventId: effectId, sessionId });
-  }, [sessionId, effects, deleteMutation, pushHistory]);
+  }, [sessionId, effects, deleteMutation, pushToHistory]);
   
   const handleEffectDuplicate = useCallback((effectId: string, newStartTimeMs: number) => {
     if (!sessionId) return;
@@ -268,33 +292,24 @@ export function useEffectsTimeline({
     }, {
       onSuccess: (data) => {
         if (data) {
-          pushHistory({
+          pushToHistory({
             action: "create",
             effectId: data.id,
             effectData: data,
-          });
+          }, `Duplicate effect`);
         }
       },
     });
-  }, [sessionId, duplicateMutation, pushHistory]);
+  }, [sessionId, duplicateMutation, pushToHistory]);
   
-  // Undo/Redo
-  const undo = useCallback(() => {
-    if (!canUndo || !sessionId) return;
-    
-    const entry = historyRef.current.pop();
-    if (!entry) return;
-    
-    setHistoryIndex(historyRef.current.length);
-    redoStackRef.current.push(entry);
-    
+  // Execute undo/redo for a single history entry (shared logic)
+  const executeUndo = useCallback((entry: HistoryEntry) => {
+    if (!sessionId) return;
     switch (entry.action) {
       case "create":
-        // Undo create = delete
         deleteMutation.mutate({ eventId: entry.effectId, sessionId });
         break;
       case "update":
-        // Undo update = restore previous state
         if (entry.previousState) {
           updateMutation.mutate({
             eventId: entry.effectId,
@@ -304,7 +319,6 @@ export function useEffectsTimeline({
         }
         break;
       case "delete":
-        // Undo delete = recreate (simplified - would need full re-creation)
         if (entry.effectData) {
           createMutation.mutate({
             sessionId,
@@ -320,20 +334,15 @@ export function useEffectsTimeline({
         }
         break;
     }
-  }, [canUndo, sessionId, createMutation, updateMutation, deleteMutation]);
-  
-  const redo = useCallback(() => {
-    if (!canRedo || !sessionId) return;
-    
-    const entry = redoStackRef.current.pop();
-    if (!entry) return;
-    
-    historyRef.current.push(entry);
-    setHistoryIndex(historyRef.current.length);
-    
+  }, [sessionId, createMutation, updateMutation, deleteMutation]);
+
+  // Keep refs in sync for unified history closures
+  executeUndoRef.current = executeUndo;
+
+  const executeRedo = useCallback((entry: HistoryEntry) => {
+    if (!sessionId) return;
     switch (entry.action) {
       case "create":
-        // Redo create = recreate
         if (entry.effectData) {
           createMutation.mutate({
             sessionId,
@@ -347,15 +356,36 @@ export function useEffectsTimeline({
         }
         break;
       case "update":
-        // Redo update = apply the update again
-        // This is simplified - would need to track the new state too
         break;
       case "delete":
-        // Redo delete = delete again
         deleteMutation.mutate({ eventId: entry.effectId, sessionId });
         break;
     }
-  }, [canRedo, sessionId, createMutation, deleteMutation]);
+  }, [sessionId, createMutation, deleteMutation]);
+
+  // Keep refs in sync for unified history closures
+  executeRedoRef.current = executeRedo;
+  const undo = useCallback(() => {
+    if (!canUndo || !sessionId) return;
+    
+    const entry = historyRef.current.pop();
+    if (!entry) return;
+    
+    setHistoryIndex(historyRef.current.length);
+    redoStackRef.current.push(entry);
+    executeUndo(entry);
+  }, [canUndo, sessionId, executeUndo]);
+  
+  const redo = useCallback(() => {
+    if (!canRedo || !sessionId) return;
+    
+    const entry = redoStackRef.current.pop();
+    if (!entry) return;
+    
+    historyRef.current.push(entry);
+    setHistoryIndex(historyRef.current.length);
+    executeRedo(entry);
+  }, [canRedo, sessionId, executeRedo]);
   
   // Auto-enhance: Generate AI suggestions
   const generateSuggestions = useCallback(() => {
