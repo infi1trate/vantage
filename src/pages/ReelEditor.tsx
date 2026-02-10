@@ -18,6 +18,7 @@ import { useReelPackage } from "@/hooks/useReelPackageConfig";
 import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { useEditorState } from "@/hooks/useEditorState";
+import { EffectsLane } from "@/components/player/effects/EffectsLane";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
@@ -109,6 +110,7 @@ function ReelEditorContent() {
 
   // Editor state
   const [activeTab, setActiveTab] = useState<"effects" | "frames" | "package">("effects");
+  const [showEffectsLane, setShowEffectsLane] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [showCaptureTipsModal, setShowCaptureTipsModal] = useState(false);
@@ -133,7 +135,13 @@ function ReelEditorContent() {
     return annotations.filter(a => reel.source_moment_ids.includes(a.id));
   }, [annotations, reel?.source_moment_ids]);
 
-  // Effects timeline state - this powers the drag-and-drop FX system
+  // Reel duration from manifest (for effects lane positioning)
+  const reelDurationSec = useMemo(() => {
+    if (reel?.manifest?.totalDurationMs) return reel.manifest.totalDurationMs / 1000;
+    return duration; // fallback to session duration
+  }, [reel?.manifest?.totalDurationMs, duration]);
+
+  // Effects timeline state - uses REEL duration, not session duration
   const {
     effects,
     isDragging,
@@ -157,7 +165,7 @@ function ReelEditorContent() {
   } = useEffectsTimeline({
     sessionId: reel?.session_id,
     annotations: reelMoments,
-    duration: duration * 1000, // Convert to ms
+    duration: reelDurationSec * 1000, // Convert to ms
   });
 
   // Clear effects mutation
@@ -472,12 +480,6 @@ function ReelEditorContent() {
                 showProgress={editorState.showProgress}
                 progressPercent={editorState.progressPercent}
               />
-              
-              {effects.length > 0 && editorState.state === "ready" && (
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  {effects.length} FX
-                </Badge>
-              )}
             </div>
           </div>
 
@@ -604,6 +606,23 @@ function ReelEditorContent() {
                       </div>
                     )}
                   </div>
+                  
+                  {/* Effects Lane - below the player, inside the ready state */}
+                  {showEffectsLane && editorState.fxEnabled && (
+                    <div className="shrink-0 px-4 pb-2 pt-1 bg-card/80 border-t border-border/20">
+                      <EffectsLane
+                        effects={effects}
+                        duration={reelDurationSec}
+                        currentTime={currentTime}
+                        onSeek={handleSeek}
+                        onEffectUpdate={handleEffectUpdate}
+                        onEffectDelete={handleEffectDelete}
+                        onEffectDuplicate={handleEffectDuplicate}
+                        onDrop={handleDrop}
+                        isDragging={isDragging}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -613,6 +632,9 @@ function ReelEditorContent() {
           <ReelEditorToolbar
             activeTab={activeTab}
             onTabChange={setActiveTab}
+            showEffectsLane={showEffectsLane}
+            onShowEffectsLaneChange={setShowEffectsLane}
+            effectCount={effects.length}
             disabled={!editorState.timelineInteractive}
           />
         </div>
