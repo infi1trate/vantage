@@ -19,6 +19,8 @@ import { useEffectsTimeline } from "@/hooks/useEffectsTimeline";
 import { useClearSessionEffects } from "@/hooks/useEffectEvents";
 import { useEditorState } from "@/hooks/useEditorState";
 import { EffectsLane } from "@/components/player/effects/EffectsLane";
+import { ReelClipTimeline } from "@/components/reel/ReelClipTimeline";
+import { useClipTrimming } from "@/hooks/useClipTrimming";
 import { ReelEditorToolbar } from "@/components/reel/ReelEditorToolbar";
 import { ReelEditorSidebar } from "@/components/reel/ReelEditorSidebar";
 import { ReelCompilingPlaceholder } from "@/components/reel/ReelCompilingPlaceholder";
@@ -135,13 +137,10 @@ function ReelEditorContent() {
     return annotations.filter(a => reel.source_moment_ids.includes(a.id));
   }, [annotations, reel?.source_moment_ids]);
 
-  // Reel duration from manifest (for effects lane positioning)
-  const reelDurationSec = useMemo(() => {
-    if (reel?.manifest?.totalDurationMs) return reel.manifest.totalDurationMs / 1000;
-    return duration; // fallback to session duration
-  }, [reel?.manifest?.totalDurationMs, duration]);
+  // Reel base duration from manifest (before trims)
+  const baseReelDurationMs = reel?.manifest?.totalDurationMs || duration * 1000;
 
-  // Effects timeline state - uses REEL duration, not session duration
+  // Effects timeline state - uses base reel duration
   const {
     effects,
     isDragging,
@@ -165,8 +164,32 @@ function ReelEditorContent() {
   } = useEffectsTimeline({
     sessionId: reel?.session_id,
     annotations: reelMoments,
-    duration: reelDurationSec * 1000, // Convert to ms
+    duration: baseReelDurationMs,
   });
+
+  // Clip trimming state (after effects so we can reference them)
+  const {
+    trimmedClips,
+    trimmedManifest,
+    trimmedTotalDurationMs,
+    hasTrimChanges,
+    applyTrim,
+    setClipTrim,
+    resetClipTrim,
+    persistTrims,
+  } = useClipTrimming({
+    reelId,
+    manifest: reel?.manifest || null,
+    annotations: reelMoments,
+    sessionDurationSec: duration,
+    effects,
+  });
+
+  // Reel duration from trimmed manifest (for effects lane + display)
+  const reelDurationSec = useMemo(() => {
+    if (trimmedTotalDurationMs > 0) return trimmedTotalDurationMs / 1000;
+    return baseReelDurationMs / 1000;
+  }, [trimmedTotalDurationMs, baseReelDurationMs]);
 
   // Clear effects mutation
   const clearEffectsMutation = useClearSessionEffects();
@@ -583,6 +606,7 @@ function ReelEditorContent() {
                     {reel.manifest && sessionData?.videoUrl ? (
                       <ManifestPlayer
                         manifest={reel.manifest}
+                        trimmedManifest={trimmedManifest}
                         sessionVideoUrl={sessionData.videoUrl}
                         annotations={reelMoments}
                         currentTime={currentTime}
@@ -607,7 +631,23 @@ function ReelEditorContent() {
                     )}
                   </div>
                   
-                  {/* Effects Lane - below the player, inside the ready state */}
+                  {/* Clip Trimming Timeline - resizable clip blocks */}
+                  {trimmedClips.length > 0 && (
+                    <div className="shrink-0 px-4 py-2 bg-card/60 border-t border-border/20">
+                      <ReelClipTimeline
+                        clips={trimmedClips}
+                        annotations={reelMoments}
+                        totalDurationMs={trimmedTotalDurationMs}
+                        currentTime={currentTime}
+                        onSeek={handleSeek}
+                        onTrimApply={applyTrim}
+                        onTrimEnd={persistTrims}
+                        disabled={!editorState.timelineInteractive}
+                      />
+                    </div>
+                  )}
+
+                  {/* Effects Lane - below the clip timeline */}
                   {showEffectsLane && editorState.fxEnabled && (
                     <div className="shrink-0 px-4 pb-2 pt-1 bg-card/80 border-t border-border/20">
                       <EffectsLane
