@@ -29,6 +29,8 @@ import { Annotation } from "@/lib/captures";
 
 interface ManifestPlayerProps {
   manifest: ReelManifest;
+  /** Optional trimmed manifest override — if provided, playback uses these clip bounds */
+  trimmedManifest?: ReelManifest | null;
   sessionVideoUrl: string;
   annotations: Annotation[]; // For getting clip timestamps
   currentTime: number; // Global time in seconds
@@ -45,10 +47,10 @@ function buildCumulativeTimeline(clips: ManifestClip[], annotations: Annotation[
   let cumulativeMs = 0;
   
   return clips.map((clip, index) => {
-    // Find the annotation to get actual session timestamps
-    const annotation = annotations.find(a => a.id === clip.momentId);
-    const sessionStartSec = annotation?.timestamp_seconds || 0;
-    const sessionEndSec = annotation?.end_timestamp_seconds || (sessionStartSec + clip.durationMs / 1000);
+    // Use clip's own startMs/endMs (which reflect trims if applied)
+    // Convert from ms to seconds for session-level seeking
+    const sessionStartSec = clip.startMs / 1000;
+    const sessionEndSec = clip.endMs / 1000;
     
     const globalStartMs = cumulativeMs;
     const globalEndMs = cumulativeMs + clip.durationMs;
@@ -66,7 +68,8 @@ function buildCumulativeTimeline(clips: ManifestClip[], annotations: Annotation[
 }
 
 export const ManifestPlayer = memo(function ManifestPlayer({
-  manifest,
+  manifest: originalManifest,
+  trimmedManifest,
   sessionVideoUrl,
   annotations,
   currentTime,
@@ -75,6 +78,8 @@ export const ManifestPlayer = memo(function ManifestPlayer({
   onVideoLoaded,
   className,
 }: ManifestPlayerProps) {
+  // Use trimmed manifest if available, otherwise original
+  const manifest = trimmedManifest || originalManifest;
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
