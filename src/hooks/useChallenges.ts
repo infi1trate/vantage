@@ -10,6 +10,7 @@ import {
   deleteSubmission,
   type Challenge,
   type ChallengeSubmission,
+  type SubmissionMoment,
 } from "@/lib/challenges";
 
 export function useChallenges(status?: Challenge['status'] | Challenge['status'][]) {
@@ -62,6 +63,7 @@ export function useCreateSubmission() {
       title?: string;
       description?: string;
       proof_notes?: string;
+      moments?: SubmissionMoment[];
     }) => createSubmission({ ...data, user_id: user!.id }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['challenge-submissions', variables.challenge_id] });

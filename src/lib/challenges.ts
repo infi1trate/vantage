@@ -30,6 +30,14 @@ export interface Challenge {
   updated_at: string;
 }
 
+export interface SubmissionMoment {
+  annotation_id: string;
+  start_ms: number;
+  end_ms: number;
+  order: number;
+  label?: string;
+}
+
 export interface ChallengeSubmission {
   id: string;
   challenge_id: string;
@@ -40,6 +48,7 @@ export interface ChallengeSubmission {
   title: string | null;
   description: string | null;
   proof_notes: string | null;
+  moments: SubmissionMoment[] | null;
   status: 'pending' | 'approved' | 'rejected' | 'winner';
   rank: number | null;
   admin_notes: string | null;
@@ -85,7 +94,7 @@ export async function fetchChallengeSubmissions(challengeId: string) {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data as ChallengeSubmission[];
+  return data as unknown as ChallengeSubmission[];
 }
 
 export async function fetchUserSubmissions(challengeId: string, userId: string) {
@@ -96,7 +105,7 @@ export async function fetchUserSubmissions(challengeId: string, userId: string) 
     .eq('user_id', userId);
 
   if (error) throw error;
-  return data as ChallengeSubmission[];
+  return data as unknown as ChallengeSubmission[];
 }
 
 export async function createSubmission(submission: {
@@ -108,15 +117,26 @@ export async function createSubmission(submission: {
   title?: string;
   description?: string;
   proof_notes?: string;
+  moments?: SubmissionMoment[];
 }) {
   const { data, error } = await supabase
     .from('challenge_submissions')
-    .insert(submission)
+    .insert({
+      challenge_id: submission.challenge_id,
+      user_id: submission.user_id,
+      session_id: submission.session_id,
+      clip_start_ms: submission.clip_start_ms,
+      clip_end_ms: submission.clip_end_ms,
+      title: submission.title,
+      description: submission.description,
+      proof_notes: submission.proof_notes,
+      moments: submission.moments ? (submission.moments as any) : null,
+    })
     .select()
     .single();
 
   if (error) throw error;
-  return data as ChallengeSubmission;
+  return data as unknown as ChallengeSubmission;
 }
 
 export async function updateSubmission(
@@ -125,13 +145,13 @@ export async function updateSubmission(
 ) {
   const { data, error } = await supabase
     .from('challenge_submissions')
-    .update(updates)
+    .update(updates as any)
     .eq('id', id)
     .select()
     .single();
 
   if (error) throw error;
-  return data as ChallengeSubmission;
+  return data as unknown as ChallengeSubmission;
 }
 
 export async function deleteSubmission(id: string) {

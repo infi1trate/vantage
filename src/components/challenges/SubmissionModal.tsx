@@ -340,7 +340,7 @@ export function SubmissionModal({
 
     try {
       if (isMultiMoment) {
-        // Multi-moment: use first moment's clip range as primary, store all in moments JSONB
+        // Single entry with moments array
         const firstMoment = collectedMoments[0];
         await createSubmission.mutateAsync({
           challenge_id: challenge.id,
@@ -349,38 +349,14 @@ export function SubmissionModal({
           clip_end_ms: firstMoment?.clipEndMs ?? 0,
           title: data.title,
           description: data.description,
-          proof_notes: collectedMoments
-            .map((m, i) => `Moment ${i + 1}: ${m.label} at ${m.timestampSeconds}s`)
-            .join(" | "),
+          moments: collectedMoments.map((m, i) => ({
+            annotation_id: m.annotationId,
+            start_ms: m.clipStartMs,
+            end_ms: m.clipEndMs,
+            order: i,
+            label: m.label,
+          })),
         });
-
-        // Update the submission with moments JSONB via direct supabase call
-        // (the createSubmission hook doesn't know about `moments` column yet)
-        // We'll patch it after creation — find the latest submission
-        const { data: latestSub } = await supabase
-          .from("challenge_submissions")
-          .select("id")
-          .eq("challenge_id", challenge.id)
-          .eq("user_id", user!.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (latestSub) {
-          await supabase
-            .from("challenge_submissions")
-            .update({
-              moments: collectedMoments.map((m) => ({
-                annotation_id: m.annotationId,
-                annotation_type: m.annotationType,
-                label: m.label,
-                timestamp_seconds: m.timestampSeconds,
-                clip_start_ms: m.clipStartMs,
-                clip_end_ms: m.clipEndMs,
-              })),
-            } as any)
-            .eq("id", latestSub.id);
-        }
       } else {
         // Single-moment: original flow
         await createSubmission.mutateAsync({
